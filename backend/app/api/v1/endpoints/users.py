@@ -1,0 +1,95 @@
+"""User profile endpoints."""
+
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.deps import get_current_active_user
+from app.core.security import get_password_hash, verify_password
+from app.models.user import User
+from app.schemas.common import MessageResponse
+from app.schemas.user import PasswordChange, UserResponse, UserUpdate
+
+router = APIRouter(prefix="/users", tags=["Users"])
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_profile(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return the currently authenticated user's profile."""
+    return UserResponse.model_validate(current_user)
+
+
+@router.put("/me", response_model=UserResponse)
+async def update_current_user_profile(
+    payload: UserUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Update the currently authenticated user's profile.
+
+    Only full_name and avatar_url can be changed via this endpoint.
+    """
+    update_data = payload.model_dump(exclude_unset=True)
+
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update",
+        )
+
+    for field, value in update_data.items():
+        setattr(current_user, field, value)
+
+    await db.flush()
+    await db.refresh(current_user)
+
+    return UserResponse.model_validate(current_user)
+
+
+@router.post("/me/change-password", response_model=MessageResponse)
+async def change_password(
+    payload: PasswordChange,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Change the current user's password.
+
+    Requires the current password for verification.
+    """
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from the current password",
+        )
+
+    current_user.password_hash = get_password_hash(payload.new_password)
+    await db.flush()
+
+    return MessageResponse(message="Password updated successfully")
+
+
+@router.delete("/me", response_model=MessageResponse)
+async def delete_current_user(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Soft-delete the current user account.
+
+    Sets the deleted_at timestamp and deactivates the account.
+    The user record is retained for data integrity.
+    """
+    current_user.deleted_at = datetime.now(timezone.utc)
+    current_user.is_active = False
+    await db.flush()
+
+    return MessageResponse(message="Account has been deleted")
