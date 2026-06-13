@@ -138,36 +138,6 @@ const dateFilters = ["Today", "This Week", "This Month", "Custom"] as const;
 const statusFilters = ["All", "Success", "Failed"] as const;
 
 /* ------------------------------------------------------------------ */
-/*  Mock data                                                         */
-/* ------------------------------------------------------------------ */
-
-const now = new Date();
-function hoursAgo(h: number) {
-  return new Date(now.getTime() - h * 3600_000).toISOString();
-}
-
-const mockActivities: ActivityEntry[] = [
-  { id: "1", category: "post", action: "Post Published", description: "Published to 3 accounts: Acme Corp Instagram, TechStartup Pro IG, Acme Corp LinkedIn", resource_name: "Spring Campaign Launch", status: "success", created_at: hoursAgo(0.3) },
-  { id: "2", category: "ai", action: "AI Caption Generated", description: "Generated 5 caption variations for upcoming product launch post", resource_name: "Product Launch Post", status: "success", created_at: hoursAgo(1) },
-  { id: "3", category: "platform", action: "Platform Connected", description: "Successfully connected Instagram Business account", resource_name: "Instagram", status: "success", created_at: hoursAgo(2) },
-  { id: "4", category: "post", action: "Post Scheduled", description: "Scheduled post for April 2, 2026 at 10:00 AM across 2 platforms", resource_name: "Weekly Tips #14", status: "success", created_at: hoursAgo(3) },
-  { id: "5", category: "account", action: "Team Member Invited", description: "Invited sarah@acmecorp.com as Editor to the workspace", status: "success", created_at: hoursAgo(4) },
-  { id: "6", category: "post", action: "Post Failed to Publish", description: "Failed to publish to TikTok: API rate limit exceeded. Will retry in 15 minutes.", resource_name: "Dance Challenge Promo", status: "failed", created_at: hoursAgo(5) },
-  { id: "7", category: "strategy", action: "Strategy Report Generated", description: "Weekly performance strategy report generated with 12 actionable recommendations", resource_name: "Week 13 Strategy", status: "success", created_at: hoursAgo(6) },
-  { id: "8", category: "billing", action: "Subscription Upgraded", description: "Upgraded from Pro to Business plan. New billing cycle starts April 1.", status: "success", created_at: hoursAgo(8) },
-  { id: "9", category: "ai", action: "AI Image Generated", description: "Generated 4 image variations using AI for the brand awareness campaign", resource_name: "Brand Awareness Q2", status: "success", created_at: hoursAgo(10) },
-  { id: "10", category: "auth", action: "Password Changed", description: "Account password was successfully updated", status: "success", created_at: hoursAgo(12) },
-  { id: "11", category: "platform", action: "Platform Disconnected", description: "Twitter/X account disconnected due to expired token. Please reconnect.", resource_name: "Twitter/X", status: "warning", created_at: hoursAgo(18) },
-  { id: "12", category: "post", action: "Bulk Posts Created", description: "Created 8 draft posts from CSV import for the next 2 weeks", status: "success", created_at: hoursAgo(24) },
-  { id: "13", category: "settings", action: "Notification Preferences Updated", description: "Email notifications for post publishing turned on, SMS alerts turned off", status: "success", created_at: hoursAgo(26) },
-  { id: "14", category: "account", action: "Social Account Added", description: "Connected Acme Corp LinkedIn company page with admin permissions", resource_name: "Acme Corp LinkedIn", status: "success", created_at: hoursAgo(30) },
-  { id: "15", category: "ai", action: "AI Hashtag Suggestions", description: "Generated trending hashtag set for fitness niche with 25 hashtags", resource_name: "Fitness Hashtags", status: "success", created_at: hoursAgo(36) },
-  { id: "16", category: "post", action: "Post Deleted", description: "Deleted draft post that was no longer relevant to the campaign", resource_name: "Old Promo Draft", status: "success", created_at: hoursAgo(40) },
-  { id: "17", category: "strategy", action: "Competitor Analysis Run", description: "Analyzed 5 competitor accounts and identified 3 content gaps", status: "success", created_at: hoursAgo(48) },
-  { id: "18", category: "billing", action: "Payment Failed", description: "Monthly payment of $49.00 failed. Please update your payment method.", status: "failed", created_at: hoursAgo(50) },
-];
-
-/* ------------------------------------------------------------------ */
 /*  Stat helpers                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -306,7 +276,7 @@ export default function ActivityPage() {
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
 
   const filtered = useMemo(() => {
-    let items = [...mockActivities];
+    let items: ActivityEntry[] = [];
 
     // Category filter
     if (categoryFilter !== "all") {
@@ -341,7 +311,7 @@ export default function ActivityPage() {
 
   const visible = filtered.slice(0, visibleCount);
   const hasMore = visibleCount < filtered.length;
-  const stats = getStats(mockActivities);
+  const stats = getStats(filtered);
 
   return (
     <DashboardLayout>

@@ -85,116 +85,6 @@ const FIELD_TYPE_OPTIONS = [
   { value: "number", label: "Number" },
 ];
 
-// ── Mock Data ──────────────────────────────────────────────────────
-
-const mockPlatforms: SocialPlatform[] = [
-  {
-    id: "1",
-    name: "Facebook",
-    slug: "facebook",
-    color: "#1877F2",
-    icon: "facebook",
-    description: "Meta's primary social network for pages, groups, and advertising.",
-    baseUrl: "https://graph.facebook.com/v18.0",
-    apiConfigTemplate: [
-      { key: "app_id", label: "App ID", type: "text", required: true },
-      { key: "app_secret", label: "App Secret", type: "password", required: true },
-      { key: "access_token", label: "Access Token", type: "password", required: true },
-      { key: "page_id", label: "Page ID", type: "text", required: true },
-    ],
-    accountsCount: 4,
-    isActive: true,
-    createdAt: "2025-09-15",
-  },
-  {
-    id: "2",
-    name: "Instagram",
-    slug: "instagram",
-    color: "#E4405F",
-    icon: "instagram",
-    description: "Photo and video sharing platform with Reels and Stories features.",
-    baseUrl: "https://graph.instagram.com/v18.0",
-    apiConfigTemplate: [
-      { key: "access_token", label: "Access Token", type: "password", required: true },
-      { key: "business_account_id", label: "Business Account ID", type: "text", required: true },
-    ],
-    accountsCount: 3,
-    isActive: true,
-    createdAt: "2025-09-15",
-  },
-  {
-    id: "3",
-    name: "LinkedIn",
-    slug: "linkedin",
-    color: "#0A66C2",
-    icon: "linkedin",
-    description: "Professional networking platform for B2B marketing and thought leadership.",
-    baseUrl: "https://api.linkedin.com/v2",
-    apiConfigTemplate: [
-      { key: "client_id", label: "Client ID", type: "text", required: true },
-      { key: "client_secret", label: "Client Secret", type: "password", required: true },
-      { key: "access_token", label: "Access Token", type: "password", required: true },
-      { key: "organization_id", label: "Organization ID", type: "text", required: false },
-    ],
-    accountsCount: 2,
-    isActive: true,
-    createdAt: "2025-10-01",
-  },
-  {
-    id: "4",
-    name: "X / Twitter",
-    slug: "twitter",
-    color: "#1DA1F2",
-    icon: "twitter",
-    description: "Real-time microblogging platform for brand engagement and trending topics.",
-    baseUrl: "https://api.twitter.com/2",
-    apiConfigTemplate: [
-      { key: "api_key", label: "API Key", type: "password", required: true },
-      { key: "api_secret", label: "API Secret", type: "password", required: true },
-      { key: "bearer_token", label: "Bearer Token", type: "password", required: true },
-      { key: "access_token", label: "Access Token", type: "password", required: true },
-      { key: "access_token_secret", label: "Access Token Secret", type: "password", required: true },
-    ],
-    accountsCount: 3,
-    isActive: true,
-    createdAt: "2025-10-01",
-  },
-  {
-    id: "5",
-    name: "YouTube",
-    slug: "youtube",
-    color: "#FF0000",
-    icon: "youtube",
-    description: "Video hosting platform for long-form content, Shorts, and live streaming.",
-    baseUrl: "https://www.googleapis.com/youtube/v3",
-    apiConfigTemplate: [
-      { key: "api_key", label: "API Key", type: "password", required: true },
-      { key: "client_id", label: "OAuth Client ID", type: "text", required: true },
-      { key: "client_secret", label: "OAuth Client Secret", type: "password", required: true },
-      { key: "channel_id", label: "Channel ID", type: "text", required: true },
-    ],
-    accountsCount: 1,
-    isActive: true,
-    createdAt: "2025-11-12",
-  },
-  {
-    id: "6",
-    name: "TikTok",
-    slug: "tiktok",
-    color: "#00F2EA",
-    icon: "tiktok",
-    description: "Short-form video platform for viral content and younger demographics.",
-    baseUrl: "https://open.tiktokapis.com/v2",
-    apiConfigTemplate: [
-      { key: "client_key", label: "Client Key", type: "text", required: true },
-      { key: "client_secret", label: "Client Secret", type: "password", required: true },
-      { key: "access_token", label: "Access Token", type: "password", required: true },
-    ],
-    accountsCount: 2,
-    isActive: false,
-    createdAt: "2025-12-05",
-  },
-];
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -349,7 +239,7 @@ function PlatformCard({
 // ── Main Page ──────────────────────────────────────────────────────
 
 export default function PlatformsPage() {
-  const [platforms, setPlatforms] = useState<SocialPlatform[]>(mockPlatforms);
+  const [platforms, setPlatforms] = useState<SocialPlatform[]>([]);
 
   // Modal state
   const [showModal, setShowModal] = useState(false);

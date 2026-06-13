@@ -102,4 +102,12 @@ export async function del<T>(url: string, config?: AxiosRequestConfig): Promise<
   return response.data;
 }
 
+export function getAccountId(): string | null {
+  let accountId = localStorage.getItem("account_id");
+  if (!accountId) {
+    console.warn("No account_id in localStorage. Make sure to log out and log in again.");
+  }
+  return accountId;
+}
+
 export default api;

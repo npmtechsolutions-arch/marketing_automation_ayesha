@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 
 class PostBase(BaseModel):
@@ -59,8 +59,16 @@ class PostResponse(PostBase):
     retry_count: int = 0
     created_at: datetime
     updated_at: datetime | None = None
+    deleted_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer('status')
+    def serialize_status(self, value) -> str:
+        """Serialize PostStatus enum to its string value."""
+        if hasattr(value, 'value'):
+            return value.value
+        return str(value)
 
 
 class PostWithPerformance(PostResponse):

@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import ClassVar
+
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -18,7 +21,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:root@localhost:5432/marketting_automation"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:MyNewPassword123@localhost:5432/marketing_automation"
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # AI
@@ -57,8 +60,11 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
+    # Load .env from the repository root (three levels above this file: backend/app/core)
+    env_path: ClassVar[Path] = Path(__file__).resolve().parents[3] / ".env"
+
     model_config = {
-        "env_file": ".env",
+        "env_file": str(env_path),
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
     }

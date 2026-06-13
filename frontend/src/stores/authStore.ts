@@ -44,6 +44,30 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       localStorage.setItem("access_token", access_token);
       localStorage.setItem("refresh_token", refresh_token);
 
+      // Fetch user's first account
+      try {
+        const accountsResponse = await api.get("/accounts");
+        let accountId = null;
+
+        // Handle different response formats
+        if (accountsResponse.items?.[0]?.id) {
+          accountId = accountsResponse.items[0].id;
+        } else if (accountsResponse.data?.items?.[0]?.id) {
+          accountId = accountsResponse.data.items[0].id;
+        } else if (Array.isArray(accountsResponse) && accountsResponse[0]?.id) {
+          accountId = accountsResponse[0].id;
+        }
+
+        if (accountId) {
+          localStorage.setItem("account_id", accountId);
+          console.log("Stored account_id:", accountId);
+        } else {
+          console.warn("No account found in response:", accountsResponse);
+        }
+      } catch (err) {
+        console.warn("Could not fetch accounts:", err);
+      }
+
       set({
         user,
         accessToken: access_token,
@@ -70,6 +94,30 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       localStorage.setItem("access_token", access_token);
       localStorage.setItem("refresh_token", refresh_token);
 
+      // Fetch user's first account
+      try {
+        const accountsResponse = await api.get("/accounts");
+        let accountId = null;
+
+        // Handle different response formats
+        if (accountsResponse.items?.[0]?.id) {
+          accountId = accountsResponse.items[0].id;
+        } else if (accountsResponse.data?.items?.[0]?.id) {
+          accountId = accountsResponse.data.items[0].id;
+        } else if (Array.isArray(accountsResponse) && accountsResponse[0]?.id) {
+          accountId = accountsResponse[0].id;
+        }
+
+        if (accountId) {
+          localStorage.setItem("account_id", accountId);
+          console.log("Stored account_id:", accountId);
+        } else {
+          console.warn("No account found in response:", accountsResponse);
+        }
+      } catch (err) {
+        console.warn("Could not fetch accounts:", err);
+      }
+
       set({
         user,
         accessToken: access_token,
@@ -86,6 +134,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   logout: () => {
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
+    localStorage.removeItem("account_id");
     set({
       user: null,
       accessToken: null,

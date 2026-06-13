@@ -44,20 +44,6 @@ const settingsNav = [
 
 type SettingsTab = (typeof settingsNav)[number]["id"];
 
-// ── Mock data ───────────────────────────────────────────────────────
-const mockUser = {
-  name: "Alex Thompson",
-  email: "alex@visionaryspace.io",
-  role: "Owner",
-  avatar: null as string | null,
-};
-
-const mockSessions = [
-  { id: "1", device: "Chrome on macOS", ip: "192.168.1.45", lastActive: "Active now", current: true },
-  { id: "2", device: "Safari on iPhone 15", ip: "10.0.0.12", lastActive: "2 hours ago", current: false },
-  { id: "3", device: "Firefox on Windows", ip: "172.16.0.88", lastActive: "3 days ago", current: false },
-];
-
 const emailNotifDefaults = {
   postPublished: true,
   postFailed: true,
@@ -107,10 +93,12 @@ function getPasswordStrength(pw: string) {
 // ── Sub-page Components ─────────────────────────────────────────────
 
 function ProfileTab() {
-  const [name, setName] = useState(mockUser.name);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("");
   const [saved, setSaved] = useState(false);
 
-  const initials = mockUser.name.split(" ").map((n) => n[0]).join("").toUpperCase();
+  const initials = name.split(" ").map((n) => n[0]).join("").toUpperCase();
 
   return (
     <div className="space-y-8">
@@ -131,7 +119,7 @@ function ProfileTab() {
             </div>
           </div>
           <div>
-            <p className="text-white font-medium">{mockUser.name}</p>
+            <p className="text-white font-medium">{name || "User"}</p>
             <p className="text-sm text-gray-400">Click avatar to upload a new photo</p>
             <p className="text-xs text-gray-500 mt-1">JPG, PNG or GIF. Max 2MB.</p>
           </div>
@@ -143,14 +131,14 @@ function ProfileTab() {
         <div className="space-y-5">
           <Input label="Full Name" value={name} onChange={(e) => { setName(e.target.value); setSaved(false); }} />
           <div className="relative">
-            <Input label="Email" value={mockUser.email} disabled />
+            <Input label="Email" value={email} disabled />
             <Badge variant="info" className="absolute right-3 top-1/2 -translate-y-1/2">Verified</Badge>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">Role</label>
             <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white/5 border border-white/10">
               <Shield className="w-4 h-4 text-purple-400" />
-              <span className="text-sm text-white">{mockUser.role}</span>
+              <span className="text-sm text-white">{role || "Member"}</span>
             </div>
           </div>
         </div>
@@ -258,22 +246,8 @@ function SecurityTab() {
       {/* Active Sessions */}
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">Active Sessions</h3>
-        <div className="space-y-3">
-          {mockSessions.map((session) => (
-            <div key={session.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5">
-              <div className="flex items-center gap-3">
-                {session.device.includes("iPhone") ? <Smartphone className="w-5 h-5 text-gray-400" /> : <Monitor className="w-5 h-5 text-gray-400" />}
-                <div>
-                  <p className="text-sm text-white">
-                    {session.device}
-                    {session.current && <Badge variant="success" size="sm" className="ml-2">Current</Badge>}
-                  </p>
-                  <p className="text-xs text-gray-500">{session.ip} &middot; {session.lastActive}</p>
-                </div>
-              </div>
-              {!session.current && <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300">Revoke</Button>}
-            </div>
-          ))}
+        <div className="text-center py-6 text-sm text-gray-400">
+          <p>No active sessions found. Sign in on a device to see it here.</p>
         </div>
       </GlassCard>
 

@@ -103,135 +103,7 @@ function generateCampaignPerformance(days: number) {
   return data;
 }
 
-const campaigns: Campaign[] = [
-  {
-    id: 1,
-    name: "Spring Product Launch",
-    objective: "Drive awareness and sign-ups for new AI scheduling feature",
-    status: "active",
-    platforms: ["instagram", "linkedin", "twitter"],
-    budget: 5000,
-    spent: 3240,
-    startDate: "2026-03-01",
-    endDate: "2026-04-15",
-    impressions: 245000,
-    clicks: 12400,
-    conversions: 890,
-    ctr: 5.1,
-    roi: 3.2,
-    posts: [
-      { id: 1, content: "Introducing our new AI-powered content scheduler", platform: "linkedin", date: "2026-03-05", status: "published" },
-      { id: 2, content: "See how AI can save you 10 hours per week", platform: "instagram", date: "2026-03-08", status: "published" },
-      { id: 3, content: "Thread: 5 ways AI scheduling changes everything", platform: "twitter", date: "2026-03-12", status: "published" },
-      { id: 4, content: "Customer spotlight: How @TechStartup uses our tool", platform: "linkedin", date: "2026-03-18", status: "published" },
-    ],
-    performanceData: generateCampaignPerformance(30),
-  },
-  {
-    id: 2,
-    name: "Brand Awareness Q1",
-    objective: "Increase brand recognition across all social platforms",
-    status: "active",
-    platforms: ["instagram", "facebook", "twitter", "linkedin"],
-    budget: 8000,
-    spent: 5600,
-    startDate: "2026-01-15",
-    endDate: "2026-03-31",
-    impressions: 580000,
-    clicks: 28900,
-    conversions: 1450,
-    ctr: 4.98,
-    roi: 2.8,
-    posts: [
-      { id: 5, content: "We're redefining marketing automation", platform: "instagram", date: "2026-01-20", status: "published" },
-      { id: 6, content: "Behind the scenes of our product team", platform: "facebook", date: "2026-02-01", status: "published" },
-      { id: 7, content: "Marketing trends to watch in 2026", platform: "linkedin", date: "2026-02-15", status: "published" },
-    ],
-    performanceData: generateCampaignPerformance(75),
-  },
-  {
-    id: 3,
-    name: "Video Content Series",
-    objective: "Launch weekly video series on social media marketing tips",
-    status: "paused",
-    platforms: ["youtube", "instagram", "twitter"],
-    budget: 3000,
-    spent: 1200,
-    startDate: "2026-02-10",
-    endDate: "2026-05-10",
-    impressions: 120000,
-    clicks: 6800,
-    conversions: 340,
-    ctr: 5.67,
-    roi: 1.9,
-    posts: [
-      { id: 8, content: "Episode 1: Content Calendar Mastery", platform: "youtube", date: "2026-02-12", status: "published" },
-      { id: 9, content: "Episode 2: Hashtag Strategy Deep Dive", platform: "youtube", date: "2026-02-19", status: "published" },
-    ],
-    performanceData: generateCampaignPerformance(20),
-  },
-  {
-    id: 4,
-    name: "Holiday Retargeting",
-    objective: "Re-engage holiday season visitors with targeted content",
-    status: "completed",
-    platforms: ["facebook", "instagram"],
-    budget: 4500,
-    spent: 4500,
-    startDate: "2025-12-01",
-    endDate: "2025-12-31",
-    impressions: 320000,
-    clicks: 18500,
-    conversions: 2100,
-    ctr: 5.78,
-    roi: 4.1,
-    posts: [
-      { id: 10, content: "Holiday deals you don't want to miss", platform: "facebook", date: "2025-12-05", status: "published" },
-      { id: 11, content: "End-of-year marketing toolkit giveaway", platform: "instagram", date: "2025-12-15", status: "published" },
-      { id: 12, content: "Thank you for an incredible 2025", platform: "instagram", date: "2025-12-30", status: "published" },
-    ],
-    performanceData: generateCampaignPerformance(31),
-  },
-  {
-    id: 5,
-    name: "LinkedIn Thought Leadership",
-    objective: "Establish executive team as industry thought leaders",
-    status: "draft",
-    platforms: ["linkedin"],
-    budget: 2000,
-    spent: 0,
-    startDate: "2026-04-01",
-    endDate: "2026-06-30",
-    impressions: 0,
-    clicks: 0,
-    conversions: 0,
-    ctr: 0,
-    roi: 0,
-    posts: [],
-    performanceData: [],
-  },
-  {
-    id: 6,
-    name: "User-Generated Content Drive",
-    objective: "Encourage customers to share their success stories",
-    status: "active",
-    platforms: ["instagram", "twitter", "facebook"],
-    budget: 2500,
-    spent: 890,
-    startDate: "2026-03-15",
-    endDate: "2026-04-30",
-    impressions: 85000,
-    clicks: 4200,
-    conversions: 180,
-    ctr: 4.94,
-    roi: 2.1,
-    posts: [
-      { id: 13, content: "Share your story with #MyMarketingWin", platform: "instagram", date: "2026-03-16", status: "published" },
-      { id: 14, content: "We want to hear from YOU! How has automation changed your workflow?", platform: "twitter", date: "2026-03-20", status: "published" },
-    ],
-    performanceData: generateCampaignPerformance(15),
-  },
-];
+const campaigns: Campaign[] = [];
 
 const platformIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   instagram: Instagram,
@@ -254,7 +126,7 @@ const statusConfig: Record<CampaignStatus, { label: string; variant: "success" |
 const activeCampaigns = campaigns.filter((c) => c.status === "active").length;
 const totalBudget = campaigns.reduce((s, c) => s + c.budget, 0);
 const totalSpent = campaigns.reduce((s, c) => s + c.spent, 0);
-const avgRoi = campaigns.filter((c) => c.roi > 0).reduce((s, c) => s + c.roi, 0) / campaigns.filter((c) => c.roi > 0).length;
+const avgRoi = campaigns.filter((c) => c.roi > 0).length > 0 ? campaigns.filter((c) => c.roi > 0).reduce((s, c) => s + c.roi, 0) / campaigns.filter((c) => c.roi > 0).length : 0;
 
 // ---------------------------------------------------------------------------
 // Custom tooltip

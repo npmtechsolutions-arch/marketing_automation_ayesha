@@ -43,33 +43,21 @@ interface SocialAccount {
   configFields: { key: string; label: string; value: string; type: string }[];
 }
 
-const mockAccounts: SocialAccount[] = [
-  { id: "1", platformName: "Facebook", platformColor: "#1877F2", platformSlug: "facebook", accountName: "Acme Corp Facebook", handle: "@acmecorp", profileUrl: "https://facebook.com/acmecorp", isVerified: true, isActive: true, lastVerifiedAt: "2026-03-30T10:00:00Z", lastPostedAt: "2026-03-29T14:00:00Z", followers: 15800, following: 320, createdAt: "2026-01-15T10:00:00Z", configFields: [{ key: "app_id", label: "App ID", value: "123456789", type: "text" }, { key: "page_id", label: "Page ID", value: "987654321", type: "text" }] },
-  { id: "2", platformName: "Facebook", platformColor: "#1877F2", platformSlug: "facebook", accountName: "TechStartup Pro Page", handle: "@techstartuppro", profileUrl: "https://facebook.com/techstartuppro", isVerified: true, isActive: true, lastVerifiedAt: "2026-03-30T10:00:00Z", lastPostedAt: "2026-03-28T09:00:00Z", followers: 4200, following: 180, createdAt: "2026-02-01T14:00:00Z", configFields: [] },
-  { id: "3", platformName: "Instagram", platformColor: "#E4405F", platformSlug: "instagram", accountName: "Acme Corp Instagram", handle: "@acmecorp", profileUrl: "https://instagram.com/acmecorp", isVerified: true, isActive: true, lastVerifiedAt: "2026-03-29T08:00:00Z", lastPostedAt: "2026-03-30T11:00:00Z", followers: 12400, following: 890, createdAt: "2026-01-15T10:00:00Z", configFields: [] },
-  { id: "4", platformName: "Instagram", platformColor: "#E4405F", platformSlug: "instagram", accountName: "TechStartup Pro IG", handle: "@techstartuppro", profileUrl: "https://instagram.com/techstartuppro", isVerified: true, isActive: true, lastVerifiedAt: "2026-03-28T15:00:00Z", lastPostedAt: "2026-03-27T16:00:00Z", followers: 3200, following: 450, createdAt: "2026-02-10T16:00:00Z", configFields: [] },
-  { id: "5", platformName: "Instagram", platformColor: "#E4405F", platformSlug: "instagram", accountName: "Digital Spark Studio", handle: "@digispark", profileUrl: "https://instagram.com/digispark", isVerified: false, isActive: true, lastVerifiedAt: null, lastPostedAt: null, followers: 890, following: 230, createdAt: "2026-03-20T09:00:00Z", configFields: [] },
-  { id: "6", platformName: "LinkedIn", platformColor: "#0A66C2", platformSlug: "linkedin", accountName: "Acme Corp LinkedIn", handle: "acme-corp", profileUrl: "https://linkedin.com/company/acme-corp", isVerified: true, isActive: true, lastVerifiedAt: "2026-03-30T12:00:00Z", lastPostedAt: "2026-03-29T10:00:00Z", followers: 8700, following: 120, createdAt: "2026-01-20T14:00:00Z", configFields: [] },
-  { id: "7", platformName: "LinkedIn", platformColor: "#0A66C2", platformSlug: "linkedin", accountName: "John Marketing Personal", handle: "johnmarketing", profileUrl: "https://linkedin.com/in/johnmarketing", isVerified: true, isActive: true, lastVerifiedAt: "2026-03-30T12:00:00Z", lastPostedAt: "2026-03-28T08:00:00Z", followers: 2100, following: 650, createdAt: "2026-01-25T11:00:00Z", configFields: [] },
-  { id: "8", platformName: "X (Twitter)", platformColor: "#000000", platformSlug: "twitter", accountName: "TechStartup Pro X", handle: "@techstartup", profileUrl: "https://x.com/techstartup", isVerified: true, isActive: true, lastVerifiedAt: "2026-03-29T14:00:00Z", lastPostedAt: "2026-03-30T09:00:00Z", followers: 5300, following: 980, createdAt: "2026-02-15T10:00:00Z", configFields: [] },
-  { id: "9", platformName: "YouTube", platformColor: "#FF0000", platformSlug: "youtube", accountName: "TechStartup Pro Channel", handle: "@TechStartupPro", profileUrl: "https://youtube.com/@TechStartupPro", isVerified: false, isActive: true, lastVerifiedAt: null, lastPostedAt: null, followers: 1200, following: 45, createdAt: "2026-03-01T13:00:00Z", configFields: [] },
-  { id: "10", platformName: "TikTok", platformColor: "#010101", platformSlug: "tiktok", accountName: "Digital Spark TikTok", handle: "@digispark", profileUrl: "https://tiktok.com/@digispark", isVerified: false, isActive: false, lastVerifiedAt: null, lastPostedAt: null, followers: 340, following: 120, createdAt: "2026-03-15T15:00:00Z", configFields: [] },
-];
-
-const platforms = [...new Set(mockAccounts.map((a) => a.platformName))];
 
 /* ------------------------------------------------------------------ */
 /*  Page                                                              */
 /* ------------------------------------------------------------------ */
 
 export default function SocialAccountsPage() {
-  const [accounts] = useState(mockAccounts);
+  const [accounts] = useState<SocialAccount[]>([]);
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [selectedAccount, setSelectedAccount] = useState<SocialAccount | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+
+  const platforms = [...new Set(accounts.map((a) => a.platformName))];
 
   const filtered = accounts.filter((a) => {
     if (platformFilter !== "All" && a.platformName !== platformFilter) return false;

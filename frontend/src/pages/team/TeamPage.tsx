@@ -39,16 +39,6 @@ interface TeamMember {
   joinedAt: string;
 }
 
-// ── Mock Data ───────────────────────────────────────────────────────
-const mockMembers: TeamMember[] = [
-  { id: "1", name: "Alex Thompson", email: "alex@visionaryspace.io", role: "owner", status: "active", avatar: null, joinedAt: "2024-01-15" },
-  { id: "2", name: "Sarah Chen", email: "sarah@visionaryspace.io", role: "admin", status: "active", avatar: null, joinedAt: "2024-03-20" },
-  { id: "3", name: "Marcus Johnson", email: "marcus@visionaryspace.io", role: "manager", status: "active", avatar: null, joinedAt: "2024-06-10" },
-  { id: "4", name: "Emily Rodriguez", email: "emily@visionaryspace.io", role: "editor", status: "active", avatar: null, joinedAt: "2024-08-05" },
-  { id: "5", name: "James Wilson", email: "james@visionaryspace.io", role: "viewer", status: "active", avatar: null, joinedAt: "2025-01-12" },
-  { id: "6", name: "Olivia Park", email: "olivia@example.com", role: "editor", status: "pending", avatar: null, joinedAt: "2026-03-25" },
-  { id: "7", name: "David Kim", email: "david@example.com", role: "viewer", status: "pending", avatar: null, joinedAt: "2026-03-28" },
-];
 
 const roleConfig: Record<Role, { label: string; color: string; bg: string; border: string }> = {
   owner: { label: "Owner", color: "text-purple-300", bg: "bg-purple-500/10", border: "border-purple-500/20" },
@@ -83,7 +73,7 @@ const planLimit = 10;
 // ── Component ───────────────────────────────────────────────────────
 
 export default function TeamPage() {
-  const [members] = useState(mockMembers);
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
