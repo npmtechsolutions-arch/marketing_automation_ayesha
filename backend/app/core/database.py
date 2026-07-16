@@ -47,16 +47,33 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Create all database tables. Use Alembic for migrations in production."""
+    """Create all database tables with retry logic to wait for database service startup."""
     from sqlalchemy import text
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # Lightweight self-healing migrations for columns added after a table
-        # already exists (create_all does not ALTER existing tables).
-        await conn.execute(
-            text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS instagram_music_url TEXT")
-        )
-        await conn.execute(
-            text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS instagram_music_end_offset INTEGER")
-        )
+    import logging
+    import asyncio
+    
+    logger = logging.getLogger(__name__)
+    max_retries = 5
+    retry_delay = 3
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info("Initializing database (attempt %d/%d)...", attempt, max_retries)
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                # Lightweight self-healing migrations for columns added after a table
+                # already exists (create_all does not ALTER existing tables).
+                await conn.execute(
+                    text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS instagram_music_url TEXT")
+                )
+                await conn.execute(
+                    text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS instagram_music_end_offset INTEGER")
+                )
+            logger.info("Database initialized successfully.")
+            return
+        except Exception as e:
+            if attempt == max_retries:
+                logger.error("Failed to initialize database after %d attempts: %s", max_retries, e)
+                raise
+            logger.warning("Database connection failed on attempt %d. Retrying in %d seconds: %s", attempt, retry_delay, e)
+            await asyncio.sleep(retry_delay)
