@@ -7,13 +7,22 @@ from app.core.config import settings
 from app.core.database import init_db
 
 
+import asyncio
+from app.core.scheduler import scheduled_post_worker
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     # Startup
     await init_db()
+    worker_task = asyncio.create_task(scheduled_post_worker())
     yield
     # Shutdown (cleanup resources if needed)
+    worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(
@@ -45,12 +54,17 @@ from app.api.v1.endpoints import (
     analytics,
     billing,
     campaigns,
+    facebook_oauth,
+    instagram_oauth,
+    linkedin_oauth,
     notifications,
     posts,
     settings as settings_routes,
     social_accounts,
     social_platforms,
     strategies,
+    twitter_oauth,
+    youtube_oauth,
 )
 
 # Include the aggregated v1 router (auth, users, accounts, teams, businesses)
@@ -67,6 +81,16 @@ app.include_router(billing.router,          prefix="/api/v1/accounts/{account_id
 app.include_router(settings_routes.router,  prefix="/api/v1/accounts/{account_id}/settings",    tags=["Settings"])
 app.include_router(social_platforms.router,  prefix="/api/v1/accounts/{account_id}/social-platforms", tags=["Social Platforms"])
 app.include_router(social_accounts.router,  prefix="/api/v1/accounts/{account_id}/social-accounts",  tags=["Social Accounts"])
+app.include_router(linkedin_oauth.router,   prefix="/api/v1/accounts/{account_id}/linkedin",         tags=["LinkedIn OAuth"])
+app.include_router(linkedin_oauth.callback_router, prefix="/api/v1",                                  tags=["LinkedIn OAuth"])
+app.include_router(facebook_oauth.router,   prefix="/api/v1/accounts/{account_id}/facebook",         tags=["Facebook OAuth"])
+app.include_router(facebook_oauth.callback_router, prefix="/api/v1",                                  tags=["Facebook OAuth"])
+app.include_router(instagram_oauth.router,  prefix="/api/v1/accounts/{account_id}/instagram",        tags=["Instagram OAuth"])
+app.include_router(instagram_oauth.callback_router, prefix="/api/v1",                                 tags=["Instagram OAuth"])
+app.include_router(twitter_oauth.router,    prefix="/api/v1/accounts/{account_id}/twitter",          tags=["Twitter OAuth"])
+app.include_router(twitter_oauth.callback_router,  prefix="/api/v1",                                  tags=["Twitter OAuth"])
+app.include_router(youtube_oauth.router,    prefix="/api/v1/accounts/{account_id}/youtube",          tags=["YouTube OAuth"])
+app.include_router(youtube_oauth.callback_router,  prefix="/api/v1",                                  tags=["YouTube OAuth"])
 app.include_router(activity.router,         prefix="/api/v1/accounts/{account_id}/activity",          tags=["Activity"])
 app.include_router(admin.router,            prefix="/api/v1/admin",                             tags=["Admin Panel"])
 

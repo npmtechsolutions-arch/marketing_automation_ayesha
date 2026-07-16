@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:MyNewPassword123@localhost:5432/marketing_automation"
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # Data retention: number of days a soft-deleted user is kept before the
+    # scheduled hard-purge permanently removes them and their owned workspaces.
+    SOFT_DELETE_RETENTION_DAYS: int = 30
+
     # AI
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
@@ -38,12 +42,19 @@ class Settings(BaseSettings):
     # Social OAuth
     META_APP_ID: str = ""
     META_APP_SECRET: str = ""
+    META_CONFIG_ID: str = ""
     LINKEDIN_CLIENT_ID: str = ""
     LINKEDIN_CLIENT_SECRET: str = ""
+    # Must EXACTLY match the "Authorized redirect URL" configured in the LinkedIn app.
+    LINKEDIN_REDIRECT_URI: str = "http://localhost:8000/api/v1/linkedin/callback"
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
+    # Must EXACTLY match an "Authorized redirect URI" in the Google Cloud OAuth client.
+    YOUTUBE_REDIRECT_URI: str = "http://localhost:8000/api/v1/youtube/callback"
     TWITTER_CLIENT_ID: str = ""
     TWITTER_CLIENT_SECRET: str = ""
+    # Must EXACTLY match a "Callback URI" in the X app's User authentication settings.
+    TWITTER_REDIRECT_URI: str = "http://localhost:8000/api/v1/twitter/callback"
 
     # AWS S3
     S3_BUCKET: str = ""
@@ -68,6 +79,13 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
     }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.DATABASE_URL.startswith("postgresql://"):
+            self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif self.DATABASE_URL.startswith("postgres://"):
+            self.DATABASE_URL = self.DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
 
 settings = Settings()

@@ -191,8 +191,10 @@ class AIService:
             except Exception:
                 logger.exception("OpenAI image generation failed")
 
-        # Mock fallback
-        return "https://placehold.co/1024x1024/6366f1/ffffff?text=AI+Generated+Image"
+        # Mock fallback using Pollinations AI
+        import urllib.parse
+        encoded = urllib.parse.quote(prompt)
+        return f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true"
 
     # ------------------------------------------------------------------
     # Mock helpers

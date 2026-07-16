@@ -48,5 +48,15 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     """Create all database tables. Use Alembic for migrations in production."""
+    from sqlalchemy import text
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Lightweight self-healing migrations for columns added after a table
+        # already exists (create_all does not ALTER existing tables).
+        await conn.execute(
+            text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS instagram_music_url TEXT")
+        )
+        await conn.execute(
+            text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS instagram_music_end_offset INTEGER")
+        )

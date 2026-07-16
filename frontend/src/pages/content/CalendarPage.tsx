@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays,
@@ -17,6 +18,7 @@ import {
   Copy,
   Image as ImageIcon,
   TrendingUp,
+  Music2,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -25,10 +27,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import PlatformIcon from "@/components/shared/PlatformIcon";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
+import api from "@/lib/api";
 
 // ---------- Types ----------
 type Platform = "facebook" | "instagram" | "linkedin" | "twitter" | "youtube";
-type PostStatus = "published" | "scheduled" | "draft" | "failed";
+type PostStatus = "published" | "scheduled" | "draft" | "failed" | "publishing";
 type CalendarView = "week" | "month";
 
 interface CalendarPost {
@@ -48,6 +51,8 @@ interface CalendarPost {
     shares: number;
     views: number;
   };
+  instagramMusicTrack?: string | null;
+  instagramPostType?: "post" | "reel" | null;
 }
 
 // ---------- Constants ----------
@@ -73,6 +78,7 @@ const STATUS_CHIP_STYLES: Record<PostStatus, string> = {
   scheduled: "bg-blue-500/20 text-blue-300 border-blue-500/30",
   draft: "bg-slate-500/20 text-slate-300 border-slate-500/30",
   failed: "bg-red-500/20 text-red-300 border-red-500/30",
+  publishing: "bg-purple-500/20 text-purple-300 border-purple-500/30 animate-pulse",
 };
 
 const STATUS_DOT_COLORS: Record<PostStatus, string> = {
@@ -80,13 +86,15 @@ const STATUS_DOT_COLORS: Record<PostStatus, string> = {
   scheduled: "bg-blue-400",
   draft: "bg-slate-400",
   failed: "bg-red-400",
+  publishing: "bg-purple-400",
 };
 
-const STATUS_BADGE_VARIANT: Record<PostStatus, "success" | "info" | "default" | "danger"> = {
+const STATUS_BADGE_VARIANT: Record<PostStatus, "success" | "info" | "default" | "danger" | "warning"> = {
   published: "success",
   scheduled: "info",
   draft: "default",
   failed: "danger",
+  publishing: "warning",
 };
 
 const PLATFORM_LABELS: Record<Platform, string> = {
@@ -161,6 +169,13 @@ function formatHour(hour: number): string {
   if (hour === 0) return "12 AM";
   if (hour === 12) return "12 PM";
   return hour > 12 ? `${hour - 12} PM` : `${hour} AM`;
+}
+
+function formatTime(hour: number, minute: number): string {
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const h = hour % 12 || 12;
+  const m = String(minute).padStart(2, "0");
+  return `${h}:${m} ${ampm}`;
 }
 
 // ---------- Sub-components ----------
@@ -263,17 +278,117 @@ function EngagementMetric({
 }
 
 // ---------- Main Component ----------
+// Map backend status strings to CalendarPost status
+function mapStatus(backendStatus: string): PostStatus {
+  const s = backendStatus.toLowerCase();
+  if (s === "published" || s === "partially_published") return "published";
+  if (s === "scheduled") return "scheduled";
+  if (s === "failed") return "failed";
+  if (s === "publishing") return "publishing";
+  return "draft";
+}
+
+// Map platform name to Platform type
+function mapPlatform(name: string): Platform {
+  const n = (name || "").toLowerCase();
+  if (n.includes("instagram")) return "instagram";
+  if (n.includes("facebook")) return "facebook";
+  if (n.includes("linkedin")) return "linkedin";
+  if (n.includes("twitter") || n.includes("x")) return "twitter";
+  if (n.includes("youtube")) return "youtube";
+  return "instagram";
+}
+
 export default function CalendarPage() {
   const [view, setView] = useState<CalendarView>("month");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [platformFilter, setPlatformFilter] = useState<Platform | "all">("all");
   const [statusFilter, setStatusFilter] = useState<PostStatus | "all">("all");
   const [selectedPost, setSelectedPost] = useState<CalendarPost | null>(null);
+  const handlePostClick = async (post: CalendarPost) => {
+    setSelectedPost(post);
+    const accountId = localStorage.getItem("account_id");
+    if (!accountId) return;
+    try {
+      const res: any = await api.get(`/accounts/${accountId}/posts/${post.id}`);
+      const p = res.data;
+      if (p) {
+        const updatedPost: CalendarPost = {
+          ...post,
+          status: mapStatus(p.status),
+          engagement: {
+            likes: p.performance?.likes ?? 0,
+            comments: p.performance?.comments ?? 0,
+            shares: p.performance?.shares ?? 0,
+            views: p.performance?.views ?? 0,
+          },
+        };
+        setSelectedPost(updatedPost);
+        setPosts((prev) =>
+          prev.map((item) => (item.id === post.id ? updatedPost : item))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to sync post details:", err);
+    }
+  };
   const [navDirection, setNavDirection] = useState<1 | -1>(1);
   const weekScrollRef = useRef<HTMLDivElement>(null);
-
-  const posts = useMemo(() => [], []);
+  const [posts, setPosts] = useState<CalendarPost[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
   const today = new Date();
+
+  const fetchPosts = useCallback(async () => {
+    const accountId = localStorage.getItem("account_id");
+    if (!accountId) return;
+    setIsLoading(true);
+    try {
+      const res: any = await api.get(`/accounts/${accountId}/posts/?per_page=100`);
+      const items = res.data?.items ?? res.data ?? [];
+      const mapped: CalendarPost[] = items.map((p: any) => {
+        // Determine platform from target_accounts or fallback
+        const firstTarget = p.target_accounts?.[0];
+        const platformName = firstTarget?.platform_name ?? "Instagram";
+        const platform = mapPlatform(platformName);
+
+        // Determine date from scheduled_at, published_at, or created_at
+        const rawDate = p.scheduled_at ?? p.published_at ?? p.created_at;
+        const date = rawDate ? new Date(rawDate) : new Date();
+
+        return {
+          id: p.id,
+          title: p.title || p.content?.slice(0, 40) || "Untitled Post",
+          content: p.content || "",
+          platform,
+          status: mapStatus(p.status),
+          date,
+          hour: date.getHours(),
+          minute: date.getMinutes(),
+          imageUrl: Array.isArray(p.media_urls) && p.media_urls[0]
+            ? (p.media_urls[0].startsWith("data:") ? undefined : p.media_urls[0])
+            : undefined,
+          engagement: {
+            likes: p.performance?.likes ?? 0,
+            comments: p.performance?.comments ?? 0,
+            shares: p.performance?.shares ?? 0,
+            views: p.performance?.views ?? 0,
+          },
+          instagramMusicTrack: p.instagram_music_track,
+          instagramPostType: p.instagram_post_type,
+        } as CalendarPost;
+      });
+      setPosts(mapped);
+    } catch (err) {
+      console.error("Failed to fetch calendar posts:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts]);
 
   const filteredPosts = useMemo(() => {
     return posts.filter((p) => {
@@ -397,7 +512,20 @@ export default function CalendarPage() {
             >
               Auto Schedule
             </Button>
-            <Button icon={<Plus className="w-4 h-4" />}>New Post</Button>
+            <Button
+              variant="secondary"
+              icon={<RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />}
+              onClick={fetchPosts}
+              disabled={isLoading}
+            >
+              Refresh
+            </Button>
+            <Button
+              icon={<Plus className="w-4 h-4" />}
+              onClick={() => navigate("/create-post")}
+            >
+              New Post
+            </Button>
           </div>
         </motion.div>
 
@@ -443,9 +571,13 @@ export default function CalendarPage() {
             >
               <div className={cn("w-2 h-2 rounded-full", stat.dotColor)} />
               <div>
-                <span className="text-lg font-bold text-white">
-                  {stat.count}
-                </span>
+                {isLoading ? (
+                  <span className="inline-block w-8 h-5 rounded bg-white/10 animate-pulse" />
+                ) : (
+                  <span className="text-lg font-bold text-white">
+                    {stat.count}
+                  </span>
+                )}
                 <span className="text-xs text-gray-500 ml-2">
                   {stat.label}
                 </span>
@@ -608,10 +740,9 @@ export default function CalendarPage() {
                         animate={{ opacity: 1 }}
                         transition={{ delay: idx * 0.008 }}
                         onClick={() => {
-                          if (dayPosts.length === 0 && cell.isCurrentMonth) {
-                            console.log(
-                              `create post for date: ${cell.year}-${String(cell.month + 1).padStart(2, "0")}-${String(cell.date).padStart(2, "0")}`
-                            );
+                          if (cell.isCurrentMonth) {
+                            const dateStr = `${cell.year}-${String(cell.month + 1).padStart(2, "0")}-${String(cell.date).padStart(2, "0")}`;
+                            navigate(`/create-post?date=${dateStr}`);
                           }
                         }}
                         className={cn(
@@ -651,7 +782,7 @@ export default function CalendarPage() {
                               key={post.id}
                               post={post}
                               compact={dayPosts.length > 2}
-                              onClick={() => setSelectedPost(post)}
+                              onClick={() => handlePostClick(post)}
                             />
                           ))}
                           {dayPosts.length > 3 && (
@@ -766,7 +897,7 @@ export default function CalendarPage() {
                                   <motion.button
                                     key={post.id}
                                     whileHover={{ scale: 1.02 }}
-                                    onClick={() => setSelectedPost(post)}
+                                    onClick={() => handlePostClick(post)}
                                     className={cn(
                                       "w-full text-left px-2 py-1.5 rounded-md text-[10px] font-medium border mb-0.5 transition-all",
                                       STATUS_CHIP_STYLES[post.status],
@@ -792,10 +923,7 @@ export default function CalendarPage() {
                                       </span>
                                     </div>
                                     <div className="text-[8px] opacity-60 mt-0.5">
-                                      {formatHour(post.hour ?? hour)}
-                                      {post.minute
-                                        ? `:${String(post.minute).padStart(2, "0")}`
-                                        : ""}
+                                      {formatTime(post.hour ?? hour, post.minute ?? 0)}
                                     </div>
                                   </motion.button>
                                 );
@@ -848,7 +976,7 @@ export default function CalendarPage() {
                 <Clock className="w-3.5 h-3.5" />
                 {formatDate(selectedPost.date)}
                 {selectedPost.hour !== undefined &&
-                  ` at ${formatHour(selectedPost.hour)}`}
+                  ` at ${formatTime(selectedPost.hour, selectedPost.minute ?? 0)}`}
               </span>
             </div>
 
@@ -857,15 +985,31 @@ export default function CalendarPage() {
               {selectedPost.title}
             </h3>
 
-            {/* Media placeholder */}
+            {/* Media Preview */}
             {selectedPost.imageUrl && (
-              <div className="w-full h-48 rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 flex flex-col items-center justify-center gap-2">
-                <div className="p-3 rounded-full bg-white/5">
-                  <ImageIcon className="w-8 h-8 text-gray-600" />
+              <div className="w-full h-48 rounded-xl overflow-hidden border border-white/10 bg-black/20 flex items-center justify-center">
+                <img
+                  src={selectedPost.imageUrl}
+                  alt={selectedPost.title || "Post media preview"}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
+
+            {/* Audio/Music Track */}
+            {selectedPost.instagramMusicTrack && (
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300">
+                <Music2 className="w-4 h-4 animate-pulse flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-purple-400 font-semibold truncate">
+                    ♫ {selectedPost.instagramMusicTrack.split(" – ")[0]}
+                  </p>
+                  {selectedPost.instagramMusicTrack.split(" – ")[1] && (
+                    <p className="text-[10px] text-gray-400 truncate">
+                      Artist: {selectedPost.instagramMusicTrack.split(" – ")[1]}
+                    </p>
+                  )}
                 </div>
-                <span className="text-[11px] text-gray-600">
-                  Media preview
-                </span>
               </div>
             )}
 

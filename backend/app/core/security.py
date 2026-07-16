@@ -62,3 +62,26 @@ def decode_token(token: str) -> dict:
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         ) from e
+
+
+def create_password_reset_token(email: str) -> str:
+    """Create a JWT token for password reset, valid for 1 hour."""
+    expire = datetime.now(timezone.utc) + timedelta(hours=1)
+    to_encode = {"sub": email, "exp": expire, "type": "password_reset"}
+    return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+def verify_password_reset_token(token: str) -> str | None:
+    """Verify the reset token and return the email if valid."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+        if payload.get("type") == "password_reset":
+            return payload.get("sub")
+        return None
+    except JWTError:
+        return None
+

@@ -73,7 +73,7 @@ const planLimit = 10;
 // ── Component ───────────────────────────────────────────────────────
 
 export default function TeamPage() {
-  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [members] = useState<TeamMember[]>([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");

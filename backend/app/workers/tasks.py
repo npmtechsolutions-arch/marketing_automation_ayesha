@@ -219,6 +219,41 @@ def cleanup_old_notifications(self):
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def purge_soft_deleted_users(self, retention_days: int | None = None):
+    """Permanently delete users soft-deleted more than ``retention_days`` ago.
+
+    This is the irreversible second stage of account deletion: the API only
+    sets ``deleted_at``; this task removes the user, the workspaces they own,
+    and all associated data once the retention window has elapsed.
+    """
+    import asyncio
+
+    from app.core.config import settings
+    from app.services.purge_service import purge_soft_deleted_users as _purge
+
+    try:
+        days = retention_days if retention_days is not None else settings.SOFT_DELETE_RETENTION_DAYS
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        logger.info(
+            "Purging users soft-deleted before %s (retention %d days)",
+            cutoff.isoformat(),
+            days,
+        )
+
+        summary = asyncio.run(_purge(cutoff))
+
+        logger.info(
+            "Purge complete: removed %d users and %d accounts",
+            summary["users"],
+            summary["accounts"],
+        )
+        return {"status": "purged", "cutoff": cutoff.isoformat(), **summary}
+    except Exception as exc:
+        logger.exception("Failed to purge soft-deleted users")
+        raise self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def refresh_expiring_tokens(self):
     """Check for platform OAuth tokens expiring within 24 hours and
     attempt to refresh them."""

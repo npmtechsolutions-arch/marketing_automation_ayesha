@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/python.exe -m py_compile app/api/v1/endpoints/admin.py)",
+      "Bash(venv/Scripts/python.exe -m compileall -q app)"
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   PenSquare,
@@ -19,6 +19,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { cn, formatDate, formatRelativeTime } from "@/lib/utils";
+import api from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -274,9 +275,34 @@ export default function ActivityPage() {
   const [visibleCount, setVisibleCount] = useState(10);
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [activities, setActivities] = useState<ActivityEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const accountId = localStorage.getItem("account_id");
+
+  useEffect(() => {
+    if (!accountId) { setLoading(false); return; }
+    api.get(`/accounts/${accountId}/activity/?limit=100`)
+      .then((res: any) => {
+        const payload = res.data || res;
+        const items = payload.items || payload || [];
+        const mapped: ActivityEntry[] = items.map((a: any) => ({
+          id: a.id,
+          category: (a.activity_type || a.category || "settings") as ActivityCategory,
+          action: a.action || a.title || "Action",
+          description: a.description || a.message || "",
+          resource_name: a.resource_name || a.resource_id || undefined,
+          status: (a.status || "success") as ActivityStatus,
+          created_at: a.created_at,
+        }));
+        setActivities(mapped);
+      })
+      .catch(() => setActivities([]))
+      .finally(() => setLoading(false));
+  }, [accountId]);
 
   const filtered = useMemo(() => {
-    let items: ActivityEntry[] = [];
+    let items = activities;
 
     // Category filter
     if (categoryFilter !== "all") {

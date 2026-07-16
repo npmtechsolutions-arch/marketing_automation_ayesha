@@ -47,7 +47,7 @@ export function Select({
   return (
     <div className={cn("relative w-full", className)} ref={ref}>
       {label && (
-        <label className="mb-1.5 block text-sm font-medium" style={{ color: "#374151" }}>
+        <label className="mb-1.5 block text-sm font-medium" style={{ color: "var(--page-text)" }}>
           {label}
         </label>
       )}
@@ -57,10 +57,10 @@ export function Select({
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
         style={{
-          backgroundColor: "#ffffff",
-          color: selected ? "#1f2937" : "#9ca3af",
-          borderColor: error ? "#f87171" : open ? "#7c3aed" : "#d1d5db",
-          boxShadow: open ? "0 0 0 3px rgba(124,58,237,0.08)" : "none",
+          backgroundColor: "var(--input-bg)",
+          color: selected ? "var(--input-text)" : "var(--input-placeholder)",
+          borderColor: error ? "var(--accent-red)" : open ? "var(--input-focus-border)" : "var(--input-border)",
+          boxShadow: open ? "0 0 0 3px var(--input-focus-ring)" : "none",
         }}
         className={cn(
           "flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-sm outline-none transition-all duration-200",
@@ -69,7 +69,7 @@ export function Select({
       >
         <span>
           {selected ? (
-            <span className="flex items-center gap-2" style={{ color: "#1f2937" }}>
+            <span className="flex items-center gap-2" style={{ color: "var(--input-text)" }}>
               {selected.icon}
               {selected.label}
             </span>
@@ -79,7 +79,7 @@ export function Select({
         </span>
         <ChevronDown
           className={cn("h-4 w-4 transition-transform duration-200", open && "rotate-180")}
-          style={{ color: "#9ca3af" }}
+          style={{ color: "var(--input-placeholder)" }}
         />
       </button>
 
@@ -91,9 +91,9 @@ export function Select({
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15 }}
             style={{
-              backgroundColor: "#ffffff",
-              border: "1px solid #e5e7eb",
-              boxShadow: "0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)",
+              backgroundColor: "var(--dropdown-bg)",
+              border: "1px solid var(--dropdown-border)",
+              boxShadow: "var(--dropdown-shadow)",
             }}
             className="absolute z-50 mt-1.5 max-h-60 w-full overflow-y-auto rounded-xl p-1"
           >
@@ -107,15 +107,15 @@ export function Select({
                 }}
                 className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-gray-50"
                 style={{
-                  color: option.value === value ? "#7c3aed" : "#374151",
-                  backgroundColor: option.value === value ? "#f5f3ff" : undefined,
+                  color: option.value === value ? "var(--accent-purple)" : "var(--page-text)",
+                  backgroundColor: option.value === value ? "var(--input-focus-ring)" : undefined,
                 }}
               >
                 <span className="flex items-center gap-2">
                   {option.icon}
                   {option.label}
                 </span>
-                {option.value === value && <Check className="h-4 w-4" style={{ color: "#7c3aed" }} />}
+                {option.value === value && <Check className="h-4 w-4" style={{ color: "var(--accent-purple)" }} />}
               </button>
             ))}
           </motion.div>
@@ -123,7 +123,7 @@ export function Select({
       </AnimatePresence>
 
       {error && (
-        <p className="mt-1.5 pl-1 text-xs" style={{ color: "#f87171" }}>{error}</p>
+        <p className="mt-1.5 pl-1 text-xs" style={{ color: "var(--accent-red)" }}>{error}</p>
       )}
     </div>
   );

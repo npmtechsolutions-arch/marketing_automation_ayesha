@@ -45,6 +45,10 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class AccountDeletion(BaseModel):
+    password: str
+
+
 class PasswordReset(BaseModel):
     email: EmailStr
 

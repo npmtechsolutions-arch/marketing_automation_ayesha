@@ -18,6 +18,7 @@ from app.models.strategy import Strategy
 from app.models.team_member import TeamMember, TeamRole
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.strategy import StrategyGenerate, StrategyResponse, StrategyUpdate
+from app.api.v1.endpoints.ai import _call_anthropic
 
 router = APIRouter()
 
@@ -126,13 +127,23 @@ async def generate_strategy(
     if not business:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Business not found")
 
+    # Determine provider and model based on configured API keys
+    provider = "mock"
+    model = "mock"
+    if settings.OPENAI_API_KEY:
+        provider = "openai"
+        model = "gpt-4o"
+    elif settings.ANTHROPIC_API_KEY:
+        provider = "anthropic"
+        model = "claude-sonnet-4-6"
+
     # Log AI generation
     gen = AIGeneration(
         user_id=current_user.id,
         account_id=account_id,
         generation_type=GenerationType.STRATEGY,
-        provider="openai",
-        model="gpt-4o",
+        provider=provider,
+        model=model,
         prompt=f"Strategy for {business.name}: {body.goal}",
         status=AIGenerationStatus.PENDING,
     )
@@ -140,7 +151,7 @@ async def generate_strategy(
     await db.flush()
 
     # Generate strategy content (mock or real)
-    if not settings.OPENAI_API_KEY:
+    if provider == "mock":
         strategy_data = {
             "name": f"AI Strategy: {body.goal[:60]}",
             "reasoning": (
@@ -153,13 +164,9 @@ async def generate_strategy(
             "confidence_score": 0.75,
         }
         gen.status = AIGenerationStatus.COMPLETED
-        gen.provider = "mock"
         gen.response = json.dumps(strategy_data)
     else:
         try:
-            from openai import AsyncOpenAI
-
-            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             system_prompt = (
                 "You are a marketing strategist. Generate a strategy. Return ONLY valid JSON with keys: "
                 "name (string), reasoning (detailed text), platform_mix (object platform->weight 0-1), "
@@ -169,17 +176,26 @@ async def generate_strategy(
                 f"Business: {business.name}\nIndustry: {business.industry or 'general'}\n"
                 f"Goal: {body.goal}\nPlatforms: {body.platforms}\nBudget: ${body.budget or 'flexible'}/month"
             )
-            completion = await client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.7,
-            )
-            raw = completion.choices[0].message.content or "{}"
-            gen.tokens_input = completion.usage.prompt_tokens if completion.usage else 0
-            gen.tokens_output = completion.usage.completion_tokens if completion.usage else 0
+            
+            if provider == "openai":
+                from openai import AsyncOpenAI
+                client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+                completion = await client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.7,
+                )
+                raw = completion.choices[0].message.content or "{}"
+                tokens_in = completion.usage.prompt_tokens if completion.usage else 0
+                tokens_out = completion.usage.completion_tokens if completion.usage else 0
+            else:
+                raw, tokens_in, tokens_out = await _call_anthropic(user_prompt, system_prompt)
+
+            gen.tokens_input = tokens_in
+            gen.tokens_output = tokens_out
             gen.response = raw
             gen.status = AIGenerationStatus.COMPLETED
 

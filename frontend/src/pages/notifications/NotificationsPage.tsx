@@ -1,20 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BellOff,
   CheckCheck,
   Trash2,
-  FileText,
-  Brain,
-  Users,
-  CreditCard,
-  Settings,
-  AlertCircle,
-  CheckCircle2,
-  XCircle,
-  TrendingUp,
-  UserPlus,
-  Zap,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -24,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { cn } from "@/lib/utils";
+import api from "@/lib/api";
 
 // ── Types ───────────────────────────────────────────────────────────
 type NotifType = "posts" | "strategy" | "team" | "billing" | "system";
@@ -60,6 +50,33 @@ export default function NotificationsPage() {
   const [activeFilter, setActiveFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch notifications from API
+  useEffect(() => {
+    api.get("/notifications/?limit=50")
+      .then((res: any) => {
+        const payload = res.data || res;
+        const items: any[] = payload.items || payload || [];
+        // Map backend notification shape to local type
+        const mapped: Notification[] = items.map((n: any) => ({
+          id: n.id,
+          type: (n.notification_type || n.type || "system") as NotifType,
+          title: n.title || n.subject || "Notification",
+          message: n.message || n.body || "",
+          time: n.created_at
+            ? new Date(n.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+            : "",
+          read: n.is_read ?? n.read ?? false,
+          icon: BellOff, // fallback icon; replace per type if available
+          iconColor: "text-purple-400",
+          iconBg: "bg-purple-500/10",
+        }));
+        setNotifications(mapped);
+      })
+      .catch(() => setNotifications([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -72,15 +89,24 @@ export default function NotificationsPage() {
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
   const paginated = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
+    try {
+      await api.post("/notifications/mark-all-read");
+    } catch {}
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
 
-  const markAsRead = (id: string) => {
+  const markAsRead = async (id: string) => {
+    try {
+      await api.post(`/notifications/${id}/mark-read`);
+    } catch {}
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
   };
 
-  const deleteNotification = (id: string) => {
+  const deleteNotification = async (id: string) => {
+    try {
+      await api.delete(`/notifications/${id}`);
+    } catch {}
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 

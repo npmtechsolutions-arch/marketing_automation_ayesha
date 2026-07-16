@@ -35,11 +35,9 @@ export function GlassCard({
       whileHover={hover ? { y: -3, transition: { duration: 0.2 } } : undefined}
       onClick={onClick}
       style={{
-        backgroundColor: "#ffffff",
-        border: glow ? "1px solid rgba(124,58,237,0.2)" : "1px solid #e5e7eb",
-        boxShadow: glow
-          ? "0 4px 20px rgba(124,58,237,0.08), 0 1px 3px rgba(0,0,0,0.04)"
-          : "0 1px 3px rgba(0,0,0,0.04), 0 1px 8px rgba(0,0,0,0.02)",
+        backgroundColor: "var(--surface-bg)",
+        border: glow ? "1px solid var(--surface-border-hover)" : "1px solid var(--surface-border)",
+        boxShadow: glow ? "var(--surface-shadow-hover)" : "var(--surface-shadow)",
         borderRadius: "16px",
       }}
       className={cn(

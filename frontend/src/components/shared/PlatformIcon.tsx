@@ -115,6 +115,12 @@ function PlatformSVG({ platform, size }: { platform: Platform; size: number }) {
           <path d="M12 0a12 12 0 00-4.373 23.178c-.07-.633-.134-1.606.028-2.298.146-.625.943-3.998.943-3.998s-.24-.482-.24-1.194c0-1.118.648-1.953 1.456-1.953.687 0 1.018.515 1.018 1.134 0 .69-.44 1.723-.667 2.68-.19.803.402 1.457 1.193 1.457 1.43 0 2.53-1.51 2.53-3.69 0-1.929-1.387-3.278-3.369-3.278-2.294 0-3.64 1.72-3.64 3.5 0 .693.267 1.435.6 1.838a.24.24 0 01.056.23c-.061.256-.198.803-.224.915-.035.146-.116.177-.268.107-1-.465-1.624-1.926-1.624-3.1 0-2.523 1.834-4.84 5.286-4.84 2.775 0 4.932 1.977 4.932 4.62 0 2.757-1.739 4.976-4.151 4.976-.811 0-1.573-.421-1.834-.919l-.498 1.902c-.181.695-.669 1.566-.995 2.097A12 12 0 1012 0z" />
         </svg>
       );
+    default:
+      return (
+        <svg viewBox="0 0 24 24" width={size} height={size} fill="white">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.53c-.26-.81-1-1.4-1.9-1.4h-1v-3c0-.55-.45-1-1-1h-6v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.4z" />
+        </svg>
+      );
   }
 }
 
@@ -124,8 +130,23 @@ export default function PlatformIcon({
   showLabel = false,
   className,
 }: PlatformIconProps) {
-  const config = platformConfig[platform];
-  const sizes = sizeMap[size];
+  // Normalize platform key/name/slug
+  const platformKey = (
+    typeof platform === "string"
+      ? platform
+      : typeof platform === "object" && platform
+      ? (platform as any).slug || (platform as any).name || ""
+      : ""
+  ).toLowerCase() as Platform;
+
+  const config = platformConfig[platformKey] || {
+    label: typeof platform === "string" ? platform : (platform as any)?.name || "Social Profile",
+    color: "#64748B",
+    bg: "bg-slate-600",
+    letter: "S",
+  };
+
+  const sizes = sizeMap[size] || sizeMap.md;
   const iconSize = size === "sm" ? 12 : size === "md" ? 14 : 18;
 
   return (
@@ -137,7 +158,7 @@ export default function PlatformIcon({
           config.bg
         )}
       >
-        <PlatformSVG platform={platform} size={iconSize} />
+        <PlatformSVG platform={platformKey} size={iconSize} />
       </div>
       {showLabel && (
         <span className={cn("font-medium text-slate-300", sizes.label)}>

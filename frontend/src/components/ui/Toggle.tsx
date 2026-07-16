@@ -26,10 +26,10 @@ export function Toggle({
       {(label || description) && (
         <div className="min-w-0 flex-1">
           {label && (
-            <p className="text-sm font-medium" style={{ color: "#1f2937" }}>{label}</p>
+            <p className="text-sm font-medium" style={{ color: "var(--page-text)" }}>{label}</p>
           )}
           {description && (
-            <p className="mt-0.5 text-xs" style={{ color: "#6b7280" }}>{description}</p>
+            <p className="mt-0.5 text-xs" style={{ color: "var(--page-text-muted)" }}>{description}</p>
           )}
         </div>
       )}
@@ -39,7 +39,7 @@ export function Toggle({
         onCheckedChange={onCheckedChange}
         disabled={disabled}
         className="relative h-6 w-11 flex-shrink-0 rounded-full outline-none transition-colors duration-200"
-        style={{ backgroundColor: checked ? "#7c3aed" : "#d1d5db" }}
+        style={{ backgroundColor: checked ? "var(--accent-purple)" : "var(--input-border)" }}
       >
         <Switch.Thumb
           className={cn(

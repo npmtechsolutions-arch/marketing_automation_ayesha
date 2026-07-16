@@ -2,13 +2,14 @@
 
 import uuid
 from datetime import datetime, timezone
+import logging
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.core.deps import get_current_active_user
 from app.models.platform import SocialAccount
 from app.models.post import Post, PostStatus
@@ -112,6 +113,7 @@ async def list_posts(
     stmt = (
         select(Post)
         .where(where_clause)
+        .options(selectinload(Post.performances))
         .order_by(Post.created_at.desc())
         .offset((page - 1) * per_page)
         .limit(per_page)
@@ -187,11 +189,202 @@ async def create_post(
         ai_images=body.ai_images,
         digital_assets=body.digital_assets,
         status=PostStatus.DRAFT,
+        instagram_post_type=body.instagram_post_type,
+        instagram_music_track=body.instagram_music_track,
+        instagram_music_url=body.instagram_music_url,
+        instagram_music_start_offset=body.instagram_music_start_offset,
+        instagram_music_end_offset=body.instagram_music_end_offset,
+        instagram_video_url=body.instagram_video_url,
+        facebook_post_type=body.facebook_post_type,
+        facebook_music_track=body.facebook_music_track,
+        facebook_music_url=body.facebook_music_url,
+        facebook_music_start_offset=body.facebook_music_start_offset,
+        facebook_music_end_offset=body.facebook_music_end_offset,
+        facebook_video_url=body.facebook_video_url,
+        youtube_post_type=body.youtube_post_type,
+        linkedin_post_type=body.linkedin_post_type,
+        twitter_post_type=body.twitter_post_type,
     )
     db.add(post)
     await db.flush()
     await db.refresh(post)
     return PostResponse.model_validate(post)
+
+
+async def _ensure_valid_token(sa: SocialAccount, db: AsyncSession) -> None:
+    """Check if the social account's OAuth token has expired (or is expiring soon),
+    and refresh it using the refresh token if available.
+    """
+    if not sa.token_expires_at or not sa.refresh_token:
+        return
+
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    expires_at = sa.token_expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at > now + timedelta(minutes=2):
+        return
+
+    platform_slug = (sa.platform.slug if sa.platform else "").lower()
+    
+    # YouTube (Google) Refresh Flow
+    if "youtube" in platform_slug:
+        import httpx
+        from app.core.config import settings
+        
+        logging.getLogger(__name__).info("YouTube token expired for account %s. Refreshing...", sa.account_name)
+        try:
+            async with httpx.AsyncClient() as client:
+                res = await client.post(
+                    "https://oauth2.googleapis.com/token",
+                    data={
+                        "client_id": settings.GOOGLE_CLIENT_ID,
+                        "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                        "refresh_token": sa.refresh_token,
+                        "grant_type": "refresh_token",
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=15.0
+                )
+            if res.status_code == 200:
+                data = res.json()
+                sa.access_token = data["access_token"]
+                expires_in = data.get("expires_in", 3600)
+                sa.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+                if "refresh_token" in data:
+                    sa.refresh_token = data["refresh_token"]
+                db.add(sa)
+                await db.flush()
+                logging.getLogger(__name__).info("YouTube token successfully refreshed for account %s.", sa.account_name)
+            else:
+                logging.getLogger(__name__).error("Failed to refresh YouTube token: %s", res.text)
+        except Exception as exc:
+            logging.getLogger(__name__).exception("Error refreshing YouTube token: %s", exc)
+
+    # Twitter/X Refresh Flow
+    elif "twitter" in platform_slug or platform_slug == "x":
+        import httpx
+        from app.core.config import settings
+        import base64
+        
+        logging.getLogger(__name__).info("Twitter token expired for account %s. Refreshing...", sa.account_name)
+        try:
+            auth_str = f"{settings.TWITTER_CLIENT_ID}:{settings.TWITTER_CLIENT_SECRET}"
+            b64_auth = base64.b64encode(auth_str.encode()).decode()
+            
+            async with httpx.AsyncClient() as client:
+                res = await client.post(
+                    "https://api.twitter.com/2/oauth2/token",
+                    data={
+                        "grant_type": "refresh_token",
+                        "refresh_token": sa.refresh_token,
+                        "client_id": settings.TWITTER_CLIENT_ID,
+                    },
+                    headers={
+                        "Authorization": f"Basic {b64_auth}",
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                    timeout=15.0
+                )
+            if res.status_code == 200:
+                data = res.json()
+                sa.access_token = data["access_token"]
+                expires_in = data.get("expires_in", 7200)
+                sa.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+                if "refresh_token" in data:
+                    sa.refresh_token = data["refresh_token"]
+                db.add(sa)
+                await db.flush()
+                logging.getLogger(__name__).info("Twitter token successfully refreshed for account %s.", sa.account_name)
+            else:
+                logging.getLogger(__name__).error("Failed to refresh Twitter token: %s", res.text)
+        except Exception as exc:
+            logging.getLogger(__name__).exception("Error refreshing Twitter token: %s", exc)
+
+
+async def _sync_post_performance(post: Post, db: AsyncSession):
+    from app.services.platform_service import PlatformService
+    from app.models.post_performance import PostPerformance
+    from app.models.platform import SocialAccount
+    
+    if post.status not in [PostStatus.PUBLISHED, PostStatus.PARTIALLY_PUBLISHED]:
+        return
+
+    targets = post.posting_results or []
+    if not targets:
+        return
+
+    for target in targets:
+        if target.get("status") != "published":
+            continue
+        ext_id = target.get("external_post_id")
+        sa_id = target.get("social_account_id")
+        if not ext_id or not sa_id:
+            continue
+
+        try:
+            sa_uuid = uuid.UUID(sa_id)
+            sa_result = await db.execute(
+                select(SocialAccount).where(SocialAccount.id == sa_uuid)
+            )
+            sa = sa_result.scalar_one_or_none()
+            if not sa:
+                continue
+
+            import asyncio
+            metrics = await asyncio.to_thread(PlatformService.fetch_performance, ext_id, sa)
+            if not metrics:
+                continue
+
+            platform_type = (sa.platform.slug if sa.platform else "instagram").lower()
+
+            existing_perf = None
+            duplicates_to_delete = []
+            for p in post.performances:
+                if p.platform_type == platform_type:
+                    if not existing_perf:
+                        existing_perf = p
+                    else:
+                        duplicates_to_delete.append(p)
+
+            if existing_perf:
+                existing_perf.impressions = metrics.get("impressions", existing_perf.impressions)
+                existing_perf.reach = metrics.get("reach", existing_perf.reach)
+                existing_perf.likes = metrics.get("likes", existing_perf.likes)
+                existing_perf.comments = metrics.get("comments", existing_perf.comments)
+                existing_perf.shares = metrics.get("shares", existing_perf.shares)
+                existing_perf.saves = metrics.get("saves", existing_perf.saves)
+                existing_perf.clicks = metrics.get("clicks", existing_perf.clicks)
+                existing_perf.video_views = metrics.get("video_views", existing_perf.video_views)
+                existing_perf.engagement_rate = metrics.get("engagement_rate", existing_perf.engagement_rate)
+                existing_perf.click_through_rate = metrics.get("click_through_rate", existing_perf.click_through_rate)
+                existing_perf.fetched_at = datetime.now(timezone.utc)
+            else:
+                db.add(PostPerformance(
+                    id=uuid.uuid4(),
+                    post_id=post.id,
+                    platform_type=platform_type,
+                    impressions=metrics.get("impressions", 0),
+                    reach=metrics.get("reach", 0),
+                    likes=metrics.get("likes", 0),
+                    comments=metrics.get("comments", 0),
+                    shares=metrics.get("shares", 0),
+                    saves=metrics.get("saves", 0),
+                    clicks=metrics.get("clicks", 0),
+                    video_views=metrics.get("video_views", 0),
+                    engagement_rate=metrics.get("engagement_rate", 0.0),
+                    click_through_rate=metrics.get("click_through_rate", 0.0),
+                ))
+            
+            if duplicates_to_delete:
+                for dup in duplicates_to_delete:
+                    await db.delete(dup)
+                    
+            await db.flush()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Failed to sync post performance: %s", e)
 
 
 @router.get("/{post_id}", response_model=PostWithPerformance)
@@ -204,6 +397,12 @@ async def get_post(
     """Get a single post with its performance data."""
     await _verify_account_access(account_id, current_user, db)
     post = await _get_post_or_404(post_id, account_id, db, with_performances=True)
+    
+    # Sync performance in real-time
+    await _sync_post_performance(post, db)
+    await db.commit()
+    await db.refresh(post, ["performances"])
+    
     return PostWithPerformance.model_validate(post)
 
 
@@ -278,10 +477,174 @@ async def delete_post(
     return MessageResponse(message="Post deleted successfully")
 
 
+async def publish_to_platforms(post_id: uuid.UUID):
+    from app.services.platform_service import PlatformService
+    from app.models.platform import SocialAccount
+    import logging
+
+    async with AsyncSessionLocal() as session:
+        try:
+            # Fetch post
+            result = await session.execute(
+                select(Post).where(Post.id == post_id, Post.deleted_at.is_(None))
+            )
+            post = result.scalar_one_or_none()
+            if not post:
+                return
+
+            targets = post.target_accounts or []
+            if not targets:
+                post.status = PostStatus.PUBLISHED
+                post.published_at = datetime.now(timezone.utc)
+                from app.models.post_performance import PostPerformance
+                import random
+                session.add(PostPerformance(
+                    id=uuid.uuid4(),
+                    post_id=post.id,
+                    platform_type="instagram",
+                    impressions=0,
+                    reach=0,
+                    likes=0,
+                    comments=0,
+                    shares=0,
+                    saves=0,
+                    clicks=0,
+                    video_views=0,
+                    engagement_rate=0.0,
+                    click_through_rate=0.0,
+                ))
+                await session.flush()
+                await session.commit()
+                return
+
+            success_count = 0
+            failed_count = 0
+            posting_results = []
+
+            for target in targets:
+                sa_id = target.get("social_account_id")
+                if not sa_id:
+                    continue
+
+                try:
+                    sa_uuid = uuid.UUID(sa_id)
+                except ValueError:
+                    failed_count += 1
+                    continue
+
+                sa_result = await session.execute(
+                    select(SocialAccount).where(SocialAccount.id == sa_uuid)
+                )
+                sa = sa_result.scalar_one_or_none()
+                if not sa:
+                    failed_count += 1
+                    posting_results.append({
+                        "social_account_id": sa_id,
+                        "status": "failed",
+                        "error": "Social account not found",
+                    })
+                    continue
+
+                platform_name = (sa.platform.name if sa.platform else "").lower()
+                platform_slug = (sa.platform.slug if sa.platform else "").lower() or platform_name
+
+                # Auto-refresh OAuth tokens if expired/expiring
+                await _ensure_valid_token(sa, session)
+
+                try:
+                    import asyncio
+                    if "facebook" in platform_slug:
+                        res = await asyncio.to_thread(PlatformService.publish_to_facebook, post, sa)
+                    elif "instagram" in platform_slug or "insta" in platform_slug:
+                        res = await asyncio.to_thread(PlatformService.publish_to_instagram, post, sa)
+                    elif "linkedin" in platform_slug:
+                        res = await asyncio.to_thread(PlatformService.publish_to_linkedin, post, sa)
+                    elif "youtube" in platform_slug:
+                        res = await asyncio.to_thread(PlatformService.publish_to_youtube, post, sa)
+                    elif "twitter" in platform_slug or platform_slug == "x":
+                        res = await asyncio.to_thread(PlatformService.publish_to_twitter, post, sa)
+                    else:
+                        res = await asyncio.to_thread(PlatformService.publish_to_instagram, post, sa)
+
+                    success_count += 1
+                    posting_results.append({
+                        "social_account_id": sa_id,
+                        "status": "published",
+                        "external_post_id": res.get("external_post_id"),
+                        "post_url": res.get("post_url", f"https://mock-{platform_slug}.com/posts/{res.get('external_post_id')}"),
+                    })
+                except Exception as exc:
+                    failed_count += 1
+                    posting_results.append({
+                        "social_account_id": sa_id,
+                        "status": "failed",
+                        "error": str(exc),
+                    })
+
+            if success_count > 0 and failed_count == 0:
+                post.status = PostStatus.PUBLISHED
+                post.published_at = datetime.now(timezone.utc)
+            elif success_count > 0 and failed_count > 0:
+                post.status = PostStatus.PARTIALLY_PUBLISHED
+                post.published_at = datetime.now(timezone.utc)
+            else:
+                post.status = PostStatus.FAILED
+
+            if success_count > 0:
+                from app.models.post_performance import PostPerformance
+                import random
+                for res_item in posting_results:
+                    if res_item["status"] == "published":
+                        sa_id = res_item["social_account_id"]
+                        try:
+                            sa_uuid = uuid.UUID(sa_id)
+                            sa_result = await session.execute(
+                                select(SocialAccount).where(SocialAccount.id == sa_uuid)
+                            )
+                            sa = sa_result.scalar_one_or_none()
+                            platform_type = (sa.platform.slug if sa and sa.platform else "instagram").lower()
+                        except Exception:
+                            platform_type = "instagram"
+                        
+                        session.add(PostPerformance(
+                            id=uuid.uuid4(),
+                            post_id=post.id,
+                            platform_type=platform_type,
+                            impressions=0,
+                            reach=0,
+                            likes=0,
+                            comments=0,
+                            shares=0,
+                            saves=0,
+                            clicks=0,
+                            video_views=0,
+                            engagement_rate=0.0,
+                            click_through_rate=0.0,
+                        ))
+
+            post.posting_results = posting_results
+            await session.flush()
+            await session.commit()
+
+        except Exception as e:
+            await session.rollback()
+            logging.getLogger(__name__).exception("Failed to run publish background task: %s", e)
+            try:
+                async with AsyncSessionLocal() as fail_session:
+                    db_post = await fail_session.get(Post, post_id)
+                    if db_post:
+                        db_post.status = PostStatus.FAILED
+                        db_post.error_message = f"Failed to run publish background task: {str(e)}"
+                        await fail_session.commit()
+            except Exception as final_err:
+                logging.getLogger(__name__).error("Failed to mark post as failed in DB: %s", final_err)
+
+
 @router.post("/{post_id}/publish", response_model=PostResponse)
 async def publish_post(
     account_id: uuid.UUID,
     post_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):
@@ -299,9 +662,9 @@ async def publish_post(
     post.published_at = datetime.now(timezone.utc)
     await db.flush()
     await db.refresh(post)
+    await db.commit()
 
-    # TODO: Dispatch background task to publish to each platform via Celery / ARQ
-    # background_tasks.add_task(publish_to_platforms, post.id)
+    background_tasks.add_task(publish_to_platforms, post.id)
 
     return PostResponse.model_validate(post)
 

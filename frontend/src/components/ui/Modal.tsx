@@ -56,7 +56,7 @@ export function Modal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
+            style={{ backgroundColor: "var(--overlay-bg)" }}
             className="absolute inset-0 backdrop-blur-[2px]"
             onClick={onClose}
           />
@@ -68,9 +68,9 @@ export function Modal({
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.2 }}
             style={{
-              backgroundColor: "rgba(15, 23, 42, 0.95)",
-              border: "1px solid rgba(148, 163, 184, 0.2)",
-              boxShadow: "0 25px 60px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.2)",
+              backgroundColor: "var(--dropdown-bg)",
+              border: "1px solid var(--dropdown-border)",
+              boxShadow: "var(--dropdown-shadow)",
               backdropFilter: "blur(12px)",
             }}
             className={cn("relative w-full rounded-2xl", sizeMap[size])}
@@ -79,7 +79,7 @@ export function Modal({
             {(title || showClose) && (
               <div
                 className="flex items-center justify-between px-6 py-4"
-                style={{ borderBottom: "1px solid rgba(148, 163, 184, 0.1)" }}
+                style={{ borderBottom: "1px solid var(--surface-border)" }}
               >
                 {title && (
                   <h2 className="text-lg font-semibold text-white">

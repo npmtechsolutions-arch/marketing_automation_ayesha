@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -23,6 +23,7 @@ import { Toggle } from "@/components/ui/Toggle";
 import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { cn, formatDate, getInitials } from "@/lib/utils";
+import api from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -85,7 +86,6 @@ const FIELD_TYPE_OPTIONS = [
   { value: "number", label: "Number" },
 ];
 
-
 // ── Helpers ────────────────────────────────────────────────────────
 
 function slugify(text: string): string {
@@ -139,7 +139,7 @@ const fadeUp = {
 
 // ── Empty Form State ───────────────────────────────────────────────
 
-const emptyForm: Omit<SocialPlatform, "id" | "accountsCount" | "createdAt"> = {
+const emptyForm = {
   name: "",
   slug: "",
   color: PRESET_COLORS[0],
@@ -147,7 +147,7 @@ const emptyForm: Omit<SocialPlatform, "id" | "accountsCount" | "createdAt"> = {
   description: "",
   baseUrl: "",
   apiConfigTemplate: [
-    { key: "", label: "", type: "text", required: true },
+    { key: "", label: "", type: "text" as const, required: true },
   ],
   isActive: true,
 };
@@ -158,78 +158,57 @@ function PlatformCard({
   platform,
   onEdit,
   onDelete,
-  onManageAccounts,
 }: {
   platform: SocialPlatform;
   onEdit: () => void;
   onDelete: () => void;
-  onManageAccounts: () => void;
 }) {
   return (
-    <GlassCard hover className="relative overflow-hidden group">
-      {/* Color accent bar */}
-      <div
-        className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl"
-        style={{ backgroundColor: platform.color }}
-      />
-
-      <div className="pt-2">
-        {/* Header row */}
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <PlatformIconCircle platform={platform} />
-            <div>
-              <h3 className="text-white font-semibold text-base">{platform.name}</h3>
-              <Badge
-                variant={platform.isActive ? "success" : "default"}
-                dot
-                size="sm"
-              >
+    <GlassCard padding="md" hover>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex gap-4">
+          <PlatformIconCircle platform={platform} />
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-white text-lg">
+                {platform.name}
+              </h3>
+              <Badge variant={platform.isActive ? "success" : "default"}>
                 {platform.isActive ? "Active" : "Inactive"}
               </Badge>
             </div>
+            <p className="text-gray-400 text-sm mt-1 line-clamp-2">
+              {platform.description || "No description provided."}
+            </p>
+            <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+              <span className="flex items-center gap-1">
+                <Users className="w-3.5 h-3.5" />
+                {platform.accountsCount} Account{platform.accountsCount !== 1 ? "s" : ""}
+              </span>
+              <span className="flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5" />
+                Configured {formatDate(platform.createdAt)}
+              </span>
+            </div>
           </div>
         </div>
-
-        {/* Description */}
-        <p className="text-sm text-gray-400 line-clamp-2 mb-4 min-h-[2.5rem]">
-          {platform.description}
-        </p>
-
-        {/* Stats row */}
-        <div className="flex items-center justify-between text-xs text-gray-500 mb-4 pb-4 border-b border-white/5">
-          <span className="flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5" />
-            {platform.accountsCount} account{platform.accountsCount !== 1 ? "s" : ""} connected
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5" />
-            {formatDate(platform.createdAt)}
-          </span>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 shrink-0">
           <Button
-            variant="secondary"
-            size="sm"
-            className="flex-1"
-            onClick={onManageAccounts}
-          >
-            Manage Accounts
-          </Button>
-          <button
+            variant="ghost"
+            size="xs"
             onClick={onEdit}
             className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
           >
             <Pencil className="w-4 h-4" />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={onDelete}
             className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
           >
             <Trash2 className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
       </div>
     </GlassCard>
@@ -240,6 +219,7 @@ function PlatformCard({
 
 export default function PlatformsPage() {
   const [platforms, setPlatforms] = useState<SocialPlatform[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -251,11 +231,43 @@ export default function PlatformsPage() {
   const [form, setForm] = useState(emptyForm);
   const [customColor, setCustomColor] = useState("");
 
+  const accountId = localStorage.getItem("account_id");
+
+  const fetchPlatforms = async () => {
+    if (!accountId) return;
+    setIsLoading(true);
+    try {
+      const res: any = await api.get(`/accounts/${accountId}/social-platforms/`);
+      const fetched = res.items || res.data?.items || [];
+      const mapped = fetched.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        slug: item.slug,
+        color: item.color || "#6366F1",
+        icon: item.icon || "globe",
+        description: item.description || "",
+        baseUrl: item.base_url || "",
+        apiConfigTemplate: item.api_config_template?.fields || [],
+        accountsCount: item.social_accounts_count || 0,
+        isActive: item.is_active,
+        createdAt: item.created_at,
+      }));
+      setPlatforms(mapped);
+    } catch (error) {
+      console.error("Error fetching platforms:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPlatforms();
+  }, [accountId]);
+
   const totalAccounts = useMemo(
     () => platforms.reduce((sum, p) => sum + p.accountsCount, 0),
     [platforms]
   );
-  // Use in subtitle
   void totalAccounts;
 
   // ── Handlers ─────────────────────────────────────────────────────
@@ -285,34 +297,43 @@ export default function PlatformsPage() {
     setShowModal(true);
   }
 
-  function handleSave() {
-    if (editingPlatform) {
-      setPlatforms((prev) =>
-        prev.map((p) =>
-          p.id === editingPlatform.id
-            ? { ...p, ...form, apiConfigTemplate: form.apiConfigTemplate.filter((f) => f.key && f.label) }
-            : p
-        )
-      );
-    } else {
-      const newPlatform: SocialPlatform = {
-        ...form,
-        id: Date.now().toString(),
-        accountsCount: 0,
-        createdAt: new Date().toISOString(),
-        apiConfigTemplate: form.apiConfigTemplate.filter((f) => f.key && f.label),
+  async function handleSave() {
+    if (!accountId) return;
+    try {
+      const templateFields = form.apiConfigTemplate.filter((f) => f.key && f.label);
+      const payload = {
+        name: form.name,
+        slug: form.slug,
+        color: form.color,
+        icon: form.icon,
+        description: form.description,
+        base_url: form.baseUrl,
+        api_config_template: { fields: templateFields },
+        is_active: form.isActive,
       };
-      setPlatforms((prev) => [...prev, newPlatform]);
+
+      if (editingPlatform) {
+        await api.put(`/accounts/${accountId}/social-platforms/${editingPlatform.id}`, payload);
+      } else {
+        await api.post(`/accounts/${accountId}/social-platforms/`, payload);
+      }
+      setShowModal(false);
+      await fetchPlatforms();
+    } catch (error) {
+      console.error("Error saving platform:", error);
     }
-    setShowModal(false);
   }
 
-  function confirmDelete() {
-    if (deletingPlatform) {
-      setPlatforms((prev) => prev.filter((p) => p.id !== deletingPlatform.id));
+  async function confirmDelete() {
+    if (!accountId || !deletingPlatform) return;
+    try {
+      await api.delete(`/accounts/${accountId}/social-platforms/${deletingPlatform.id}`);
+      setShowDeleteModal(false);
+      setDeletingPlatform(null);
+      await fetchPlatforms();
+    } catch (error) {
+      console.error("Error deleting platform:", error);
     }
-    setShowDeleteModal(false);
-    setDeletingPlatform(null);
   }
 
   function handleNameChange(name: string) {
@@ -380,23 +401,32 @@ export default function PlatformsPage() {
         </Button>
       </motion.div>
 
-      {/* Content */}
-      {platforms.length === 0 ? (
-        <GlassCard>
-          <EmptyState
-            icon={<Layers className="w-7 h-7" />}
-            title="No platforms yet"
-            description="Create your first social media platform to start connecting accounts and scheduling posts."
-            actionLabel="Create Your First Platform"
-            onAction={openCreateModal}
-          />
-        </GlassCard>
+      {/* Main Grid */}
+      {isLoading && platforms.length === 0 ? (
+        <div className="flex items-center justify-center py-20 text-gray-400">
+          Loading platforms...
+        </div>
+      ) : platforms.length === 0 ? (
+        <EmptyState
+          icon={<Globe className="w-10 h-10 text-gray-400" />}
+          title="No Platforms Configured"
+          description="Create your first social media platform configuration to connect accounts."
+          action={
+            <Button
+              variant="primary"
+              icon={<Plus className="w-4 h-4" />}
+              onClick={openCreateModal}
+            >
+              Configure Platform
+            </Button>
+          }
+        />
       ) : (
         <motion.div
           variants={stagger}
           initial="hidden"
           animate="visible"
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+          className="grid grid-cols-1 md:grid-cols-2 gap-6"
         >
           {platforms.map((platform) => (
             <motion.div key={platform.id} variants={fadeUp}>
@@ -407,156 +437,137 @@ export default function PlatformsPage() {
                   setDeletingPlatform(platform);
                   setShowDeleteModal(true);
                 }}
-                onManageAccounts={() => {
-                  /* navigate to accounts filtered by platform */
-                }}
               />
             </motion.div>
           ))}
         </motion.div>
       )}
 
-      {/* ── Add/Edit Platform Modal ──────────────────────────────── */}
+      {/* ── Add/Edit Platform Modal ────────────────────────────────── */}
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title={editingPlatform ? "Edit Platform" : "Create Platform"}
-        size="xl"
+        title={editingPlatform ? "Edit Platform" : "Add Platform"}
+        size="lg"
       >
-        <div className="space-y-6">
-          {/* Name + Slug row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Platform Name"
-              placeholder="e.g. Facebook, Custom Platform"
-              value={form.name}
-              onChange={(e) => handleNameChange(e.target.value)}
-            />
-            <Input
-              label="Slug"
-              placeholder="platform-slug"
-              value={form.slug}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, slug: slugify(e.target.value) }))
-              }
-            />
-          </div>
-
-          {/* Color Picker */}
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-2 pl-1">
-              Platform Color
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
-              {PRESET_COLORS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  onClick={() => {
-                    setForm((prev) => ({ ...prev, color }));
-                    setCustomColor("");
-                  }}
-                  className={cn(
-                    "w-8 h-8 rounded-full border-2 transition-all duration-200 hover:scale-110",
-                    form.color === color && !customColor
-                      ? "border-white scale-110 ring-2 ring-white/20"
-                      : "border-transparent"
-                  )}
-                  style={{ backgroundColor: color }}
-                />
-              ))}
-              {/* Custom hex */}
-              <div className="flex items-center gap-2 ml-2">
-                <div
-                  className={cn(
-                    "w-8 h-8 rounded-full border-2 transition-all",
-                    customColor
-                      ? "border-white ring-2 ring-white/20"
-                      : "border-white/20"
-                  )}
-                  style={{
-                    backgroundColor: customColor || "#333",
-                  }}
-                />
-                <input
-                  type="text"
-                  placeholder="#HEX"
-                  value={customColor}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setCustomColor(val);
-                    if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
-                      setForm((prev) => ({ ...prev, color: val }));
-                    }
-                  }}
-                  className="w-24 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-gray-500 outline-none focus:border-purple-500/50"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Icon + Active Toggle row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-            <Select
-              label="Icon"
-              options={ICON_OPTIONS}
-              value={form.icon}
-              onChange={(val) => setForm((prev) => ({ ...prev, icon: val }))}
-            />
-            <div className="pb-1">
-              <Toggle
-                label="Active"
-                description="Enable posting to this platform"
-                checked={form.isActive}
-                onCheckedChange={(val) =>
-                  setForm((prev) => ({ ...prev, isActive: val }))
+        <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-1">
+          {/* General Config */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-purple-400">
+              General Info
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="Platform Name"
+                placeholder="e.g. Meta Ads, Pinterest"
+                value={form.name}
+                onChange={(e) => handleNameChange(e.target.value)}
+              />
+              <Input
+                label="API Slug"
+                placeholder="e.g. meta-ads"
+                value={form.slug}
+                disabled={!!editingPlatform}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, slug: slugify(e.target.value) }))
                 }
               />
             </div>
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">
-              Description
-            </label>
-            <textarea
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="API Base URL (Optional)"
+                placeholder="https://api.platform.com/v1"
+                value={form.baseUrl}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, baseUrl: e.target.value }))
+                }
+              />
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Default Icon
+                </label>
+                <Select
+                  value={form.icon}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, icon: e.target.value }))
+                  }
+                  options={ICON_OPTIONS}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Platform Color
+                </label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {PRESET_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        setForm((prev) => ({ ...prev, color: c }));
+                        setCustomColor("");
+                      }}
+                      className={cn(
+                        "w-6 h-6 rounded-full border transition-all scale-100",
+                        form.color === c
+                          ? "border-white scale-110 shadow-lg"
+                          : "border-transparent hover:scale-105"
+                      )}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+                <Input
+                  placeholder="Or enter custom Hex color (#FF00FF)"
+                  value={customColor}
+                  onChange={(e) => {
+                    setCustomColor(e.target.value);
+                    if (e.target.value.match(/^#[0-9A-Fa-f]{6}$/)) {
+                      setForm((prev) => ({ ...prev, color: e.target.value }));
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex flex-col justify-end">
+                <Toggle
+                  label="Is Platform Active"
+                  checked={form.isActive}
+                  onChange={(checked) =>
+                    setForm((prev) => ({ ...prev, isActive: checked }))
+                  }
+                />
+              </div>
+            </div>
+            <Input
+              label="Description"
+              placeholder="Brief description of what this platform is used for..."
               value={form.description}
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, description: e.target.value }))
               }
-              placeholder="Brief description of this platform..."
-              rows={3}
-              className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 resize-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 placeholder-gray-500"
             />
           </div>
 
-          {/* Base URL */}
-          <Input
-            label="API Base URL"
-            placeholder="https://api.platform.com/v1"
-            value={form.baseUrl}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, baseUrl: e.target.value }))
-            }
-          />
+          <hr className="border-white/5" />
 
-          {/* API Config Template Fields */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
+          {/* Config Template Fields */}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
               <div>
-                <label className="block text-xs font-medium text-gray-400 pl-1">
-                  API Configuration Template
-                </label>
-                <p className="text-[11px] text-gray-500 mt-0.5 pl-1">
-                  Define the fields accounts will need to fill in
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-purple-400">
+                  API Account Config Template
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Define the fields required when a user adds their account details
                 </p>
               </div>
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="sm"
-                icon={<Plus className="w-3.5 h-3.5" />}
                 onClick={addTemplateField}
+                icon={<Plus className="w-3.5 h-3.5" />}
               >
                 Add Field
               </Button>
@@ -564,59 +575,63 @@ export default function PlatformsPage() {
 
             <div className="space-y-3">
               <AnimatePresence>
-                {form.apiConfigTemplate.map((field, idx) => (
+                {form.apiConfigTemplate.map((field, i) => (
                   <motion.div
-                    key={idx}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="overflow-hidden"
+                    key={i}
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="flex gap-3 items-end bg-white/5 p-3 rounded-xl border border-white/5"
                   >
-                    <div className="flex items-start gap-2 p-3 rounded-xl bg-white/[0.03] border border-white/5">
-                      <div className="pt-2.5 text-gray-600">
-                        <GripVertical className="w-4 h-4" />
-                      </div>
-                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-4 gap-2">
-                        <Input
-                          placeholder="Field key"
-                          value={field.key}
-                          onChange={(e) =>
-                            updateTemplateField(idx, { key: e.target.value })
-                          }
-                        />
-                        <Input
-                          placeholder="Display label"
-                          value={field.label}
-                          onChange={(e) =>
-                            updateTemplateField(idx, { label: e.target.value })
-                          }
-                        />
+                    <div className="w-6 shrink-0 flex items-center justify-center cursor-grab text-gray-500 pb-2.5">
+                      <GripVertical className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <Input
+                        label="Field Key (Internal)"
+                        placeholder="app_id"
+                        value={field.key}
+                        onChange={(e) =>
+                          updateTemplateField(i, { key: slugify(e.target.value) })
+                        }
+                      />
+                      <Input
+                        label="Field Label"
+                        placeholder="App ID"
+                        value={field.label}
+                        onChange={(e) =>
+                          updateTemplateField(i, { label: e.target.value })
+                        }
+                      />
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">
+                          Type
+                        </label>
                         <Select
-                          options={FIELD_TYPE_OPTIONS}
                           value={field.type}
-                          onChange={(val) =>
-                            updateTemplateField(idx, {
-                              type: val as ApiConfigField["type"],
-                            })
+                          onChange={(e: any) =>
+                            updateTemplateField(i, { type: e.target.value })
                           }
-                          placeholder="Type"
+                          options={FIELD_TYPE_OPTIONS}
                         />
-                        <div className="flex items-center gap-2">
-                          <Toggle
-                            label="Required"
-                            checked={field.required}
-                            onCheckedChange={(val) =>
-                              updateTemplateField(idx, { required: val })
-                            }
-                          />
-                        </div>
                       </div>
+                      <div className="flex items-center justify-center pb-2.5">
+                        <Toggle
+                          label="Required"
+                          checked={field.required}
+                          onChange={(checked) =>
+                            updateTemplateField(i, { required: checked })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="shrink-0 pb-1.5">
                       <button
-                        onClick={() => removeTemplateField(idx)}
-                        className="pt-2.5 text-gray-500 hover:text-red-400 transition-colors"
+                        onClick={() => removeTemplateField(i)}
+                        disabled={form.apiConfigTemplate.length === 1}
+                        className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-30 disabled:pointer-events-none"
                       >
-                        <X className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </motion.div>

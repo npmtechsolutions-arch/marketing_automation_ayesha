@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.account import Account, SubscriptionTier
-from app.models.audit_log import ActivityLog
+from app.models.audit_log import ActivityLog as AuditLog
 from app.models.post import Post
 from app.models.team_member import TeamMember
 from app.models.user import User
@@ -214,9 +214,15 @@ async def suspend_user(
         user.is_active = True
 
     # Log the action
+    action = "suspend_user" if body.is_suspended else "unsuspend_user"
     log = AuditLog(
         user_id=current_user.id,
-        action="suspend_user" if body.is_suspended else "unsuspend_user",
+        action=action,
+        category="admin",
+        description=(
+            f"{'Suspended' if body.is_suspended else 'Unsuspended'} user "
+            f"{user.email}" + (f" (reason: {body.reason})" if body.reason else "")
+        ),
         resource_type="user",
         resource_id=str(user_id),
         new_values={"is_suspended": body.is_suspended, "reason": body.reason},

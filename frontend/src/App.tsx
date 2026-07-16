@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/Toast';
 import { useAuthStore } from '@/stores/authStore';
@@ -23,11 +24,14 @@ import TeamPage from '@/pages/team/TeamPage';
 import SettingsPage from '@/pages/settings/SettingsPage';
 import BillingPage from '@/pages/billing/BillingPage';
 import NotificationsPage from '@/pages/notifications/NotificationsPage';
+import ProfilePage from '@/pages/profile/ProfilePage';
 
 // Public pages
 import LandingPage from '@/pages/public/LandingPage';
 import PricingPage from '@/pages/public/PricingPage';
 import AboutPage from '@/pages/public/AboutPage';
+import PrivacyPolicyPage from '@/pages/public/PrivacyPolicyPage';
+import DataDeletionPage from '@/pages/public/DataDeletionPage';
 
 // Admin pages
 import AdminDashboard from '@/pages/admin/AdminDashboard';
@@ -85,16 +89,17 @@ function NotFoundPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+        background: 'var(--page-bg-gradient)',
         padding: '2rem',
       }}
     >
       <div
         style={{
-          background: 'rgba(255, 255, 255, 0.05)',
+          background: 'var(--surface-bg)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          border: '1px solid var(--surface-border)',
+          boxShadow: 'var(--surface-shadow-lg)',
           borderRadius: '1.5rem',
           padding: '3rem',
           textAlign: 'center',
@@ -117,7 +122,7 @@ function NotFoundPage() {
         </h1>
         <p
           style={{
-            color: 'rgba(255, 255, 255, 0.7)',
+            color: 'var(--page-text-secondary)',
             fontSize: '1.125rem',
             margin: '1rem 0 2rem',
           }}
@@ -161,15 +166,28 @@ const queryClient = new QueryClient({
 /*  App                                                               */
 /* ------------------------------------------------------------------ */
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <ScrollToTop />
         <Routes>
           {/* Public */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/about" element={<AboutPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/data-deletion" element={<DataDeletionPage />} />
 
           {/* Auth */}
           <Route
@@ -211,6 +229,7 @@ function App() {
           <Route path="/activity" element={<ProtectedRoute><ActivityPage /></ProtectedRoute>} />
           <Route path="/team" element={<ProtectedRoute><TeamPage /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
 

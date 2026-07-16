@@ -29,7 +29,7 @@ export function Input({
       {label && (
         <label
           className="mb-1.5 block text-sm font-medium"
-          style={{ color: "#374151" }}
+          style={{ color: "var(--page-text)" }}
         >
           {label}
         </label>
@@ -38,7 +38,7 @@ export function Input({
         {icon && (
           <div
             className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2"
-            style={{ color: "#9ca3af" }}
+            style={{ color: "var(--input-placeholder)" }}
           >
             {icon}
           </div>
@@ -57,13 +57,13 @@ export function Input({
             onBlur?.(e);
           }}
           style={{
-            backgroundColor: "#ffffff",
-            color: "#1f2937",
-            borderColor: error ? "#f87171" : focused ? "#7c3aed" : "#d1d5db",
+            backgroundColor: "var(--input-bg)",
+            color: "var(--input-text)",
+            borderColor: error ? "var(--accent-red)" : focused ? "var(--input-focus-border)" : "var(--input-border)",
             boxShadow: focused
               ? error
                 ? "0 0 0 3px rgba(248,113,113,0.1)"
-                : "0 0 0 3px rgba(124,58,237,0.08)"
+                : "0 0 0 3px var(--input-focus-ring)"
               : "none",
           }}
           className={cn(
@@ -76,7 +76,7 @@ export function Input({
         />
       </div>
       {error && (
-        <p className="mt-1.5 pl-1 text-xs" style={{ color: "#f87171" }}>
+        <p className="mt-1.5 pl-1 text-xs" style={{ color: "var(--accent-red)" }}>
           {error}
         </p>
       )}

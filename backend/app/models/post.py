@@ -83,6 +83,28 @@ class Post(Base):
     digital_assets: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
     # e.g., [{"url": "...", "type": "photo", "filters": {...}}]
 
+    # Instagram-specific fields
+    instagram_post_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    instagram_music_track: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    instagram_music_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # audio file/preview URL for the selected track
+    instagram_music_start_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    instagram_music_end_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # trim end (seconds) of the audio clip
+    instagram_video_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Facebook-specific fields
+    facebook_post_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    facebook_music_track: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    facebook_music_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    facebook_music_start_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    facebook_music_end_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    facebook_video_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # YouTube, LinkedIn, and Twitter fields
+    youtube_post_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    linkedin_post_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    twitter_post_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+
     # Target accounts for posting (replaces old platforms JSON)
     target_accounts: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
     # e.g., [{"social_account_id": "uuid", "platform_name": "Instagram", "account_name": "Acme Corp"}]
@@ -152,6 +174,23 @@ class Post(Base):
     performances: Mapped[list["PostPerformance"]] = relationship(
         "PostPerformance", back_populates="post", foreign_keys="PostPerformance.post_id"
     )
+
+    @property
+    def performance(self) -> dict | None:
+        if "performances" not in self.__dict__:
+            return None
+        if not self.performances:
+            return None
+        likes = sum(p.likes for p in self.performances)
+        comments = sum(p.comments for p in self.performances)
+        shares = sum(p.shares for p in self.performances)
+        views = sum(p.impressions for p in self.performances)
+        return {
+            "likes": likes,
+            "comments": comments,
+            "shares": shares,
+            "views": views,
+        }
 
     def __repr__(self) -> str:
         return f"<Post {self.id} status={self.status.value}>"

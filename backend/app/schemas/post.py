@@ -23,6 +23,21 @@ class PostCreate(PostBase):
     target_account_ids: list[UUID] | None = None  # list of social_account IDs to target
     ai_images: list[dict] | None = None  # [{"url": "...", "prompt": "...", "model": "dall-e-3"}]
     digital_assets: list[dict] | None = None  # [{"url": "...", "type": "photo", "filters": {...}}]
+    instagram_post_type: str | None = None
+    instagram_music_track: str | None = None
+    instagram_music_url: str | None = None
+    instagram_music_start_offset: int | None = None
+    instagram_music_end_offset: int | None = None
+    instagram_video_url: str | None = None
+    facebook_post_type: str | None = None
+    facebook_music_track: str | None = None
+    facebook_music_url: str | None = None
+    facebook_music_start_offset: int | None = None
+    facebook_music_end_offset: int | None = None
+    facebook_video_url: str | None = None
+    youtube_post_type: str | None = None
+    linkedin_post_type: str | None = None
+    twitter_post_type: str | None = None
 
 
 class PostUpdate(BaseModel):
@@ -36,6 +51,21 @@ class PostUpdate(BaseModel):
     ai_images: list[dict] | None = None
     digital_assets: list[dict] | None = None
     device_previews: dict | None = None
+    instagram_post_type: str | None = None
+    instagram_music_track: str | None = None
+    instagram_music_url: str | None = None
+    instagram_music_start_offset: int | None = None
+    instagram_music_end_offset: int | None = None
+    instagram_video_url: str | None = None
+    facebook_post_type: str | None = None
+    facebook_music_track: str | None = None
+    facebook_music_url: str | None = None
+    facebook_music_start_offset: int | None = None
+    facebook_music_end_offset: int | None = None
+    facebook_video_url: str | None = None
+    youtube_post_type: str | None = None
+    linkedin_post_type: str | None = None
+    twitter_post_type: str | None = None
 
 
 class PostResponse(PostBase):
@@ -60,6 +90,23 @@ class PostResponse(PostBase):
     created_at: datetime
     updated_at: datetime | None = None
     deleted_at: datetime | None = None
+    instagram_post_type: str | None = None
+    instagram_music_track: str | None = None
+    instagram_music_url: str | None = None
+    instagram_music_start_offset: int | None = None
+    instagram_music_end_offset: int | None = None
+    instagram_video_url: str | None = None
+    facebook_post_type: str | None = None
+    facebook_music_track: str | None = None
+    facebook_music_url: str | None = None
+    facebook_music_start_offset: int | None = None
+    facebook_music_end_offset: int | None = None
+    facebook_video_url: str | None = None
+    youtube_post_type: str | None = None
+    linkedin_post_type: str | None = None
+    twitter_post_type: str | None = None
+    performance: dict | None = None
+
 
     model_config = ConfigDict(from_attributes=True)
 

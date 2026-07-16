@@ -10,9 +10,12 @@ type DeviceType = "mobile" | "tablet" | "web";
 interface DevicePreviewProps {
   content: string;
   images: string[];
+  videoUrl?: string | null;
   hashtags: string[];
   device: DeviceType;
   platformName: string;
+  igPostType?: "post" | "reel";
+  igMusicTrack?: string | null;
 }
 
 // ────────────────────────────────────────────────────────
@@ -24,12 +27,14 @@ function PostContent({
   hashtags,
   platformName,
   compact = false,
+  igMusicTrack = null,
 }: {
   content: string;
   images: string[];
   hashtags: string[];
   platformName: string;
   compact?: boolean;
+  igMusicTrack?: string | null;
 }) {
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-slate-900 to-slate-950 text-white overflow-y-auto custom-scrollbar">
@@ -57,13 +62,24 @@ function PostContent({
           >
             YB
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 text-left">
             <p className={cn("font-semibold truncate", compact ? "text-xs" : "text-sm")}>
               Your Brand
             </p>
-            <p className={cn("text-gray-500 truncate", compact ? "text-[9px]" : "text-[10px]")}>
-              @yourbrand &middot; Just now
-            </p>
+            <div className="flex flex-col">
+              <p className={cn("text-gray-500 truncate", compact ? "text-[9px]" : "text-[10px]")}>
+                @yourbrand &middot; Just now
+              </p>
+              {platformName.toLowerCase().includes("instagram") && igMusicTrack && (
+                <p className={cn("text-purple-400 font-medium truncate flex items-center gap-1 mt-0.5", compact ? "text-[8px]" : "text-[9.5px]")}>
+                  <svg className="w-2.5 h-2.5 flex-shrink-0 animate-pulse text-purple-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                  <span className="font-semibold">{igMusicTrack.split(" – ")[0]}</span>
+                  <span className="text-gray-500">&middot; {igMusicTrack.split(" – ")[1] || ""}</span>
+                </p>
+              )}
+            </div>
           </div>
           <MoreHorizontal className={cn("text-gray-500 flex-shrink-0", compact ? "w-3.5 h-3.5" : "w-4 h-4")} />
         </div>
@@ -377,23 +393,184 @@ function WebFrame({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ReelPreviewContent({
+  content,
+  videoUrl,
+  imageUrl,
+  hashtags,
+  igMusicTrack,
+  compact = false,
+}: {
+  content: string;
+  videoUrl?: string;
+  imageUrl?: string;
+  hashtags: string[];
+  igMusicTrack?: string | null;
+  compact?: boolean;
+}) {
+  return (
+    <div className="relative flex flex-col h-full bg-black text-white overflow-hidden select-none">
+      {/* Inline styles for the marquee */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes reelMarquee {
+          0% { transform: translateX(100%); }
+          100% { transform: translateX(-100%); }
+        }
+        .reel-marquee {
+          display: inline-block;
+          white-space: nowrap;
+          animation: reelMarquee 15s linear infinite;
+        }
+      `}} />
+
+      {/* Video or Image Background */}
+      <div className="absolute inset-0 z-0 bg-gradient-to-b from-slate-900 via-black to-slate-950 flex items-center justify-center">
+        {videoUrl ? (
+          <video
+            src={videoUrl}
+            className="w-full h-full object-cover"
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        ) : imageUrl ? (
+          <img
+            src={imageUrl}
+            alt="Reel Media fallback"
+            className="w-full h-full object-cover opacity-80"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-pink-900/40 via-purple-900/40 to-blue-900/40 flex flex-col items-center justify-center p-6 text-center text-gray-500">
+            <svg className="w-12 h-12 mb-3 text-pink-500/50 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            <span className="text-xs text-gray-400">Reel Video Preview</span>
+            <span className="text-[10px] text-gray-600 mt-1">Upload a video or choose an image to view here</span>
+          </div>
+        )}
+      </div>
+
+      {/* Dark overlay at bottom for text readability */}
+      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/85 via-black/45 to-transparent z-10 pointer-events-none" />
+
+      {/* Engagement Buttons stacked vertically on the right */}
+      <div className="absolute right-3 bottom-20 z-20 flex flex-col items-center gap-4">
+        <div className="flex flex-col items-center">
+          <button className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:text-pink-500 transition-colors">
+            <Heart className="w-5 h-5" />
+          </button>
+          <span className="text-[10px] text-white/90 mt-1 font-medium shadow-sm">1.2K</span>
+        </div>
+
+        <div className="flex flex-col items-center">
+          <button className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:text-purple-400 transition-colors">
+            <MessageCircle className="w-5 h-5" />
+          </button>
+          <span className="text-[10px] text-white/90 mt-1 font-medium shadow-sm">45</span>
+        </div>
+
+        <div className="flex flex-col items-center">
+          <button className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:text-blue-400 transition-colors">
+            <Send className="w-5 h-5" />
+          </button>
+          <span className="text-[10px] text-white/90 mt-1 font-medium shadow-sm">12</span>
+        </div>
+
+        <div className="flex flex-col items-center">
+          <button className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:text-amber-400 transition-colors">
+            <Bookmark className="w-5 h-5" />
+          </button>
+          <span className="text-[10px] text-white/90 mt-1 font-medium shadow-sm">89</span>
+        </div>
+
+        {/* Spinning Record Icon for Music */}
+        <div className="w-8 h-8 rounded-full border border-white/20 bg-gradient-to-r from-purple-600 to-pink-600 flex items-center justify-center animate-spin" style={{ animationDuration: '4s' }}>
+          <div className="w-3 h-3 rounded-full bg-black border border-white/10" />
+        </div>
+      </div>
+
+      {/* Overlay details at the bottom left */}
+      <div className="absolute left-3 right-16 bottom-6 z-20 space-y-2.5 text-left">
+        {/* Profile */}
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-pink-500 flex items-center justify-center font-bold text-white border border-white/20">
+            YB
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-white truncate shadow-sm">@yourbrand</span>
+              <span className="px-1.5 py-0.5 rounded bg-white/25 text-[8px] font-bold text-white tracking-wide uppercase">Follow</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Content text & hashtags */}
+        <div className="max-h-24 overflow-y-auto pr-1">
+          <p className="text-[11px] leading-relaxed text-white/95 font-medium shadow-sm whitespace-pre-wrap">
+            {content || "Describe your Reel video here..."}
+          </p>
+          {hashtags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {hashtags.map((tag, i) => (
+                <span key={i} className="text-blue-300 font-semibold text-[10px] hover:underline shadow-sm">
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Music Display at the bottom */}
+        <div className="flex items-center gap-2 pt-1 border-t border-white/10 w-full overflow-hidden">
+          <div className="w-5 h-5 rounded-full bg-black/40 flex items-center justify-center flex-shrink-0">
+            <svg className="w-3 h-3 text-purple-300 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+            </svg>
+          </div>
+          <div className="flex-1 overflow-hidden min-w-0">
+            <div className="reel-marquee text-[10px] text-purple-200 font-semibold tracking-wide">
+              {igMusicTrack ? `♫ ${igMusicTrack}` : "♫ Original Audio"}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ────────────────────────────────────────────────────────
 // Main DevicePreview Component
 // ────────────────────────────────────────────────────────
 export default function DevicePreview({
   content,
   images,
+  videoUrl = null,
   hashtags,
   device,
   platformName,
+  igPostType,
+  igMusicTrack,
 }: DevicePreviewProps) {
-  const postContent = (
+  const isReel = platformName.toLowerCase().includes("instagram") && igPostType === "reel";
+
+  const postContent = isReel ? (
+    <ReelPreviewContent
+      content={content}
+      videoUrl={videoUrl || undefined}
+      imageUrl={images[0] || undefined}
+      hashtags={hashtags}
+      igMusicTrack={igMusicTrack}
+      compact={device === "mobile"}
+    />
+  ) : (
     <PostContent
       content={content}
       images={images}
       hashtags={hashtags}
       platformName={platformName}
       compact={device === "mobile"}
+      igMusicTrack={igMusicTrack}
     />
   );
 

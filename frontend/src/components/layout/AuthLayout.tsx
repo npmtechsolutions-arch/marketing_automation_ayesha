@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
-import { Megaphone, Star, BarChart3 } from "lucide-react";
+import { Star, BarChart3 } from "lucide-react";
 
 interface AuthLayoutProps {
   children: ReactNode;
@@ -73,12 +73,11 @@ export default function AuthLayout({
           transition={{ duration: 0.5 }}
           className="relative z-10 flex items-center gap-3"
         >
-          <div
-            className="flex h-11 w-11 items-center justify-center rounded-xl shadow-lg"
-            style={{ background: "rgba(255,255,255,0.2)", backdropFilter: "blur(10px)" }}
-          >
-            <Megaphone className="h-5 w-5 text-white" />
-          </div>
+          <img
+            src="/marketengine_logo.png"
+            alt="MarketEngine AI"
+            className="h-11 w-11 rounded-xl object-cover shadow-lg"
+          />
           <span className="text-xl font-bold text-white tracking-tight">
             MarketEngine
           </span>
@@ -218,12 +217,11 @@ export default function AuthLayout({
         >
           {/* Mobile logo */}
           <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <div
-              className="flex h-10 w-10 items-center justify-center rounded-xl"
-              style={{ background: "var(--gradient-primary)" }}
-            >
-              <Megaphone className="h-5 w-5 text-white" style={{ color: "#fff" }} />
-            </div>
+            <img
+              src="/marketengine_logo.png"
+              alt="MarketEngine AI"
+              className="h-10 w-10 rounded-xl object-cover"
+            />
             <span
               className="text-xl font-bold"
               style={{ background: "var(--gradient-primary)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}

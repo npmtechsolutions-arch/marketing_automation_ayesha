@@ -20,6 +20,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute=0, hour=0),
         "options": {"queue": "maintenance"},
     },
+    # Permanently purge users soft-deleted past the retention window - daily at 3:30 AM UTC
+    "purge_soft_deleted_users": {
+        "task": "app.workers.tasks.purge_soft_deleted_users",
+        "schedule": crontab(minute=30, hour=3),
+        "options": {"queue": "maintenance"},
+    },
     # Refresh OAuth tokens expiring within the next 24 hours - every 12 hours
     "refresh_expiring_tokens": {
         "task": "app.workers.tasks.refresh_expiring_tokens",

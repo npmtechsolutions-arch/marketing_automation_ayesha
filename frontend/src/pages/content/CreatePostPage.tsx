@@ -1,4 +1,5 @@
-import { useState, useRef, useCallback, type ChangeEvent } from "react";
+import { useState, useRef, useCallback, useEffect, type ChangeEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
@@ -25,6 +26,11 @@ import {
   SunMedium,
   Contrast,
   Palette,
+  Music2,
+  Video,
+  Film,
+  ChevronDown,
+  Play,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -33,6 +39,8 @@ import { Badge } from "@/components/ui/Badge";
 import PlatformIcon from "@/components/shared/PlatformIcon";
 import DevicePreview from "@/components/shared/DevicePreview";
 import { cn } from "@/lib/utils";
+import api from "@/lib/api";
+import { showSuccess, showError } from "@/components/ui/Toast";
 
 // ────────────────────────────────────────────────────────
 // Types
@@ -89,31 +97,27 @@ const PHOTO_TEMPLATES: { key: PhotoTemplate; label: string }[] = [
   { key: "landscape-photo", label: "Landscape" },
 ];
 
+
+
 const STEPS = [
-  { step: 1 as WizardStep, label: "Create Content" },
-  { step: 2 as WizardStep, label: "Select Accounts" },
+  { step: 1 as WizardStep, label: "Select Accounts" },
+  { step: 2 as WizardStep, label: "Create Content" },
   { step: 3 as WizardStep, label: "Preview" },
   { step: 4 as WizardStep, label: "Post / Schedule" },
 ];
 
-// Mock accounts for demo
-const MOCK_ACCOUNTS: Account[] = [
-  { id: "1", platform: "facebook", name: "Acme Corp", handle: "@acmecorp", verified: true, followers: 24500 },
-  { id: "2", platform: "facebook", name: "Acme Local", handle: "@acmelocal", verified: false, followers: 3200 },
-  { id: "3", platform: "instagram", name: "Acme Visual", handle: "@acmevisual", verified: true, followers: 89000 },
-  { id: "4", platform: "instagram", name: "Acme Lifestyle", handle: "@acmelife", verified: false, followers: 12400 },
-  { id: "5", platform: "twitter", name: "Acme Corp", handle: "@acme", verified: true, followers: 45600 },
-  { id: "6", platform: "twitter", name: "Acme Support", handle: "@acmesupport", verified: false, followers: 8900 },
-  { id: "7", platform: "linkedin", name: "Acme Inc.", handle: "@acme-inc", verified: true, followers: 67800 },
-  { id: "8", platform: "youtube", name: "Acme Channel", handle: "@acmechannel", verified: true, followers: 120000 },
-  { id: "9", platform: "tiktok", name: "Acme Trends", handle: "@acmetrends", verified: false, followers: 34500 },
-  { id: "10", platform: "pinterest", name: "Acme Pins", handle: "@acmepins", verified: false, followers: 5600 },
-];
+
 
 function formatFollowers(n: number): string {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
   if (n >= 1000) return (n / 1000).toFixed(1) + "K";
   return n.toString();
+}
+
+// Format seconds as m:ss for the audio scrubber.
+function fmtTime(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 // ────────────────────────────────────────────────────────
@@ -149,6 +153,7 @@ function ShimmerBlock({ className }: { className?: string }) {
 // Main Page Component
 // ────────────────────────────────────────────────────────
 export default function CreatePostPage() {
+  const navigate = useNavigate();
   // Wizard state
   const [currentStep, setCurrentStep] = useState<WizardStep>(1);
   const [direction, setDirection] = useState(1);
@@ -175,19 +180,270 @@ export default function CreatePostPage() {
   const [contrast, setContrast] = useState(50);
   const [saturation, setSaturation] = useState(50);
 
-  // Step 2 - Accounts
+  // Step 2 - Accounts (loaded from API)
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const [businesses, setBusinesses] = useState<any[]>([]);
+
+  useEffect(() => {
+    const accountId = localStorage.getItem("account_id");
+    if (!accountId) return;
+    setAccountsLoading(true);
+    
+    // Fetch social accounts
+    api.get(`/accounts/${accountId}/social-accounts/`)
+      .then((res: any) => {
+        const payload = res.data || res;
+        const items: any[] = payload.items || payload || [];
+        const mapped: Account[] = items.map((sa: any) => ({
+          id: sa.id,
+          platform: (
+            sa.platform_type ||
+            (sa.platform && typeof sa.platform === "object" ? sa.platform.slug || sa.platform.name : sa.platform) ||
+            "instagram"
+          ).toLowerCase() as Platform,
+          name: sa.account_name || sa.name || sa.username || sa.platform_type,
+          handle: sa.username ? `@${sa.username}` : sa.handle || "",
+          verified: sa.is_verified || false,
+          followers: sa.followers_count ?? sa.metadata?.followers ?? 0,
+          avatar: sa.profile_image_url || sa.profile_picture_url || undefined,
+        }));
+        setAccounts(mapped);
+      })
+      .catch((err) => console.error("Failed to load social accounts:", err))
+      .finally(() => setAccountsLoading(false));
+
+    // Fetch businesses
+    api.get(`/accounts/${accountId}/businesses/`)
+      .then((res: any) => {
+        const payload = res.data || res;
+        const items = payload.items || payload.data?.items || [];
+        setBusinesses(items);
+      })
+      .catch((err) => console.error("Failed to load businesses:", err));
+  }, []);
 
   // Step 3 - Preview
   const [previewDevice, setPreviewDevice] = useState<DeviceType>("mobile");
 
   // Step 4 - Schedule
   const [postMode, setPostMode] = useState<"now" | "schedule">("now");
-  const [scheduleDate, setScheduleDate] = useState("");
-  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleDate, setScheduleDate] = useState(() => {
+    const d = new Date();
+    d.setHours(d.getHours() + 1);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [scheduleTime, setScheduleTime] = useState(() => {
+    const d = new Date();
+    d.setHours(d.getHours() + 1);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  });
   const [isPosting, setIsPosting] = useState(false);
 
+  // ── Instagram & Facebook & YouTube & LinkedIn & Twitter formats ──
+  const [igPostType, setIgPostType] = useState<"post" | "reel">("post");
+  const [fbPostType, setFbPostType] = useState<"post" | "reel">("post");
+  const [ytPostType, setYtPostType] = useState<"post" | "video">("post");
+  const [liPostType, setLiPostType] = useState<"post" | "video">("post");
+  const [twPostType, setTwPostType] = useState<"post" | "video">("post");
+  const [igMusicTrack, setIgMusicTrack] = useState<string | null>(null);
+  const [igMusicSearch, setIgMusicSearch] = useState("");
+  const [igMusicOpen, setIgMusicOpen] = useState(false);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+  const [videoFileName, setVideoFileName] = useState<string | null>(null);
+
+  // Real Audio Picker States
+  const [selectedTrack, setSelectedTrack] = useState<any | null>(null);
+  const [musicStartOffset, setMusicStartOffset] = useState<number>(0);
+  const [musicEndOffset, setMusicEndOffset] = useState<number>(15);
+  const [trackDuration, setTrackDuration] = useState<number>(30);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
+  const [playhead, setPlayhead] = useState<number>(0); // current playback position (seconds) of the selected track
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const clipPreviewRef = useRef<boolean>(false); // true = loop inside [start,end]; false = play the full song
+
+  // Audio cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  // Stop audio when picker is closed
+  useEffect(() => {
+    if (!igMusicOpen && audioRef.current) {
+      audioRef.current.pause();
+      setPlayingTrackId(null);
+    }
+  }, [igMusicOpen]);
+
+  // Debounced search for iTunes
+  const searchiTunes = useCallback(async (query: string) => {
+    setSearchLoading(true);
+    try {
+      const term = query.trim() ? query.trim() : "tamil hits";
+      const response = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&limit=15`);
+      const data = await response.json();
+      setSearchResults(data.results || []);
+    } catch (err) {
+      console.error("Failed to search iTunes:", err);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!igMusicOpen) return;
+    const delayDebounceFn = setTimeout(() => {
+      searchiTunes(igMusicSearch);
+    }, 400);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [igMusicSearch, igMusicOpen, searchiTunes]);
+
+  // Audio Playback handler.
+  // `clipPreview` = false → play the FULL song (so the user can listen through it and
+  // pick the position they want). `clipPreview` = true → loop inside the [start, end] window.
+  const togglePlayTrack = useCallback((track: any, clipPreview = false) => {
+    const trackId = String(track.trackId);
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+    }
+
+    if (playingTrackId === trackId && clipPreviewRef.current === clipPreview) {
+      if (audioRef.current.paused) {
+        audioRef.current.play().catch(e => console.error(e));
+      } else {
+        audioRef.current.pause();
+        setPlayingTrackId(null);
+      }
+    } else {
+      audioRef.current.pause();
+      clipPreviewRef.current = clipPreview;
+      audioRef.current.src = track.previewUrl;
+      audioRef.current.load();
+
+      audioRef.current.onloadedmetadata = () => {
+        if (!audioRef.current) return;
+        const dur = Number.isFinite(audioRef.current.duration) ? Math.floor(audioRef.current.duration) : 30;
+        setTrackDuration(Math.max(1, dur));
+      };
+
+      const isSelected = selectedTrack?.trackId === track.trackId;
+      // Clip preview starts at the trim start; full playback resumes from the current playhead.
+      const start = clipPreview ? musicStartOffset : (isSelected ? playhead : 0);
+      audioRef.current.currentTime = start;
+      setPlayhead(start);
+
+      audioRef.current.play()
+        .then(() => {
+          setPlayingTrackId(trackId);
+        })
+        .catch(e => {
+          console.error("Audio playback failed:", e);
+          setPlayingTrackId(null);
+        });
+
+      audioRef.current.onended = () => {
+        setPlayingTrackId(null);
+      };
+
+      audioRef.current.ontimeupdate = () => {
+        if (!audioRef.current) return;
+        const current = audioRef.current.currentTime;
+        setPlayhead(current);
+        // Only loop when previewing the trimmed clip of the selected track.
+        if (clipPreviewRef.current && selectedTrack && String(selectedTrack.trackId) === trackId) {
+          if (current < musicStartOffset || current >= musicEndOffset) {
+            audioRef.current.currentTime = musicStartOffset;
+          }
+        }
+      };
+    }
+  }, [playingTrackId, selectedTrack, musicStartOffset, musicEndOffset, playhead]);
+
+  // Seek to an absolute position (seconds) in the full song — "select the particular position".
+  const seekTo = useCallback((seconds: number) => {
+    const clamped = Math.min(Math.max(0, seconds), trackDuration);
+    setPlayhead(clamped);
+    if (audioRef.current && selectedTrack && playingTrackId === String(selectedTrack.trackId)) {
+      audioRef.current.currentTime = clamped;
+    }
+  }, [trackDuration, selectedTrack, playingTrackId]);
+
+  const selectTrack = useCallback((track: any) => {
+    const isSelected = selectedTrack?.trackId === track.trackId;
+    if (isSelected) {
+      setSelectedTrack(null);
+      setIgMusicTrack(null);
+      setMusicStartOffset(0);
+      setMusicEndOffset(15);
+      setPlayhead(0);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        setPlayingTrackId(null);
+      }
+    } else {
+      setSelectedTrack(track);
+      setIgMusicTrack(`${track.trackName} – ${track.artistName}`);
+      setMusicStartOffset(0);
+      setMusicEndOffset(15);
+      setTrackDuration(30);
+      setPlayhead(0);
+      if (audioRef.current && playingTrackId === String(track.trackId)) {
+        audioRef.current.currentTime = 0;
+      }
+    }
+  }, [selectedTrack, playingTrackId]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
+
+  // Upload an audio file from the user's device/folder and use it as the track.
+  const handleAudioUpload = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const track = {
+        trackId: `local-${file.name}-${file.size}`,
+        trackName: file.name.replace(/\.[^.]+$/, ""),
+        artistName: "Your upload",
+        previewUrl: dataUrl,
+        artworkUrl100: null,
+        isLocal: true,
+      };
+      // Read real duration so the trim sliders span the whole file.
+      const probe = new Audio();
+      probe.src = dataUrl;
+      probe.onloadedmetadata = () => {
+        const dur = Number.isFinite(probe.duration) ? Math.floor(probe.duration) : 30;
+        setTrackDuration(Math.max(1, dur));
+        setMusicEndOffset(Math.min(15, Math.max(1, dur)));
+      };
+      setSelectedTrack(track);
+      setIgMusicTrack(`${track.trackName} – ${track.artistName}`);
+      setMusicStartOffset(0);
+      setMusicEndOffset(15);
+      setTrackDuration(30);
+      setPlayhead(0);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }, []);
 
   // ── Navigation ──
   const goToStep = useCallback(
@@ -207,16 +463,51 @@ export default function CreatePostPage() {
   }, [currentStep, goToStep]);
 
   // ── Handlers ──
-  const handleGenerateContent = useCallback(() => {
+  const handleGenerateContent = useCallback(async () => {
     if (!aiPrompt.trim()) return;
+
+    const accountId = localStorage.getItem("account_id");
+    if (!accountId) {
+      showError("Account ID not found");
+      return;
+    }
+
     setIsGeneratingContent(true);
-    setTimeout(() => {
-      setContent(
-        `Here's an engaging post about "${aiPrompt.trim()}":\n\nWe're thrilled to share something special with our community. This is what drives us forward every day - the passion to create, innovate, and deliver value.\n\nWhat do you think? Let us know in the comments below!`
-      );
+    try {
+      const connectedPlatforms = Array.from(new Set(accounts.map((a) => a.platform)));
+      const platforms = connectedPlatforms.length > 0 ? connectedPlatforms : ["instagram", "facebook"];
+      const businessId = businesses.length > 0 ? businesses[0].id : undefined;
+
+      const payload = {
+        prompt: aiPrompt.trim(),
+        platforms: platforms,
+        tone: selectedTone,
+        include_image: false,
+        business_id: businessId,
+      };
+
+      const res: any = await api.post(`/accounts/${accountId}/ai/generate-content`, payload, { timeout: 90000 });
+      const data = res.data || res;
+      
+      if (data && data.content) {
+        setContent(data.content);
+        if (data.hashtags && data.hashtags.length > 0) {
+          // parse or extract hashtags (strip '#' character if present since page adds it dynamically)
+          const cleanHashtags = data.hashtags.map((tag: string) => tag.replace(/^#/, ""));
+          setHashtags(cleanHashtags);
+        }
+        showSuccess("Content generated successfully!");
+      } else {
+        throw new Error("No content returned from AI generator");
+      }
+    } catch (err: any) {
+      console.error(err);
+      const errMsg = err.response?.data?.detail || err.message || "Failed to generate content";
+      showError(`AI Generation failed: ${errMsg}`);
+    } finally {
       setIsGeneratingContent(false);
-    }, 2000);
-  }, [aiPrompt]);
+    }
+  }, [aiPrompt, accounts, businesses, selectedTone]);
 
   const handleAiSuggestHashtags = useCallback(() => {
     const suggestions = ["marketing", "digitalstrategy", "socialmedia", "growthhacking", "branding", "contentcreation"];
@@ -251,20 +542,52 @@ export default function CreatePostPage() {
     e.target.value = "";
   }, []);
 
-  const handleGenerateImage = useCallback(() => {
+  const handleVideoUpload = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setVideoFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setVideoPreviewUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }, []);
+
+  const handleGenerateImage = useCallback(async () => {
     if (!aiImagePrompt.trim()) return;
+
+    const accountId = localStorage.getItem("account_id");
+    if (!accountId) {
+      showError("Account ID not found");
+      return;
+    }
+
     setIsGeneratingImage(true);
-    setTimeout(() => {
-      // Placeholder generated images
-      setGeneratedImages([
-        "generated-1",
-        "generated-2",
-        "generated-3",
-        "generated-4",
-      ]);
+    try {
+      const payload = {
+        content: aiImagePrompt.trim(),
+        style: imageStyle,
+        size: imageSize,
+      };
+
+      const res: any = await api.post(`/accounts/${accountId}/ai/regenerate-image`, payload, { timeout: 90000 });
+      const data = res.data || res;
+      
+      if (data && data.image_url) {
+        setGeneratedImages([data.image_url]);
+        showSuccess("Image generated successfully!");
+      } else {
+        throw new Error("No image URL returned from AI generator");
+      }
+    } catch (err: any) {
+      console.error(err);
+      const errMsg = err.response?.data?.detail || err.message || "Failed to generate image";
+      showError(`AI Image Generation failed: ${errMsg}`);
+    } finally {
       setIsGeneratingImage(false);
-    }, 2500);
-  }, [aiImagePrompt]);
+    }
+  }, [aiImagePrompt, imageStyle, imageSize]);
 
   const toggleAccount = useCallback((id: string) => {
     setSelectedAccounts((prev) =>
@@ -274,7 +597,7 @@ export default function CreatePostPage() {
 
   const togglePlatformAll = useCallback(
     (platform: Platform) => {
-      const platformAccounts = MOCK_ACCOUNTS.filter((a) => a.platform === platform);
+      const platformAccounts = accounts.filter((a) => a.platform === platform);
       const allSelected = platformAccounts.every((a) => selectedAccounts.includes(a.id));
       if (allSelected) {
         setSelectedAccounts((prev) => prev.filter((id) => !platformAccounts.find((a) => a.id === id)));
@@ -288,18 +611,97 @@ export default function CreatePostPage() {
     [selectedAccounts]
   );
 
-  const allImages = [...uploadedImages, ...generatedImages.filter((g) => uploadedImages.includes(g) || g.startsWith("generated-"))];
+  const allImages = Array.from(
+    new Set([
+      ...uploadedImages,
+      ...generatedImages.filter(
+        (g) => uploadedImages.includes(g) || g.startsWith("generated-")
+      ),
+    ])
+  );
 
-  const handleConfirmPost = useCallback(() => {
+  const handleConfirmPost = useCallback(async () => {
+    const accountId = localStorage.getItem("account_id");
+    if (!accountId) {
+      showError("Account ID not found");
+      return;
+    }
+
     setIsPosting(true);
-    setTimeout(() => {
+    try {
+      // 1. Create post
+      const payload: any = {
+        title: title || undefined,
+        content: content,
+        hashtags: hashtags.length > 0 ? hashtags : undefined,
+        target_account_ids: selectedAccounts,
+        media_urls: allImages.length > 0 ? allImages : undefined,
+        instagram_post_type: igPostType,
+        instagram_music_track: igMusicTrack || undefined,
+        instagram_music_url: selectedTrack?.previewUrl || undefined,
+        instagram_music_start_offset: Math.round(musicStartOffset),
+        instagram_music_end_offset: Math.round(musicEndOffset),
+        instagram_video_url: videoPreviewUrl || undefined,
+        facebook_post_type: fbPostType,
+        facebook_music_track: igMusicTrack || undefined,
+        facebook_music_url: selectedTrack?.previewUrl || undefined,
+        facebook_music_start_offset: Math.round(musicStartOffset),
+        facebook_music_end_offset: Math.round(musicEndOffset),
+        facebook_video_url: videoPreviewUrl || undefined,
+        youtube_post_type: ytPostType,
+        linkedin_post_type: liPostType,
+        twitter_post_type: twPostType,
+      };
+
+      const res: any = await api.post(`/accounts/${accountId}/posts/`, payload);
+      const post = res.data || res;
+
+      // 2. Publish or Schedule
+      if (postMode === "now") {
+        await api.post(`/accounts/${accountId}/posts/${post.id}/publish`);
+        showSuccess("Post published successfully!");
+      } else {
+        const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}:00`);
+        if (isNaN(scheduledAt.getTime())) {
+          throw new Error("Invalid schedule date or time");
+        }
+        await api.post(
+          `/accounts/${accountId}/posts/${post.id}/schedule?scheduled_at=${encodeURIComponent(
+            scheduledAt.toISOString()
+          )}`
+        );
+        showSuccess("Post scheduled successfully!");
+      }
+
+      // Navigate to calendar page
+      navigate("/calendar");
+    } catch (err: any) {
+      console.error(err);
+      const errMsg = err.response?.data?.detail || err.message || "Failed to process request";
+      showError(`Failed to confirm post: ${errMsg}`);
+    } finally {
       setIsPosting(false);
-      // Would navigate away or show success
-    }, 2000);
-  }, []);
+    }
+  }, [
+    title,
+    content,
+    hashtags,
+    selectedAccounts,
+    allImages,
+    postMode,
+    scheduleDate,
+    scheduleTime,
+    navigate,
+    igPostType,
+    igMusicTrack,
+    selectedTrack,
+    musicStartOffset,
+    musicEndOffset,
+    videoPreviewUrl,
+  ]);
 
   // Group accounts by platform
-  const accountsByPlatform = MOCK_ACCOUNTS.reduce(
+  const accountsByPlatform = accounts.reduce(
     (acc, account) => {
       if (!acc[account.platform]) acc[account.platform] = [];
       acc[account.platform].push(account);
@@ -309,8 +711,30 @@ export default function CreatePostPage() {
   );
 
   const selectedPlatformCount = new Set(
-    MOCK_ACCOUNTS.filter((a) => selectedAccounts.includes(a.id)).map((a) => a.platform)
+    accounts.filter((a) => selectedAccounts.includes(a.id)).map((a) => a.platform)
   ).size;
+
+  const hasSelectedInstagram = accounts
+    .filter((a) => selectedAccounts.includes(a.id))
+    .some((a) => a.platform === "instagram");
+  const hasSelectedFacebook = accounts
+    .filter((a) => selectedAccounts.includes(a.id))
+    .some((a) => a.platform === "facebook");
+  const hasSelectedYouTube = accounts
+    .filter((a) => selectedAccounts.includes(a.id))
+    .some((a) => a.platform === "youtube");
+  const hasSelectedLinkedIn = accounts
+    .filter((a) => selectedAccounts.includes(a.id))
+    .some((a) => a.platform === "linkedin");
+  const hasSelectedTwitter = accounts
+    .filter((a) => selectedAccounts.includes(a.id))
+    .some((a) => a.platform === "twitter");
+
+  const isReelMode = (hasSelectedInstagram && igPostType === "reel") || 
+                     (hasSelectedFacebook && fbPostType === "reel") ||
+                     (hasSelectedYouTube && ytPostType === "video") ||
+                     (hasSelectedLinkedIn && liPostType === "video") ||
+                     (hasSelectedTwitter && twPostType === "video");
 
   // ────────────────────────────────────────────────────────
   // Render
@@ -398,9 +822,9 @@ export default function CreatePostPage() {
           {/* ═══════════════════════════════════════════════ */}
           {/* STEP 1: Create Content                         */}
           {/* ═══════════════════════════════════════════════ */}
-          {currentStep === 1 && (
+          {currentStep === 2 && (
             <motion.div
-              key="step1"
+              key="step2"
               custom={direction}
               variants={stepVariants}
               initial="enter"
@@ -569,6 +993,201 @@ export default function CreatePostPage() {
 
               {/* Right Panel (40%) */}
               <div className="lg:col-span-2 space-y-5">
+                {/* ── Instagram Post Type Selector ── */}
+                {hasSelectedInstagram && (
+                  <div className="rounded-2xl p-4 border border-white/10 bg-white/[0.03]">
+                    <div className="flex items-center gap-2 mb-3">
+                      <PlatformIcon platform="instagram" size="sm" showLabel />
+                      <span className="text-xs text-gray-500">• Format</span>
+                    </div>
+                    <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
+                      <button
+                        onClick={() => setIgPostType("post")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          igPostType === "post"
+                            ? "bg-gradient-to-r from-pink-500/25 to-orange-400/20 text-white border border-pink-500/30 shadow-sm shadow-pink-500/10"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        Post
+                      </button>
+                      <button
+                        onClick={() => setIgPostType("reel")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          igPostType === "reel"
+                            ? "bg-gradient-to-r from-pink-500/25 to-orange-400/20 text-white border border-pink-500/30 shadow-sm shadow-pink-500/10"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
+                        <Film className="w-3.5 h-3.5" />
+                        Reel
+                      </button>
+                    </div>
+                    {igPostType === "reel" && (
+                      <p className="text-[10px] text-pink-300/70 mt-2 text-center">Upload a vertical video · 9:16 recommended</p>
+                    )}
+                  </div>
+                )}
+
+                {hasSelectedFacebook && (
+                  <div className="rounded-2xl p-4 border border-white/10 bg-white/[0.03]">
+                    <div className="flex items-center gap-2 mb-3">
+                      <PlatformIcon platform="facebook" size="sm" showLabel />
+                      <span className="text-xs text-gray-500">• Format</span>
+                    </div>
+                    <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
+                      <button
+                        onClick={() => setFbPostType("post")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          fbPostType === "post"
+                            ? "bg-gradient-to-r from-blue-500/25 to-sky-400/20 text-white border border-blue-500/30 shadow-sm shadow-blue-500/10"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        Post
+                      </button>
+                      <button
+                        onClick={() => setFbPostType("reel")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          fbPostType === "reel"
+                            ? "bg-gradient-to-r from-blue-500/25 to-sky-400/20 text-white border border-blue-500/30 shadow-sm shadow-blue-500/10"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
+                        <Film className="w-3.5 h-3.5" />
+                        Reel
+                      </button>
+                    </div>
+                    {fbPostType === "reel" && (
+                      <p className="text-[10px] text-blue-300/70 mt-2 text-center">Upload a vertical video · 9:16 recommended</p>
+                    )}
+                  </div>
+                )}
+
+                {hasSelectedYouTube && (
+                  <div className="rounded-2xl p-4 border border-white/10 bg-white/[0.03]">
+                    <div className="flex items-center gap-2 mb-3">
+                      <PlatformIcon platform="youtube" size="sm" showLabel />
+                      <span className="text-xs text-gray-500">• Format</span>
+                    </div>
+                    <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
+                      <button
+                        onClick={() => setYtPostType("post")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          ytPostType === "post"
+                            ? "bg-gradient-to-r from-red-500/25 to-rose-400/20 text-white border border-red-500/30 shadow-sm shadow-red-500/10"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        Community Post
+                      </button>
+                      <button
+                        onClick={() => setYtPostType("video")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          ytPostType === "video"
+                            ? "bg-gradient-to-r from-red-500/25 to-rose-400/20 text-white border border-red-500/30 shadow-sm shadow-red-500/10"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
+                        <Film className="w-3.5 h-3.5" />
+                        Video / Shorts
+                      </button>
+                    </div>
+                    {ytPostType === "video" && (
+                      <p className="text-[10px] text-red-300/70 mt-2 text-center">Upload a vertical video · 9:16 recommended</p>
+                    )}
+                  </div>
+                )}
+
+                {hasSelectedLinkedIn && (
+                  <div className="rounded-2xl p-4 border border-white/10 bg-white/[0.03]">
+                    <div className="flex items-center gap-2 mb-3">
+                      <PlatformIcon platform="linkedin" size="sm" showLabel />
+                      <span className="text-xs text-gray-500">• Format</span>
+                    </div>
+                    <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
+                      <button
+                        onClick={() => setLiPostType("post")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          liPostType === "post"
+                            ? "bg-gradient-to-r from-blue-600/25 to-sky-500/20 text-white border border-blue-600/30 shadow-sm shadow-blue-600/10"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        Post
+                      </button>
+                      <button
+                        onClick={() => setLiPostType("video")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          liPostType === "video"
+                            ? "bg-gradient-to-r from-blue-600/25 to-sky-500/20 text-white border border-blue-600/30 shadow-sm shadow-blue-600/10"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
+                        <Film className="w-3.5 h-3.5" />
+                        Video
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {hasSelectedTwitter && (
+                  <div className="rounded-2xl p-4 border border-white/10 bg-white/[0.03]">
+                    <div className="flex items-center gap-2 mb-3">
+                      <PlatformIcon platform="twitter" size="sm" showLabel />
+                      <span className="text-xs text-gray-500">• Format</span>
+                    </div>
+                    <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
+                      <button
+                        onClick={() => setTwPostType("post")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          twPostType === "post"
+                            ? "bg-white/10 text-white border border-white/20 shadow-sm"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        Post
+                      </button>
+                      <button
+                        onClick={() => setTwPostType("video")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          twPostType === "video"
+                            ? "bg-white/10 text-white border border-white/20 shadow-sm"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
+                        <Film className="w-3.5 h-3.5" />
+                        Video
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Image & Media Section */}
                 <GlassCard className="!p-0 overflow-hidden">
                   {/* Tab bar */}
@@ -600,58 +1219,107 @@ export default function CreatePostPage() {
                     {/* Upload Tab */}
                     {mediaTab === "upload" && (
                       <div className="space-y-4">
-                        {/* Drag & drop zone */}
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="w-full border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center gap-3 hover:border-purple-500/30 hover:bg-purple-500/5 transition-all duration-200 group"
-                        >
-                          <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-purple-500/10 transition-colors">
-                            <Upload className="w-5 h-5 text-gray-400 group-hover:text-purple-400 transition-colors" />
-                          </div>
-                          <div className="text-center">
-                            <p className="text-sm text-gray-300">
-                              Drag & drop or click to upload
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              PNG, JPG, GIF up to 10MB
-                            </p>
-                          </div>
-                        </button>
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          onChange={handleFileUpload}
-                          className="hidden"
-                        />
-
-                        {/* Image preview grid */}
-                        {uploadedImages.length > 0 && (
-                          <div className="grid grid-cols-2 gap-2">
-                            {uploadedImages.map((img, i) => (
-                              <div
-                                key={i}
-                                className="relative rounded-xl overflow-hidden border border-white/10 aspect-square group"
-                              >
-                                <img
-                                  src={img}
-                                  alt={`Upload ${i + 1}`}
-                                  className="w-full h-full object-cover"
-                                />
-                                <button
-                                  onClick={() =>
-                                    setUploadedImages((prev) =>
-                                      prev.filter((_, idx) => idx !== i)
-                                    )
-                                  }
-                                  className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
+                        {isReelMode ? (
+                          /* ── Reel: Video Upload ── */
+                          <div className="space-y-3">
+                            <button
+                              onClick={() => videoInputRef.current?.click()}
+                              className="w-full border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center gap-3 hover:border-pink-500/30 hover:bg-pink-500/5 transition-all duration-200 group"
+                              type="button"
+                            >
+                              <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-pink-500/10 transition-colors">
+                                <Video className="w-5 h-5 text-gray-400 group-hover:text-pink-400 transition-colors" />
                               </div>
-                            ))}
+                              <div className="text-center">
+                                <p className="text-sm text-gray-300">Upload Reel video</p>
+                                <p className="text-xs text-gray-500 mt-1">MP4, MOV up to 100 MB · 9:16 recommended</p>
+                              </div>
+                            </button>
+                            <input
+                              ref={videoInputRef}
+                              type="file"
+                              accept="video/*"
+                              onChange={handleVideoUpload}
+                              className="hidden"
+                            />
+                            {videoPreviewUrl && (
+                              <div className="relative rounded-xl overflow-hidden border border-white/10 bg-black/30">
+                                <video
+                                  src={videoPreviewUrl}
+                                  className="w-full rounded-xl max-h-52 object-contain"
+                                  controls
+                                />
+                                <div className="flex items-center justify-between px-2 py-1.5">
+                                  <p className="text-[11px] text-gray-400 truncate flex-1 mr-2">{videoFileName}</p>
+                                  <button
+                                    onClick={() => { setVideoPreviewUrl(null); setVideoFileName(null); }}
+                                    className="w-5 h-5 rounded-full bg-black/70 flex items-center justify-center text-white hover:bg-red-500 transition-colors flex-shrink-0"
+                                    type="button"
+                                  >
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
+                        ) : (
+                          /* ── Post: Image Upload ── */
+                          <>
+                            <button
+                              onClick={() => fileInputRef.current?.click()}
+                              className="w-full border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center gap-3 hover:border-purple-500/30 hover:bg-purple-500/5 transition-all duration-200 group"
+                              type="button"
+                            >
+                              <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-purple-500/10 transition-colors">
+                                <Upload className="w-5 h-5 text-gray-400 group-hover:text-purple-400 transition-colors" />
+                              </div>
+                              <div className="text-center">
+                                <p className="text-sm text-gray-300">
+                                  Drag & drop or click to upload
+                                </p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  PNG, JPG, GIF up to 10MB
+                                </p>
+                              </div>
+                            </button>
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              onChange={handleFileUpload}
+                              className="hidden"
+                            />
+
+                            {/* Image preview grid */}
+                            {uploadedImages.length > 0 && (
+                              <div className="grid grid-cols-2 gap-2">
+                                {uploadedImages.map((img, i) => (
+                                  <div
+                                    key={i}
+                                    className="relative rounded-xl overflow-hidden border border-white/10 aspect-square group"
+                                  >
+                                    <img
+                                      src={img}
+                                      alt={`Upload ${i + 1}`}
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <button
+                                      onClick={() =>
+                                        setUploadedImages((prev) =>
+                                          prev.filter((_, idx) => idx !== i)
+                                        )
+                                      }
+                                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                                      type="button"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -735,12 +1403,22 @@ export default function CreatePostPage() {
                                 key={i}
                                 className="relative rounded-xl overflow-hidden border border-white/10 aspect-square bg-gradient-to-br from-purple-900/30 to-blue-900/30 flex flex-col items-center justify-center group"
                               >
-                                <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center mb-2">
-                                  <ImageIcon className="w-5 h-5 text-gray-500" />
-                                </div>
-                                <span className="text-[10px] text-gray-500">
-                                  Generated {i + 1}
-                                </span>
+                                {img.startsWith("data:") || img.startsWith("http") || img.startsWith("blob:") ? (
+                                  <img
+                                    src={img}
+                                    alt={`Generated ${i + 1}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <>
+                                    <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center mb-2">
+                                      <ImageIcon className="w-5 h-5 text-gray-500" />
+                                    </div>
+                                    <span className="text-[10px] text-gray-500">
+                                      Generated {i + 1}
+                                    </span>
+                                  </>
+                                )}
                                 <div className="absolute inset-0 bg-black/60 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button
                                     onClick={() =>
@@ -890,17 +1568,349 @@ export default function CreatePostPage() {
                   </div>
                 </GlassCard>
 
+                {/* ── Music Picker (Instagram) ── */}
+                {(hasSelectedInstagram || hasSelectedFacebook) && (
+                  <GlassCard>
+                    <button
+                      className="w-full flex items-center justify-between"
+                      onClick={() => setIgMusicOpen((v) => !v)}
+                      type="button"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#7c3aed40,#ec489940)" }}>
+                          <Music2 className="w-3.5 h-3.5 text-purple-300" />
+                        </div>
+                        <span className="text-sm font-semibold text-gray-300">Add Music</span>
+                        {igMusicTrack && (
+                          <span className="px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/25 text-purple-300 text-[11px] font-medium truncate max-w-[130px]">
+                            ♫ {igMusicTrack.split(" – ")[0]}
+                          </span>
+                        )}
+                      </div>
+                      <ChevronDown className={cn("w-4 h-4 text-gray-500 transition-transform duration-200", igMusicOpen && "rotate-180")} />
+                    </button>
+
+                    <AnimatePresence>
+                      {igMusicOpen && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="pt-4 space-y-3">
+                            {/* Selected Track & Trim Controls */}
+                            {selectedTrack && (
+                              <div className="rounded-xl bg-purple-500/10 border border-purple-500/20 p-3.5 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-white/5 flex-shrink-0 group">
+                                      {selectedTrack.artworkUrl100 ? (
+                                        <img src={selectedTrack.artworkUrl100} alt="Cover" className="w-full h-full object-cover" />
+                                      ) : (
+                                        <Music2 className="w-5 h-5 text-purple-300 m-auto mt-2.5" />
+                                      )}
+                                      <button
+                                        onClick={() => togglePlayTrack(selectedTrack)}
+                                        className="absolute inset-0 bg-black/50 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                        type="button"
+                                      >
+                                        {playingTrackId === String(selectedTrack.trackId) ? (
+                                          <span className="w-2.5 h-2.5 bg-white rounded-sm animate-pulse" />
+                                        ) : (
+                                          <Play className="w-3.5 h-3.5 fill-white text-white" />
+                                        )}
+                                      </button>
+                                    </div>
+                                    <div className="min-w-0 text-left">
+                                      <p className="text-xs font-bold text-purple-200 truncate">{selectedTrack.trackName}</p>
+                                      <p className="text-[10px] text-purple-400 truncate">{selectedTrack.artistName}</p>
+                                    </div>
+                                  </div>
+                                  <button onClick={() => selectTrack(selectedTrack)} className="text-purple-400 hover:text-purple-200 transition-colors p-1" type="button">
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+
+                                {/* Full-song player — play the whole track & scrub to any position */}
+                                <div className="space-y-2 border-t border-purple-500/10 pt-3">
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => togglePlayTrack(selectedTrack, false)}
+                                      type="button"
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-semibold text-white transition-all flex-shrink-0"
+                                    >
+                                      {playingTrackId === String(selectedTrack.trackId) && !clipPreviewRef.current ? (
+                                        <>
+                                          <span className="w-2 h-2 bg-white rounded-sm" /> Pause
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Play className="w-3 h-3 fill-white text-white" /> Play full song
+                                        </>
+                                      )}
+                                    </button>
+                                    <span className="text-[10px] text-gray-400 tabular-nums flex-shrink-0">
+                                      {fmtTime(playhead)} / {fmtTime(trackDuration)}
+                                    </span>
+                                  </div>
+
+                                  {/* Scrubber — drag to select the particular position */}
+                                  <input
+                                    type="range"
+                                    min={0}
+                                    max={trackDuration}
+                                    step={0.1}
+                                    value={playhead}
+                                    onChange={(e) => seekTo(Number(e.target.value))}
+                                    className="w-full h-1.5 rounded-full bg-white/10 appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-lg"
+                                  />
+
+                                  {/* Set the trim window from the current playhead position */}
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => {
+                                        const val = Math.min(playhead, musicEndOffset - 1);
+                                        setMusicStartOffset(Math.max(0, val));
+                                      }}
+                                      type="button"
+                                      className="flex-1 py-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/25 text-[10px] font-semibold text-purple-200 transition-all"
+                                    >
+                                      ⇤ Set start here
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const val = Math.max(playhead, musicStartOffset + 1);
+                                        setMusicEndOffset(Math.min(trackDuration, val));
+                                      }}
+                                      type="button"
+                                      className="flex-1 py-1.5 rounded-lg bg-pink-500/15 hover:bg-pink-500/25 border border-pink-500/25 text-[10px] font-semibold text-pink-200 transition-all"
+                                    >
+                                      Set end here ⇥
+                                    </button>
+                                    <button
+                                      onClick={() => togglePlayTrack(selectedTrack, true)}
+                                      type="button"
+                                      className="flex-1 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-semibold text-white transition-all"
+                                    >
+                                      ▶ Preview clip
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Instagram Clip Trim — choose start & end */}
+                                <div className="space-y-2.5 px-1 py-1 border-t border-purple-500/10 pt-3">
+                                  <div className="flex items-center justify-between text-[10px] text-purple-300/80">
+                                    <span className="font-semibold flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping" />
+                                      Start {musicStartOffset.toFixed(1)}s
+                                    </span>
+                                    <span className="px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-200 font-semibold">
+                                      Clip {(musicEndOffset - musicStartOffset).toFixed(1)}s
+                                    </span>
+                                    <span>End {musicEndOffset.toFixed(1)}s</span>
+                                  </div>
+
+                                  {/* Visual selection window */}
+                                  <div className="relative h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                    <div
+                                      className="absolute h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500"
+                                      style={{
+                                        left: `${(musicStartOffset / trackDuration) * 100}%`,
+                                        right: `${Math.max(0, 100 - (musicEndOffset / trackDuration) * 100)}%`,
+                                      }}
+                                    />
+                                  </div>
+
+                                  {/* Start handle */}
+                                  <div>
+                                    <div className="flex justify-between text-[9px] text-gray-400 font-semibold mb-0.5">
+                                      <span>Start point</span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min={0}
+                                      max={trackDuration}
+                                      step={0.5}
+                                      value={musicStartOffset}
+                                      onChange={(e) => {
+                                        let val = Number(e.target.value);
+                                        if (val > musicEndOffset - 1) val = Math.max(0, musicEndOffset - 1);
+                                        setMusicStartOffset(val);
+                                        if (audioRef.current && playingTrackId === String(selectedTrack.trackId)) {
+                                          audioRef.current.currentTime = val;
+                                        }
+                                      }}
+                                      className="w-full h-1 rounded-full bg-white/10 appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-500 [&::-webkit-slider-thumb]:shadow-lg"
+                                    />
+                                  </div>
+
+                                  {/* End handle */}
+                                  <div>
+                                    <div className="flex justify-between text-[9px] text-gray-400 font-semibold mb-0.5">
+                                      <span>End point</span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min={0}
+                                      max={trackDuration}
+                                      step={0.5}
+                                      value={musicEndOffset}
+                                      onChange={(e) => {
+                                        let val = Number(e.target.value);
+                                        if (val < musicStartOffset + 1) val = Math.min(trackDuration, musicStartOffset + 1);
+                                        setMusicEndOffset(val);
+                                        if (audioRef.current && playingTrackId === String(selectedTrack.trackId)) {
+                                          audioRef.current.currentTime = musicStartOffset;
+                                        }
+                                      }}
+                                      className="w-full h-1 rounded-full bg-white/10 appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-pink-500 [&::-webkit-slider-thumb]:shadow-lg"
+                                    />
+                                  </div>
+
+                                  <div className="flex justify-between text-[8px] text-gray-500 font-semibold pt-0.5">
+                                    <span>0s</span>
+                                    <span>{(trackDuration / 2).toFixed(0)}s</span>
+                                    <span>{trackDuration.toFixed(0)}s</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Search input */}
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={igMusicSearch}
+                                onChange={(e) => setIgMusicSearch(e.target.value)}
+                                placeholder="Search real songs on Instagram..."
+                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-sm text-white placeholder-gray-500 outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                              />
+                              {searchLoading && (
+                                <RefreshCw className="absolute right-3.5 top-3.5 w-3.5 h-3.5 text-purple-400 animate-spin" />
+                              )}
+                            </div>
+
+                            {/* Upload your own audio from device / folder */}
+                            <button
+                              onClick={() => audioInputRef.current?.click()}
+                              type="button"
+                              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-white/15 text-xs font-medium text-gray-300 hover:border-purple-500/40 hover:bg-purple-500/5 transition-all"
+                            >
+                              <Upload className="w-3.5 h-3.5" />
+                              Upload audio from device
+                            </button>
+                            <input
+                              ref={audioInputRef}
+                              type="file"
+                              accept="audio/*"
+                              onChange={handleAudioUpload}
+                              className="hidden"
+                            />
+
+                            {/* Search results list */}
+                            <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                              {searchResults.map((track) => {
+                                const trackId = String(track.trackId);
+                                const isSelected = selectedTrack?.trackId === track.trackId;
+                                const isPlaying = playingTrackId === trackId;
+                                return (
+                                  <div
+                                    key={trackId}
+                                    className={cn(
+                                      "w-full flex items-center justify-between p-2 rounded-xl transition-all duration-150 border text-left",
+                                      isSelected
+                                        ? "bg-purple-500/15 border-purple-500/30"
+                                        : "bg-white/[0.02] border-white/5 hover:bg-white/5 hover:border-white/10"
+                                    )}
+                                  >
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                      {/* Cover art with Play/Pause overlay */}
+                                      <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-white/5 flex-shrink-0 group">
+                                        {track.artworkUrl100 ? (
+                                          <img src={track.artworkUrl100} alt="Art" className="w-full h-full object-cover" />
+                                        ) : (
+                                          <Music2 className="w-4 h-4 text-gray-400 m-auto mt-2" />
+                                        )}
+                                        <button
+                                          onClick={() => togglePlayTrack(track)}
+                                          className={cn(
+                                            "absolute inset-0 bg-black/60 flex items-center justify-center text-white transition-opacity",
+                                            isPlaying ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                          )}
+                                          type="button"
+                                        >
+                                          {isPlaying ? (
+                                            <span className="w-2 h-2 bg-white rounded-sm animate-pulse" />
+                                          ) : (
+                                            <Play className="w-3 h-3 fill-white text-white" />
+                                          )}
+                                        </button>
+                                      </div>
+
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-semibold truncate text-white">{track.trackName}</p>
+                                        <p className="text-[10px] text-gray-500 truncate">{track.artistName}</p>
+                                      </div>
+                                    </div>
+
+                                    {/* Action button */}
+                                    <button
+                                      onClick={() => selectTrack(track)}
+                                      className={cn(
+                                        "px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all flex items-center gap-1",
+                                        isSelected
+                                          ? "bg-purple-500 text-white shadow-sm"
+                                          : "bg-white/5 hover:bg-purple-500/20 text-gray-300 hover:text-white"
+                                      )}
+                                      type="button"
+                                    >
+                                      {isSelected ? (
+                                        <>
+                                          <Check className="w-3 h-3" />
+                                          Selected
+                                        </>
+                                      ) : (
+                                        "Select"
+                                      )}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+
+                              {!searchLoading && searchResults.length === 0 && (
+                                <p className="text-[11px] text-gray-500 text-center py-4">
+                                  No songs found. Type above to search.
+                                </p>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-gray-600 text-center pt-1">
+                              Streamed songs preview 30s &middot; Upload a file to play the full song &middot; Scrub to pick your position, then Set start/end
+                            </p>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </GlassCard>
+                )}
+
                 {/* Next button */}
-                <Button
-                  onClick={nextStep}
-                  size="lg"
-                  fullWidth
-                  icon={<ArrowRight className="w-4 h-4" />}
-                  iconPosition="right"
-                  disabled={!content.trim()}
-                >
-                  Next: Select Accounts
-                </Button>
+                <div className="flex gap-3 mt-4">
+                  <Button variant="secondary" onClick={prevStep} icon={<ArrowLeft className="w-4 h-4" />} size="lg">
+                    Back
+                  </Button>
+                  <Button
+                    onClick={nextStep}
+                    size="lg"
+                    fullWidth
+                    icon={<ArrowRight className="w-4 h-4" />}
+                    iconPosition="right"
+                    disabled={!content.trim()}
+                  >
+                    Next: Preview
+                  </Button>
+                </div>
               </div>
             </motion.div>
           )}
@@ -908,9 +1918,9 @@ export default function CreatePostPage() {
           {/* ═══════════════════════════════════════════════ */}
           {/* STEP 2: Select Target Accounts                 */}
           {/* ═══════════════════════════════════════════════ */}
-          {currentStep === 2 && (
+          {currentStep === 1 && (
             <motion.div
-              key="step2"
+              key="step1"
               custom={direction}
               variants={stepVariants}
               initial="enter"
@@ -928,6 +1938,18 @@ export default function CreatePostPage() {
                 </p>
               </div>
 
+              {accountsLoading ? (
+                <div className="flex items-center justify-center py-12 gap-3">
+                  <RefreshCw className="w-5 h-5 text-purple-400 animate-spin" />
+                  <span className="text-slate-400 text-sm">Loading your connected accounts…</span>
+                </div>
+              ) : accounts.length === 0 ? (
+                <div className="text-center py-12">
+                  <Users className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                  <p className="text-slate-400 text-sm mb-1">No social accounts connected yet</p>
+                  <p className="text-xs text-slate-500">Go to <strong className="text-purple-400">Social Accounts</strong> to connect your profiles first.</p>
+                </div>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {(Object.entries(accountsByPlatform) as [Platform, Account[]][]).map(
                   ([platform, accounts]) => {
@@ -1018,6 +2040,7 @@ export default function CreatePostPage() {
                   }
                 )}
               </div>
+              )}
 
               {/* Summary bar */}
               <GlassCard
@@ -1051,9 +2074,6 @@ export default function CreatePostPage() {
 
               {/* Navigation */}
               <div className="flex gap-3">
-                <Button variant="secondary" onClick={prevStep} icon={<ArrowLeft className="w-4 h-4" />} size="lg">
-                  Back
-                </Button>
                 <Button
                   onClick={nextStep}
                   size="lg"
@@ -1062,7 +2082,7 @@ export default function CreatePostPage() {
                   iconPosition="right"
                   disabled={selectedAccounts.length === 0}
                 >
-                  Next: Preview
+                  Next: Create Content
                 </Button>
               </div>
             </motion.div>
@@ -1128,12 +2148,15 @@ export default function CreatePostPage() {
                     <DevicePreview
                       content={content}
                       images={allImages}
+                      videoUrl={videoPreviewUrl || null}
                       hashtags={hashtags}
                       device={previewDevice}
                       platformName={
-                        MOCK_ACCOUNTS.find((a) => selectedAccounts.includes(a.id))
+                        accounts.find((a) => selectedAccounts.includes(a.id))
                           ?.platform ?? "Social Feed"
                       }
+                      igPostType={igPostType}
+                      igMusicTrack={igMusicTrack}
                     />
                   </motion.div>
                 </AnimatePresence>
@@ -1239,11 +2262,30 @@ export default function CreatePostPage() {
                     )}
                   </div>
 
+                  {/* Instagram Reel / Music badges */}
+                  {(igPostType === "reel" || igMusicTrack) && (
+                    <div className="flex flex-wrap gap-2 pt-1 pb-3">
+                      {igPostType === "reel" && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border" style={{ background: "linear-gradient(135deg,#f0943320,#dc274320)", borderColor: "#f09433aa", color: "#f09433" }}>
+                          <Film className="w-3 h-3" />
+                          Reel
+                          {videoFileName && <span className="opacity-60 max-w-[80px] truncate">· {videoFileName}</span>}
+                        </span>
+                      )}
+                      {igMusicTrack && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[11px] font-semibold">
+                          <Music2 className="w-3 h-3" />
+                          {igMusicTrack.split(" – ")[0]}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Target accounts */}
                   <div>
                     <p className="text-xs text-gray-400 mb-2">Publishing to</p>
                     <div className="space-y-1.5">
-                      {MOCK_ACCOUNTS.filter((a) =>
+                      {accounts.filter((a) =>
                         selectedAccounts.includes(a.id)
                       ).map((account) => (
                         <div
@@ -1427,3 +2469,4 @@ export default function CreatePostPage() {
     </DashboardLayout>
   );
 }
+

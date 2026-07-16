@@ -86,8 +86,8 @@ class SocialAccount(Base):
     # Account identification
     account_name: Mapped[str] = mapped_column(String(200), nullable=False)  # e.g., "Acme Corp Instagram"
     account_handle: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # e.g., "@acmecorp"
-    profile_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    profile_image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    profile_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    profile_image_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
     # API credentials (encrypted in production)
     api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

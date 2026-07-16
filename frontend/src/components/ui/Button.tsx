@@ -73,12 +73,12 @@ export function Button({
     },
     secondary: {
       backgroundColor: "transparent",
-      color: "#7c3aed",
-      border: "1.5px solid #7c3aed",
+      color: "var(--accent-purple)",
+      border: "1.5px solid var(--accent-purple)",
     },
     ghost: {
       backgroundColor: "transparent",
-      color: "#6b7280",
+      color: "var(--page-text-secondary)",
     },
     danger: {
       backgroundColor: "#e11d48",

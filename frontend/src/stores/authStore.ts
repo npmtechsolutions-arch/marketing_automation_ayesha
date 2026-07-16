@@ -46,7 +46,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
       // Fetch user's first account
       try {
-        const accountsResponse = await api.get("/accounts");
+        const accountsResponse: any = await api.get("/accounts");
         let accountId = null;
 
         // Handle different response formats
@@ -96,7 +96,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
       // Fetch user's first account
       try {
-        const accountsResponse = await api.get("/accounts");
+        const accountsResponse: any = await api.get("/accounts");
         let accountId = null;
 
         // Handle different response formats

@@ -11,6 +11,8 @@ import {
   Settings,
   CreditCard,
   LogOut,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/stores/uiStore";
@@ -34,7 +36,7 @@ const breadcrumbMap: Record<string, string> = {
 };
 
 export default function TopBar() {
-  const { setSidebarOpen, toggleNotifications, notificationsOpen, unreadCount } =
+  const { setSidebarOpen, toggleNotifications, notificationsOpen, unreadCount, theme, toggleTheme } =
     useUIStore();
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -147,6 +149,16 @@ export default function TopBar() {
           <Plus className="h-4 w-4" />
         </button>
 
+        {/* Theme toggle */}
+        <button
+          onClick={toggleTheme}
+          aria-label="Toggle theme"
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
+        >
+          {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+        </button>
+
         {/* Notifications */}
         <div ref={notifRef} className="relative">
           <button
@@ -201,7 +213,7 @@ export default function TopBar() {
                   {[
                     { label: "Profile", icon: User, path: "/profile" },
                     { label: "Settings", icon: Settings, path: "/settings" },
-                    { label: "Billing", icon: CreditCard, path: "/settings?tab=billing" },
+                    { label: "Billing", icon: CreditCard, path: "/billing" },
                   ].map((item) => (
                     <button
                       key={item.label}

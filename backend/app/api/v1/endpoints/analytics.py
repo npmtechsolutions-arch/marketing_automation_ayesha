@@ -73,7 +73,7 @@ class PlatformBreakdownItem(BaseModel):
 @router.get("/overview", response_model=AnalyticsOverview)
 async def analytics_overview(
     account_id: uuid.UUID,
-    period: str = Query("30d", regex="^(7d|30d|90d)$"),
+    period: str = Query("30d", pattern="^(7d|30d|90d)$"),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):
@@ -152,7 +152,7 @@ async def analytics_overview(
 @router.get("/top-posts", response_model=list[TopPost])
 async def top_posts(
     account_id: uuid.UUID,
-    period: str = Query("30d", regex="^(7d|30d|90d)$"),
+    period: str = Query("30d", pattern="^(7d|30d|90d)$"),
     limit: int = Query(10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
@@ -205,8 +205,8 @@ async def top_posts(
 @router.get("/trends", response_model=list[PerformanceTrend])
 async def performance_trends(
     account_id: uuid.UUID,
-    period: str = Query("30d", regex="^(7d|30d|90d)$"),
-    group_by: str = Query("day", regex="^(day|week|month)$"),
+    period: str = Query("30d", pattern="^(7d|30d|90d)$"),
+    group_by: str = Query("day", pattern="^(day|week|month)$"),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):
@@ -265,7 +265,7 @@ async def performance_trends(
 @router.get("/platform-breakdown", response_model=list[PlatformBreakdownItem])
 async def platform_breakdown(
     account_id: uuid.UUID,
-    period: str = Query("30d", regex="^(7d|30d|90d)$"),
+    period: str = Query("30d", pattern="^(7d|30d|90d)$"),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):

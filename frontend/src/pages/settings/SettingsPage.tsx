@@ -1,4 +1,5 @@
 import { useState, type JSX } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User,
@@ -8,8 +9,6 @@ import {
   Palette,
   Camera,
   Shield,
-  Monitor,
-  Smartphone,
   QrCode,
   Copy,
   Eye,
@@ -32,6 +31,10 @@ import { Badge } from "@/components/ui/Badge";
 import { Toggle } from "@/components/ui/Toggle";
 import { Select } from "@/components/ui/Select";
 import { cn } from "@/lib/utils";
+import { useUIStore } from "@/stores/uiStore";
+import { useAuthStore } from "@/stores/authStore";
+import { del } from "@/lib/api";
+import { showSuccess, showError } from "@/components/ui/Toast";
 
 // ── Settings nav items ──────────────────────────────────────────────
 const settingsNav = [
@@ -94,8 +97,8 @@ function getPasswordStrength(pw: string) {
 
 function ProfileTab() {
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("");
+  const [email] = useState("");
+  const [role] = useState("");
   const [saved, setSaved] = useState(false);
 
   const initials = name.split(" ").map((n) => n[0]).join("").toUpperCase();
@@ -154,6 +157,9 @@ function ProfileTab() {
 }
 
 function SecurityTab() {
+  const navigate = useNavigate();
+  const logout = useAuthStore((s) => s.logout);
+
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
@@ -161,8 +167,37 @@ function SecurityTab() {
   const [twoFa, setTwoFa] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const strength = getPasswordStrength(newPw);
+
+  const canDelete =
+    deleteConfirm === "DELETE" && deletePassword.length > 0 && !deleting;
+
+  const closeDeleteModal = () => {
+    if (deleting) return;
+    setShowDeleteModal(false);
+    setDeleteConfirm("");
+    setDeletePassword("");
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!canDelete) return;
+    setDeleting(true);
+    try {
+      await del("/users/me", { data: { password: deletePassword } });
+      showSuccess("Your account has been deleted.");
+      logout();
+      navigate("/", { replace: true });
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "Could not delete your account. Please try again.";
+      showError(detail);
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -266,15 +301,30 @@ function SecurityTab() {
       </GlassCard>
 
       {/* Delete Confirmation Modal */}
-      <Modal isOpen={showDeleteModal} onClose={() => { setShowDeleteModal(false); setDeleteConfirm(""); }} title="Delete Account" size="sm">
+      <Modal isOpen={showDeleteModal} onClose={closeDeleteModal} title="Delete Account" size="sm">
         <div className="space-y-4">
           <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-300">This will permanently delete your account, all content, analytics, and team data. This cannot be undone.</p>
           </div>
-          <Input label='Type "DELETE" to confirm' value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} />
+          <Input
+            label="Confirm your password"
+            type="password"
+            value={deletePassword}
+            onChange={(e) => setDeletePassword(e.target.value)}
+            disabled={deleting}
+            autoComplete="current-password"
+          />
+          <Input
+            label='Type "DELETE" to confirm'
+            value={deleteConfirm}
+            onChange={(e) => setDeleteConfirm(e.target.value)}
+            disabled={deleting}
+          />
           <div className="flex gap-3 justify-end">
-            <Button variant="ghost" onClick={() => { setShowDeleteModal(false); setDeleteConfirm(""); }}>Cancel</Button>
-            <Button variant="danger" disabled={deleteConfirm !== "DELETE"}>Delete Forever</Button>
+            <Button variant="ghost" onClick={closeDeleteModal} disabled={deleting}>Cancel</Button>
+            <Button variant="danger" disabled={!canDelete} loading={deleting} onClick={handleDeleteAccount}>
+              {deleting ? "Deleting..." : "Delete Forever"}
+            </Button>
           </div>
         </div>
       </Modal>
@@ -467,6 +517,13 @@ function AppearanceTab() {
   const [sidebar, setSidebar] = useState<"expanded" | "collapsed">("expanded");
   const [defaultView, setDefaultView] = useState("overview");
   const [calendarView, setCalendarView] = useState("week");
+  const theme = useUIStore((s) => s.theme);
+  const setTheme = useUIStore((s) => s.setTheme);
+
+  const themeOptions = [
+    { id: "dark" as const, icon: Moon, label: "Dark" },
+    { id: "light" as const, icon: Sun, label: "Light" },
+  ];
 
   return (
     <div className="space-y-8">
@@ -479,19 +536,30 @@ function AppearanceTab() {
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">Theme</h3>
         <div className="grid grid-cols-2 gap-4 max-w-md">
-          <button className="relative p-4 rounded-xl bg-slate-900 border-2 border-purple-500/50 text-center transition-all">
-            <Moon className="w-8 h-8 text-purple-400 mx-auto mb-2" />
-            <p className="text-sm font-medium text-white">Dark</p>
-            <p className="text-xs text-gray-400 mt-0.5">Current theme</p>
-            <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center">
-              <Check className="w-3 h-3 text-white" />
-            </div>
-          </button>
-          <button className="relative p-4 rounded-xl bg-white/5 border-2 border-white/10 text-center opacity-50 cursor-not-allowed">
-            <Sun className="w-8 h-8 text-gray-500 mx-auto mb-2" />
-            <p className="text-sm font-medium text-gray-400">Light</p>
-            <Badge variant="default" size="sm" className="mt-1">Coming Soon</Badge>
-          </button>
+          {themeOptions.map((opt) => {
+            const active = theme === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setTheme(opt.id)}
+                className={cn(
+                  "relative p-4 rounded-xl border-2 text-center transition-all",
+                  active
+                    ? "bg-purple-500/10 border-purple-500/50"
+                    : "bg-white/5 border-white/10 hover:border-white/20"
+                )}
+              >
+                <opt.icon className={cn("w-8 h-8 mx-auto mb-2", active ? "text-purple-400" : "text-gray-500")} />
+                <p className={cn("text-sm font-medium", active ? "text-white" : "text-gray-400")}>{opt.label}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{active ? "Current theme" : "Click to switch"}</p>
+                {active && (
+                  <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center">
+                    <Check className="w-3 h-3 text-white" />
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       </GlassCard>
 

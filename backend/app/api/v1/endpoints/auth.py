@@ -15,10 +15,13 @@ from app.core.security import (
     decode_token,
     get_password_hash,
     verify_password,
+    create_password_reset_token,
+    verify_password_reset_token,
 )
 from app.models.account import Account, SubscriptionStatus, SubscriptionTier
 from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
+from app.services.email_service import EmailService
 from app.schemas.common import MessageResponse
 from app.schemas.user import (
     PasswordReset,
@@ -207,18 +210,14 @@ async def forgot_password(
     payload: PasswordReset,
     db: AsyncSession = Depends(get_db),
 ):
-    """Request a password reset email.
-
-    Note: Email dispatch is not yet implemented. This endpoint always returns
-    a success message to avoid leaking whether the email exists.
-    """
+    """Request a password reset email."""
     # Look up user (but always return success to prevent enumeration)
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
 
     if user is not None and user.is_active:
-        # TODO: Generate a time-limited reset token and send via email
-        pass
+        token = create_password_reset_token(user.email)
+        EmailService.send_password_reset_email(user.email, token)
 
     return MessageResponse(
         message="If an account with that email exists, a reset link has been sent"
@@ -230,16 +229,30 @@ async def reset_password(
     payload: PasswordResetConfirm,
     db: AsyncSession = Depends(get_db),
 ):
-    """Reset the password using a valid reset token.
+    """Reset the password using a valid reset token."""
+    email = verify_password_reset_token(payload.token)
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
 
-    Note: Token verification is not yet implemented. This is a placeholder.
-    """
-    # TODO: Verify the reset token, find the user, and update the password
-    # decoded = verify_reset_token(payload.token)
-    # user = await db.get(User, decoded["user_id"])
-    # user.password_hash = get_password_hash(payload.new_password)
+    if len(payload.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long",
+        )
 
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Password reset is not yet implemented",
-    )
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User not found or inactive",
+        )
+
+    user.password_hash = get_password_hash(payload.new_password)
+    db.add(user)
+
+    return MessageResponse(message="Password has been reset successfully")
+

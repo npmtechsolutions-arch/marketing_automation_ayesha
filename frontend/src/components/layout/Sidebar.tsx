@@ -18,6 +18,10 @@ import {
   X,
   UserCircle,
   Activity,
+  Bell,
+  CreditCard,
+  HelpCircle,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/stores/uiStore";
@@ -34,7 +38,19 @@ const navItems = [
   { label: "Campaigns", icon: Megaphone, path: "/campaigns" },
   { label: "Activity Log", icon: Activity, path: "/activity" },
   { label: "Team", icon: Users, path: "/team" },
+];
+
+// Secondary nav — account-level pages shown below a divider
+const secondaryNavItems = [
+  { label: "Notifications", icon: Bell, path: "/notifications" },
+  { label: "Billing", icon: CreditCard, path: "/billing" },
   { label: "Settings", icon: Settings, path: "/settings" },
+  { label: "Help Center", icon: HelpCircle, path: "/help" },
+];
+
+// Admin-only nav
+const adminNavItems = [
+  { label: "Admin", icon: ShieldCheck, path: "/admin" },
 ];
 
 const sidebarVariants = {
@@ -209,6 +225,55 @@ function SidebarContent({
   onToggleCollapse?: () => void;
   currentPath: string;
 }) {
+  const role = useAuthStore((s) => s.user?.role);
+  const isAdmin = role === "admin" || role === "super_admin" || role === "superadmin";
+
+  const renderItem = (
+    item: { label: string; icon: typeof LayoutDashboard; path: string },
+    i: number
+  ) => {
+    const isActive =
+      currentPath === item.path ||
+      (item.path !== "/dashboard" && currentPath.startsWith(item.path));
+
+    return (
+      <motion.li
+        key={item.path}
+        custom={i}
+        variants={itemVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        <NavLink
+          to={item.path}
+          onClick={onClose}
+          className={cn(
+            "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+            collapsed && "justify-center px-0",
+            isActive
+              ? "border-l-2 border-purple-500 bg-purple-500/20 text-white"
+              : "border-l-2 border-transparent text-slate-400 hover:bg-white/5 hover:text-white"
+          )}
+        >
+          <item.icon
+            className={cn(
+              "h-5 w-5 shrink-0 transition-colors",
+              isActive ? "text-purple-400" : "text-slate-400 group-hover:text-white"
+            )}
+          />
+          {!collapsed && <span>{item.label}</span>}
+
+          {/* Tooltip for collapsed */}
+          {collapsed && (
+            <div className="pointer-events-none absolute left-full ml-3 hidden rounded-lg border border-white/10 bg-slate-900 px-3 py-1.5 text-sm text-white shadow-xl group-hover:block">
+              {item.label}
+            </div>
+          )}
+        </NavLink>
+      </motion.li>
+    );
+  };
+
   return (
     <div className="flex h-full flex-col">
       {/* Logo */}
@@ -219,9 +284,11 @@ function SidebarContent({
         )}
       >
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-blue-600 shadow-lg shadow-purple-500/20">
-            <Megaphone className="h-4 w-4 text-white" />
-          </div>
+          <img
+            src="/marketengine_logo.png"
+            alt="MarketEngine AI"
+            className="h-8 w-8 shrink-0 rounded-lg object-cover shadow-lg shadow-purple-500/20"
+          />
           {!collapsed && (
             <motion.span
               initial={{ opacity: 0, width: 0 }}
@@ -261,52 +328,31 @@ function SidebarContent({
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-1">
-          {navItems.map((item, i) => {
-            const isActive =
-              currentPath === item.path ||
-              (item.path !== "/dashboard" &&
-                currentPath.startsWith(item.path));
-
-            return (
-              <motion.li
-                key={item.path}
-                custom={i}
-                variants={itemVariants}
-                initial="hidden"
-                animate="visible"
-              >
-                <NavLink
-                  to={item.path}
-                  onClick={onClose}
-                  className={cn(
-                    "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                    collapsed && "justify-center px-0",
-                    isActive
-                      ? "border-l-2 border-purple-500 bg-purple-500/20 text-white"
-                      : "border-l-2 border-transparent text-slate-400 hover:bg-white/5 hover:text-white"
-                  )}
-                >
-                  <item.icon
-                    className={cn(
-                      "h-5 w-5 shrink-0 transition-colors",
-                      isActive
-                        ? "text-purple-400"
-                        : "text-slate-400 group-hover:text-white"
-                    )}
-                  />
-                  {!collapsed && <span>{item.label}</span>}
-
-                  {/* Tooltip for collapsed */}
-                  {collapsed && (
-                    <div className="pointer-events-none absolute left-full ml-3 hidden rounded-lg border border-white/10 bg-slate-900 px-3 py-1.5 text-sm text-white shadow-xl group-hover:block">
-                      {item.label}
-                    </div>
-                  )}
-                </NavLink>
-              </motion.li>
-            );
-          })}
+          {navItems.map((item, i) => renderItem(item, i))}
         </ul>
+
+        {/* Divider */}
+        <div className="my-3 border-t border-white/5" />
+
+        <ul className="space-y-1">
+          {secondaryNavItems.map((item, i) => renderItem(item, navItems.length + i))}
+        </ul>
+
+        {isAdmin && (
+          <>
+            <div className="my-3 border-t border-white/5" />
+            {!collapsed && (
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Administration
+              </p>
+            )}
+            <ul className="space-y-1">
+              {adminNavItems.map((item, i) =>
+                renderItem(item, navItems.length + secondaryNavItems.length + i)
+              )}
+            </ul>
+          </>
+        )}
       </nav>
 
       {/* User section */}
