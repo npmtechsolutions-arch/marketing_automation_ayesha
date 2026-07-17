@@ -101,6 +101,81 @@ async def list_social_platforms(
     )
     total = count_result.scalar() or 0
 
+    if total == 0:
+        # Auto-seed standard platforms for the workspace/account
+        platforms_data = [
+            {"name": "Facebook", "slug": "facebook", "icon": "facebook", "color": "#1877F2",
+             "description": "Meta's social networking platform",
+             "base_url": "https://graph.facebook.com/v18.0",
+             "api_config_template": {"fields": [
+                 {"key": "app_id", "label": "App ID", "type": "text", "required": True},
+                 {"key": "app_secret", "label": "App Secret", "type": "password", "required": True},
+                 {"key": "page_id", "label": "Page ID", "type": "text", "required": True},
+             ]}},
+            {"name": "Instagram", "slug": "instagram", "icon": "instagram", "color": "#E4405F",
+             "description": "Photo and video sharing platform",
+             "base_url": "https://graph.facebook.com/v18.0",
+             "api_config_template": {"fields": [
+                 {"key": "app_id", "label": "App ID", "type": "text", "required": True},
+                 {"key": "app_secret", "label": "App Secret", "type": "password", "required": True},
+                 {"key": "ig_user_id", "label": "Instagram User ID", "type": "text", "required": True},
+             ]}},
+            {"name": "LinkedIn", "slug": "linkedin", "icon": "linkedin", "color": "#0A66C2",
+             "description": "Professional networking platform",
+             "base_url": "https://api.linkedin.com/v2",
+             "api_config_template": {"fields": [
+                 {"key": "client_id", "label": "Client ID", "type": "text", "required": True},
+                 {"key": "client_secret", "label": "Client Secret", "type": "password", "required": True},
+                 {"key": "organization_id", "label": "Organization ID", "type": "text", "required": False},
+             ]}},
+            {"name": "X (Twitter)", "slug": "twitter", "icon": "twitter", "color": "#000000",
+             "description": "Microblogging and social networking",
+             "base_url": "https://api.twitter.com/2",
+             "api_config_template": {"fields": [
+                 {"key": "api_key", "label": "API Key", "type": "text", "required": True},
+                 {"key": "api_secret", "label": "API Secret", "type": "password", "required": True},
+                 {"key": "bearer_token", "label": "Bearer Token", "type": "password", "required": True},
+             ]}},
+            {"name": "YouTube", "slug": "youtube", "icon": "youtube", "color": "#FF0000",
+             "description": "Video sharing platform",
+             "base_url": "https://www.googleapis.com/youtube/v3",
+             "api_config_template": {"fields": [
+                 {"key": "api_key", "label": "API Key", "type": "text", "required": True},
+                 {"key": "channel_id", "label": "Channel ID", "type": "text", "required": True},
+             ]}},
+            {"name": "TikTok", "slug": "tiktok", "icon": "tiktok", "color": "#010101",
+             "description": "Short-form video platform",
+             "base_url": "https://open.tiktokapis.com/v2",
+             "api_config_template": {"fields": [
+                 {"key": "client_key", "label": "Client Key", "type": "text", "required": True},
+                 {"key": "client_secret", "label": "Client Secret", "type": "password", "required": True},
+             ]}},
+        ]
+        for i, pdata in enumerate(platforms_data):
+            db.add(SocialPlatform(
+                id=uuid.uuid4(),
+                user_id=current_user.id,
+                account_id=account_id,
+                name=pdata["name"],
+                slug=pdata["slug"],
+                icon=pdata["icon"],
+                color=pdata["color"],
+                description=pdata["description"],
+                base_url=pdata["base_url"],
+                api_config_template=pdata["api_config_template"],
+                sort_order=i,
+                is_active=True,
+            ))
+        await db.commit()
+        
+        # Query total count again
+        count_result = await db.execute(
+            select(func.count()).select_from(SocialPlatform).where(
+                SocialPlatform.account_id == account_id
+            )
+        )
+        total = count_result.scalar() or 0
+
     stmt = (
         select(SocialPlatform)
         .where(SocialPlatform.account_id == account_id)
