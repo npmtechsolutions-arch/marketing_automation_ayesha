@@ -82,6 +82,19 @@ class Settings(BaseSettings):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Strip whitespaces from URLs and clean trailing slashes
+        self.DATABASE_URL = self.DATABASE_URL.strip() if self.DATABASE_URL else ""
+        
+        if self.FRONTEND_URL:
+            self.FRONTEND_URL = self.FRONTEND_URL.strip().rstrip("/")
+            
+        if self.LINKEDIN_REDIRECT_URI:
+            self.LINKEDIN_REDIRECT_URI = self.LINKEDIN_REDIRECT_URI.strip()
+        if self.YOUTUBE_REDIRECT_URI:
+            self.YOUTUBE_REDIRECT_URI = self.YOUTUBE_REDIRECT_URI.strip()
+        if self.TWITTER_REDIRECT_URI:
+            self.TWITTER_REDIRECT_URI = self.TWITTER_REDIRECT_URI.strip()
+
         if self.DATABASE_URL.startswith("postgresql://"):
             self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
         elif self.DATABASE_URL.startswith("postgres://"):
