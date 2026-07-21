@@ -220,10 +220,11 @@ export default function SocialAccountsPage() {
   }, [menuOpen]);
 
   const handleAddAccount = async () => {
-    if (!accountId || !formPlatformId || !formAccountName) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId || !formPlatformId || !formAccountName) return;
     setIsLoading(true);
     try {
-      await api.post(`/accounts/${accountId}/social-accounts/`, {
+      await api.post(`/accounts/${activeAccountId}/social-accounts/`, {
         platform_id: formPlatformId,
         account_name: formAccountName,
         account_handle: formHandle,
@@ -251,10 +252,11 @@ export default function SocialAccountsPage() {
   };
 
   const handleDeleteAccount = async (id: string) => {
-    if (!accountId) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
     if (confirm("Are you sure you want to delete this account?")) {
       try {
-        await api.delete(`/accounts/${accountId}/social-accounts/${id}`);
+        await api.delete(`/accounts/${activeAccountId}/social-accounts/${id}`);
         setMenuOpen(null);
         await fetchAccountsAndPlatforms();
       } catch (error) {
@@ -264,9 +266,10 @@ export default function SocialAccountsPage() {
   };
 
   const handleVerifyAccount = async (id: string) => {
-    if (!accountId) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
     try {
-      await api.post(`/accounts/${accountId}/social-accounts/${id}/verify`);
+      await api.post(`/accounts/${activeAccountId}/social-accounts/${id}/verify`);
       showSuccess("Social account connection verified successfully!");
       await fetchAccountsAndPlatforms();
       if (selectedAccount && selectedAccount.id === id) {
@@ -302,7 +305,8 @@ export default function SocialAccountsPage() {
   };
 
   const handleUpdateAccount = async () => {
-    if (!accountId || !editId || !formAccountName) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId || !editId || !formAccountName) return;
     setIsLoading(true);
     try {
       const payload: any = {
@@ -314,7 +318,7 @@ export default function SocialAccountsPage() {
       if (formApiSecret) payload.api_secret = formApiSecret;
       if (formAccessToken) payload.access_token = formAccessToken;
 
-      await api.put(`/accounts/${accountId}/social-accounts/${editId}`, payload);
+      await api.put(`/accounts/${activeAccountId}/social-accounts/${editId}`, payload);
       showSuccess("Social account updated successfully!");
       
       // Reset form and refresh
@@ -338,9 +342,10 @@ export default function SocialAccountsPage() {
   };
 
   const handleRefreshToken = async (id: string) => {
-    if (!accountId) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
     try {
-      await api.post(`/accounts/${accountId}/social-accounts/${id}/refresh-token`);
+      await api.post(`/accounts/${activeAccountId}/social-accounts/${id}/refresh-token`);
       showSuccess("Token refresh initiated successfully!");
       setMenuOpen(null);
       await fetchAccountsAndPlatforms();
@@ -352,6 +357,8 @@ export default function SocialAccountsPage() {
   };
 
   const handleFacebookOAuth = async () => {
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
     const fbPlatform = dbPlatforms.find((p) => (p.slug || "").toLowerCase() === "facebook");
     if (!fbPlatform) {
       showError("Facebook platform is not configured in this workspace.");
@@ -359,7 +366,7 @@ export default function SocialAccountsPage() {
     }
     try {
       setIsLoading(true);
-      const res: any = await api.get(`/accounts/${accountId}/facebook/authorize?platform_id=${fbPlatform.id}`);
+      const res: any = await api.get(`/accounts/${activeAccountId}/facebook/authorize?platform_id=${fbPlatform.id}`);
       const authUrl = res.auth_url || res.data?.auth_url;
       if (authUrl) {
         window.location.href = authUrl;
@@ -375,6 +382,8 @@ export default function SocialAccountsPage() {
   };
 
   const handleInstagramOAuth = async () => {
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
     const igPlatform = dbPlatforms.find((p) => (p.slug || "").toLowerCase() === "instagram");
     if (!igPlatform) {
       showError("Instagram platform is not configured in this workspace.");
@@ -382,7 +391,7 @@ export default function SocialAccountsPage() {
     }
     try {
       setIsLoading(true);
-      const res: any = await api.get(`/accounts/${accountId}/instagram/authorize?platform_id=${igPlatform.id}`);
+      const res: any = await api.get(`/accounts/${activeAccountId}/instagram/authorize?platform_id=${igPlatform.id}`);
       const authUrl = res.auth_url || res.data?.auth_url;
       if (authUrl) {
         window.location.href = authUrl;
@@ -398,6 +407,8 @@ export default function SocialAccountsPage() {
   };
 
   const handleLinkedinOAuth = async (target: "personal" | "organization") => {
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
     const liPlatform = dbPlatforms.find((p) => (p.slug || "").toLowerCase() === "linkedin");
     if (!liPlatform) {
       showError("LinkedIn platform is not configured in this workspace.");
@@ -406,7 +417,7 @@ export default function SocialAccountsPage() {
     try {
       setIsLoading(true);
       const res: any = await api.get(
-        `/accounts/${accountId}/linkedin/authorize?platform_id=${liPlatform.id}&target=${target}`
+        `/accounts/${activeAccountId}/linkedin/authorize?platform_id=${liPlatform.id}&target=${target}`
       );
       const authUrl = res.auth_url || res.data?.auth_url;
       if (authUrl) {
@@ -423,6 +434,8 @@ export default function SocialAccountsPage() {
   };
 
   const handleTwitterOAuth = async () => {
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
     const twPlatform = dbPlatforms.find((p) =>
       ["twitter", "x"].includes((p.slug || "").toLowerCase())
     );
@@ -432,7 +445,7 @@ export default function SocialAccountsPage() {
     }
     try {
       setIsLoading(true);
-      const res: any = await api.get(`/accounts/${accountId}/twitter/authorize?platform_id=${twPlatform.id}`);
+      const res: any = await api.get(`/accounts/${activeAccountId}/twitter/authorize?platform_id=${twPlatform.id}`);
       const authUrl = res.auth_url || res.data?.auth_url;
       if (authUrl) {
         window.location.href = authUrl;
@@ -448,6 +461,8 @@ export default function SocialAccountsPage() {
   };
 
   const handleYoutubeOAuth = async () => {
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
     const ytPlatform = dbPlatforms.find((p) => (p.slug || "").toLowerCase() === "youtube");
     if (!ytPlatform) {
       showError("YouTube platform is not configured in this workspace.");
@@ -455,7 +470,7 @@ export default function SocialAccountsPage() {
     }
     try {
       setIsLoading(true);
-      const res: any = await api.get(`/accounts/${accountId}/youtube/authorize?platform_id=${ytPlatform.id}`);
+      const res: any = await api.get(`/accounts/${activeAccountId}/youtube/authorize?platform_id=${ytPlatform.id}`);
       const authUrl = res.auth_url || res.data?.auth_url;
       if (authUrl) {
         window.location.href = authUrl;

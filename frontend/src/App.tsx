@@ -1,8 +1,95 @@
-import { useEffect } from 'react';
+import React, { useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/Toast';
 import { useAuthStore } from '@/stores/authStore';
+
+/* ------------------------------------------------------------------ */
+/*  Error Boundary                                                    */
+/* ------------------------------------------------------------------ */
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null,
+  };
+
+  public static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Uncaught error in React tree:", error, errorInfo);
+  }
+
+  public render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#090d16",
+            color: "#f8fafc",
+            padding: "2rem",
+            fontFamily: "sans-serif",
+          }}
+        >
+          <div
+            style={{
+              background: "rgba(30, 41, 59, 0.7)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: "1rem",
+              padding: "2.5rem",
+              maxWidth: "480px",
+              width: "100%",
+              textAlign: "center",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5)",
+            }}
+          >
+            <h2 style={{ fontSize: "1.5rem", fontWeight: 700, margin: "0 0 0.75rem", color: "#6366f1" }}>
+              Application Loaded
+            </h2>
+            <p style={{ color: "#94a3b8", fontSize: "0.95rem", margin: "0 0 1.5rem" }}>
+              {this.state.error?.message || "An unexpected error occurred. Click below to refresh your session."}
+            </p>
+            <button
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+              style={{
+                padding: "0.75rem 1.75rem",
+                background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "0.5rem",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Auth pages
 import LoginPage from '@/pages/auth/LoginPage';
@@ -177,78 +264,89 @@ function ScrollToTop() {
 }
 
 function App() {
+  const loadUser = useAuthStore((s) => s.loadUser);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadUser();
+    }
+  }, [isAuthenticated, loadUser]);
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <ScrollToTop />
-        <Routes>
-          {/* Public */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/pricing" element={<PricingPage />} />
-          <Route path="/about" element={<AboutPage />} />
-          <Route path="/privacy" element={<PrivacyPolicyPage />} />
-          <Route path="/data-deletion" element={<DataDeletionPage />} />
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <ScrollToTop />
+          <Routes>
+            {/* Public */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/privacy" element={<PrivacyPolicyPage />} />
+            <Route path="/data-deletion" element={<DataDeletionPage />} />
 
-          {/* Auth */}
-          <Route
-            path="/login"
-            element={
-              <ProtectedPublicRoute>
-                <LoginPage />
-              </ProtectedPublicRoute>
-            }
-          />
-          <Route
-            path="/register"
-            element={
-              <ProtectedPublicRoute>
-                <RegisterPage />
-              </ProtectedPublicRoute>
-            }
-          />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route
-            path="/onboarding"
-            element={
-              <ProtectedRoute>
-                <OnboardingPage />
-              </ProtectedRoute>
-            }
-          />
+            {/* Auth */}
+            <Route
+              path="/login"
+              element={
+                <ProtectedPublicRoute>
+                  <LoginPage />
+                </ProtectedPublicRoute>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <ProtectedPublicRoute>
+                  <RegisterPage />
+                </ProtectedPublicRoute>
+              }
+            />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route
+              path="/onboarding"
+              element={
+                <ProtectedRoute>
+                  <OnboardingPage />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* App */}
-          <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-          <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
-          <Route path="/create-post" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
-          <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
-          <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
-          <Route path="/strategy" element={<ProtectedRoute><StrategyPage /></ProtectedRoute>} />
-          <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
-          <Route path="/platforms" element={<ProtectedRoute><PlatformsPage /></ProtectedRoute>} />
-          <Route path="/social-accounts" element={<ProtectedRoute><SocialAccountsPage /></ProtectedRoute>} />
-          <Route path="/activity" element={<ProtectedRoute><ActivityPage /></ProtectedRoute>} />
-          <Route path="/team" element={<ProtectedRoute><TeamPage /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-          <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
-          <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+            {/* App */}
+            <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+            <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
+            <Route path="/create-post" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
+            <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
+            <Route path="/strategy" element={<ProtectedRoute><StrategyPage /></ProtectedRoute>} />
+            <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
+            <Route path="/platforms" element={<ProtectedRoute><PlatformsPage /></ProtectedRoute>} />
+            <Route path="/social-accounts" element={<ProtectedRoute><SocialAccountsPage /></ProtectedRoute>} />
+            <Route path="/activity" element={<ProtectedRoute><ActivityPage /></ProtectedRoute>} />
+            <Route path="/team" element={<ProtectedRoute><TeamPage /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+            <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
+            <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
 
-          {/* Admin */}
-          <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-          <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
-          <Route path="/admin/audit-logs" element={<AdminRoute><AuditLogsPage /></AdminRoute>} />
-          <Route path="/admin/api-docs" element={<AdminRoute><ApiDocsPage /></AdminRoute>} />
+            {/* Admin */}
+            <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+            <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
+            <Route path="/admin/audit-logs" element={<AdminRoute><AuditLogsPage /></AdminRoute>} />
+            <Route path="/admin/api-docs" element={<AdminRoute><ApiDocsPage /></AdminRoute>} />
 
-          {/* Help */}
-          <Route path="/help" element={<HelpCenterPage />} />
-          <Route path="/help/article/:id" element={<ArticlePage />} />
+            {/* Help */}
+            <Route path="/help" element={<HelpCenterPage />} />
+            <Route path="/help/article/:id" element={<ArticlePage />} />
 
-          {/* 404 */}
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-        <Toaster />
-      </BrowserRouter>
-    </QueryClientProvider>
+            {/* 404 */}
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+          <Toaster />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
