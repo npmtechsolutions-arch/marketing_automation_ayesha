@@ -28,11 +28,21 @@ interface AuthActions {
   loadUser: () => Promise<void>;
 }
 
+const getInitialToken = () => {
+  const token = localStorage.getItem("access_token");
+  if (!token || token === "null" || token === "undefined" || !token.trim()) {
+    return null;
+  }
+  return token;
+};
+
+const initialToken = getInitialToken();
+
 export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   user: null,
-  accessToken: localStorage.getItem("access_token"),
+  accessToken: initialToken,
   refreshToken: localStorage.getItem("refresh_token"),
-  isAuthenticated: !!localStorage.getItem("access_token"),
+  isAuthenticated: !!initialToken,
   isLoading: false,
 
   login: async (email: string, password: string) => {
