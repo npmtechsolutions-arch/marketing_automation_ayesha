@@ -208,9 +208,11 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       }
 
       set({ user: data, isAuthenticated: true, isLoading: false });
-    } catch {
+    } catch (error: any) {
       set({ isLoading: false });
-      get().logout();
+      if (error?.response?.status === 401) {
+        get().logout();
+      }
     }
   },
 }));
