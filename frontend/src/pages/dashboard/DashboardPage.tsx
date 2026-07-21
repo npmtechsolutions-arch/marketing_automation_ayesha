@@ -93,38 +93,38 @@ export default function DashboardPage() {
   const stats = [
     {
       label: "Total Reach",
-      value: overview ? formatNumber(overview.total_reach) : "—",
+      value: overview?.total_reach != null ? formatNumber(overview.total_reach) : "0",
       change: overview?.comparison?.reach_change_pct ?? null,
       changeLabel: "vs last week",
       icon: <Eye className="h-5 w-5" />,
     },
     {
       label: "Engagement",
-      value: overview ? formatNumber(overview.total_engagement) : "—",
+      value: overview?.total_engagement != null ? formatNumber(overview.total_engagement) : "0",
       change: overview?.comparison?.engagement_change_pct ?? null,
       changeLabel: "vs last week",
       icon: <Heart className="h-5 w-5" />,
     },
     {
       label: "Posts Published",
-      value: overview ? String(overview.total_posts) : "—",
+      value: overview?.total_posts != null ? String(overview.total_posts) : "0",
       change: null,
       changeLabel: "this period",
       icon: <FileText className="h-5 w-5" />,
     },
     {
       label: "Avg Engagement Rate",
-      value: overview ? `${(overview.avg_engagement_rate * 100).toFixed(2)}%` : "—",
+      value: overview?.avg_engagement_rate != null ? `${((overview.avg_engagement_rate || 0) * 100).toFixed(2)}%` : "0%",
       change: overview?.comparison?.engagement_rate_change_pct ?? null,
       changeLabel: "vs last week",
       icon: <TrendingUp className="h-5 w-5" />,
     },
   ];
 
-  const chartData = trends.map((t) => ({
-    day: new Date(t.date).toLocaleDateString("en-US", { weekday: "short" }),
-    reach: t.reach,
-    engagement: t.engagement,
+  const chartData = (Array.isArray(trends) ? trends : []).map((t) => ({
+    day: t?.date ? new Date(t.date).toLocaleDateString("en-US", { weekday: "short" }) : "—",
+    reach: t?.reach || 0,
+    engagement: t?.engagement || 0,
   }));
 
   return (
