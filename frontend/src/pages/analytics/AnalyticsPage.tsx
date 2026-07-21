@@ -155,17 +155,20 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const accountId = localStorage.getItem("account_id");
-
   const loadData = async (range: DateRange, showRefreshing = false) => {
-    if (!accountId) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
       showRefreshing ? setRefreshing(true) : setLoading(true);
       const [ovRes, trRes, tpRes, pbRes] = await Promise.allSettled([
-        api.get(`/accounts/${accountId}/analytics/overview?period=${range}`),
-        api.get(`/accounts/${accountId}/analytics/trends?period=${range}&group_by=day`),
-        api.get(`/accounts/${accountId}/analytics/top-posts?period=${range}&limit=10`),
-        api.get(`/accounts/${accountId}/analytics/platform-breakdown?period=${range}`),
+        api.get(`/accounts/${activeAccountId}/analytics/overview?period=${range}`),
+        api.get(`/accounts/${activeAccountId}/analytics/trends?period=${range}&group_by=day`),
+        api.get(`/accounts/${activeAccountId}/analytics/top-posts?period=${range}&limit=10`),
+        api.get(`/accounts/${activeAccountId}/analytics/platform-breakdown?period=${range}`),
       ]);
       if (ovRes.status === "fulfilled") setOverview((ovRes.value as any).data);
       if (trRes.status === "fulfilled") {

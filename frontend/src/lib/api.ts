@@ -102,12 +102,25 @@ export async function del<T>(url: string, config?: AxiosRequestConfig): Promise<
   return response.data;
 }
 
-export function getAccountId(): string | null {
+export async function getAccountId(): Promise<string | null> {
   let accountId = localStorage.getItem("account_id");
   if (!accountId) {
-    console.warn("No account_id in localStorage. Make sure to log out and log in again.");
+    try {
+      const accRes: any = await api.get("/accounts");
+      const items = accRes.items || accRes.data?.items || (Array.isArray(accRes) ? accRes : []);
+      if (items.length > 0 && items[0].id) {
+        accountId = items[0].id;
+        localStorage.setItem("account_id", accountId);
+      }
+    } catch (err) {
+      console.warn("Could not auto-resolve account_id:", err);
+    }
   }
   return accountId;
+}
+
+export function getAccountIdSync(): string | null {
+  return localStorage.getItem("account_id");
 }
 
 export default api;

@@ -39,7 +39,7 @@ import { Badge } from "@/components/ui/Badge";
 import PlatformIcon from "@/components/shared/PlatformIcon";
 import DevicePreview from "@/components/shared/DevicePreview";
 import { cn } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { getAccountId } from "@/lib/api";
 import { showSuccess, showError } from "@/components/ui/Toast";
 
 // ────────────────────────────────────────────────────────
@@ -187,13 +187,13 @@ export default function CreatePostPage() {
   const [businesses, setBusinesses] = useState<any[]>([]);
 
   useEffect(() => {
-    const accountId = localStorage.getItem("account_id");
-    if (!accountId) return;
-    setAccountsLoading(true);
-    
-    // Fetch social accounts
-    api.get(`/accounts/${accountId}/social-accounts/`)
-      .then((res: any) => {
+    const load = async () => {
+      const activeAccountId = await getAccountId();
+      if (!activeAccountId) return;
+      setAccountsLoading(true);
+      
+      try {
+        const res: any = await api.get(`/accounts/${activeAccountId}/social-accounts/`);
         const payload = res.data || res;
         const items: any[] = payload.items || payload || [];
         const mapped: Account[] = items.map((sa: any) => ({
@@ -210,18 +210,22 @@ export default function CreatePostPage() {
           avatar: sa.profile_image_url || sa.profile_picture_url || undefined,
         }));
         setAccounts(mapped);
-      })
-      .catch((err) => console.error("Failed to load social accounts:", err))
-      .finally(() => setAccountsLoading(false));
+      } catch (err) {
+        console.error("Failed to load social accounts:", err);
+      } finally {
+        setAccountsLoading(false);
+      }
 
-    // Fetch businesses
-    api.get(`/accounts/${accountId}/businesses/`)
-      .then((res: any) => {
+      try {
+        const res: any = await api.get(`/accounts/${activeAccountId}/businesses/`);
         const payload = res.data || res;
         const items = payload.items || payload.data?.items || [];
         setBusinesses(items);
-      })
-      .catch((err) => console.error("Failed to load businesses:", err));
+      } catch (err) {
+        console.error("Failed to load businesses:", err);
+      }
+    };
+    load();
   }, []);
 
   // Step 3 - Preview

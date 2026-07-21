@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { formatDate } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { getAccountId } from "@/lib/api";
 import { showSuccess, showError } from "@/components/ui/Toast";
 
 // ---------------------------------------------------------------------------
@@ -186,10 +186,14 @@ export default function StrategyPage() {
   // Fetch strategies
   // ---------------------------------------------------------------------------
   const fetchStrategies = async () => {
-    if (!accountId) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const res: any = await api.get(`/accounts/${accountId}/strategies/`);
+      const res: any = await api.get(`/accounts/${activeAccountId}/strategies/`);
       const payload = res.data || res;
       const items = payload.items || payload.data?.items || [];
       setStrategies(items);
@@ -205,9 +209,10 @@ export default function StrategyPage() {
   // Fetch businesses for the generate modal
   // ---------------------------------------------------------------------------
   const fetchBusinesses = async () => {
-    if (!accountId) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
     try {
-      const res: any = await api.get(`/accounts/${accountId}/businesses/`);
+      const res: any = await api.get(`/accounts/${activeAccountId}/businesses/`);
       const payload = res.data || res;
       const items: Business[] = payload.items || payload.data?.items || [];
       setBusinesses(items);

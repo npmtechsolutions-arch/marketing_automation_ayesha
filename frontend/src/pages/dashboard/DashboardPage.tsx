@@ -29,7 +29,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
 import { useAuthStore } from "@/stores/authStore";
-import api from "@/lib/api";
+import api, { getAccountId } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
 
 export default function DashboardPage() {
@@ -42,8 +42,6 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const accountId = localStorage.getItem("account_id");
-
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -54,14 +52,18 @@ export default function DashboardPage() {
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
   useEffect(() => {
-    if (!accountId) return;
     const load = async () => {
+      const activeAccountId = await getAccountId();
+      if (!activeAccountId) {
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
         const [ovRes, trRes, tpRes, notifRes] = await Promise.allSettled([
-          api.get(`/accounts/${accountId}/analytics/overview?period=7d`),
-          api.get(`/accounts/${accountId}/analytics/trends?period=7d&group_by=day`),
-          api.get(`/accounts/${accountId}/analytics/top-posts?period=30d&limit=5`),
+          api.get(`/accounts/${activeAccountId}/analytics/overview?period=7d`),
+          api.get(`/accounts/${activeAccountId}/analytics/trends?period=7d&group_by=day`),
+          api.get(`/accounts/${activeAccountId}/analytics/top-posts?period=30d&limit=5`),
           api.get(`/notifications/?limit=3`),
         ]);
 
@@ -79,12 +81,14 @@ export default function DashboardPage() {
           const items = data?.items || data || [];
           setNotifications(Array.isArray(items) ? items.slice(0, 3) : []);
         }
+      } catch (e) {
+        console.error("Dashboard data load error:", e);
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, [accountId]);
+  }, []);
 
   const stats = [
     {

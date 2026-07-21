@@ -78,10 +78,7 @@ const platformOptions = [
   { key: "facebook", label: "Facebook", color: "#1877F2" },
   { key: "linkedin", label: "LinkedIn", color: "#0A66C2" },
   { key: "twitter", label: "X (Twitter)", color: "#000000" },
-  { key: "youtube", label: "YouTube", color: "#FF0000" },
-  { key: "tiktok", label: "TikTok", color: "#010101" },
 ];
-
 // ---------------------------------------------------------------------------
 // Campaigns Page
 // ---------------------------------------------------------------------------
@@ -100,16 +97,18 @@ export default function CampaignsPage() {
     platforms: [] as string[],
   });
 
-  const accountId = localStorage.getItem("account_id");
-
   // ---------------------------------------------------------------------------
   // Fetch campaigns
   // ---------------------------------------------------------------------------
   const fetchCampaigns = async () => {
-    if (!accountId) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const res: any = await api.get(`/accounts/${accountId}/campaigns/`);
+      const res: any = await api.get(`/accounts/${activeAccountId}/campaigns/`);
       const payload = res.data || res;
       setCampaigns(payload.items || []);
     } catch (err) {

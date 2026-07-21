@@ -27,7 +27,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import PlatformIcon from "@/components/shared/PlatformIcon";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { getAccountId } from "@/lib/api";
 
 // ---------- Types ----------
 type Platform = "facebook" | "instagram" | "linkedin" | "twitter" | "youtube";
@@ -307,10 +307,10 @@ export default function CalendarPage() {
   const [selectedPost, setSelectedPost] = useState<CalendarPost | null>(null);
   const handlePostClick = async (post: CalendarPost) => {
     setSelectedPost(post);
-    const accountId = localStorage.getItem("account_id");
-    if (!accountId) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
     try {
-      const res: any = await api.get(`/accounts/${accountId}/posts/${post.id}`);
+      const res: any = await api.get(`/accounts/${activeAccountId}/posts/${post.id}`);
       const p = res.data;
       if (p) {
         const updatedPost: CalendarPost = {
@@ -340,11 +340,14 @@ export default function CalendarPage() {
   const today = new Date();
 
   const fetchPosts = useCallback(async () => {
-    const accountId = localStorage.getItem("account_id");
-    if (!accountId) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
-      const res: any = await api.get(`/accounts/${accountId}/posts/?per_page=100`);
+      const res: any = await api.get(`/accounts/${activeAccountId}/posts/?per_page=100`);
       const items = res.data?.items ?? res.data ?? [];
       const mapped: CalendarPost[] = items.map((p: any) => {
         // Determine platform from target_accounts or fallback

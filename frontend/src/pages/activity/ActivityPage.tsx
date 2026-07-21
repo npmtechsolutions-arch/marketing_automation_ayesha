@@ -19,7 +19,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { cn, formatDate, formatRelativeTime } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { getAccountId } from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -278,12 +278,15 @@ export default function ActivityPage() {
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const accountId = localStorage.getItem("account_id");
-
   useEffect(() => {
-    if (!accountId) { setLoading(false); return; }
-    api.get(`/accounts/${accountId}/activity/?limit=100`)
-      .then((res: any) => {
+    const load = async () => {
+      const activeAccountId = await getAccountId();
+      if (!activeAccountId) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const res: any = await api.get(`/accounts/${activeAccountId}/activity/?limit=100`);
         const payload = res.data || res;
         const items = payload.items || payload || [];
         const mapped: ActivityEntry[] = items.map((a: any) => ({
@@ -296,10 +299,14 @@ export default function ActivityPage() {
           created_at: a.created_at,
         }));
         setActivities(mapped);
-      })
-      .catch(() => setActivities([]))
-      .finally(() => setLoading(false));
-  }, [accountId]);
+      } catch {
+        setActivities([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   const filtered = useMemo(() => {
     let items = activities;

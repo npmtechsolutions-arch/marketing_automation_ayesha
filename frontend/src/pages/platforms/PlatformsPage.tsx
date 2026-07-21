@@ -23,7 +23,7 @@ import { Toggle } from "@/components/ui/Toggle";
 import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { cn, formatDate, getInitials } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { getAccountId } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -231,13 +231,15 @@ export default function PlatformsPage() {
   const [form, setForm] = useState(emptyForm);
   const [customColor, setCustomColor] = useState("");
 
-  const accountId = localStorage.getItem("account_id");
-
   const fetchPlatforms = async () => {
-    if (!accountId) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
-      const res: any = await api.get(`/accounts/${accountId}/social-platforms/`);
+      const res: any = await api.get(`/accounts/${activeAccountId}/social-platforms/`);
       const fetched = res.items || res.data?.items || [];
       const mapped = fetched.map((item: any) => ({
         id: item.id,
@@ -262,7 +264,7 @@ export default function PlatformsPage() {
 
   useEffect(() => {
     fetchPlatforms();
-  }, [accountId]);
+  }, []);
 
   const totalAccounts = useMemo(
     () => platforms.reduce((sum, p) => sum + p.accountsCount, 0),
