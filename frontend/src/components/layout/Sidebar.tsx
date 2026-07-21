@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -159,8 +159,6 @@ function UserSection({ collapsed }: { collapsed: boolean }) {
     </div>
   );
 }
-
-import { useState } from "react";
 
 export default function Sidebar() {
   const { sidebarCollapsed, collapseSidebar, sidebarOpen, setSidebarOpen } =
