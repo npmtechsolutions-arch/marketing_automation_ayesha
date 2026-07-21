@@ -104,5 +104,19 @@ class Settings(BaseSettings):
         elif self.DATABASE_URL.startswith("postgres://"):
             self.DATABASE_URL = self.DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
+        # Build list of allowed origins
+        allowed_set = set(self.CORS_ORIGINS)
+        allowed_set.add("http://localhost:5173")
+        allowed_set.add("http://localhost:3000")
+        allowed_set.add("http://127.0.0.1:5173")
+        allowed_set.add("https://marketing-automation-ayesha-1.onrender.com")
+        allowed_set.add("https://marketing-automation-ayesha.onrender.com")
+        
+        if self.FRONTEND_URL:
+            allowed_set.add(self.FRONTEND_URL)
+            allowed_set.add(f"{self.FRONTEND_URL}/")
+
+        self.CORS_ORIGINS = list(allowed_set)
+
 
 settings = Settings()
