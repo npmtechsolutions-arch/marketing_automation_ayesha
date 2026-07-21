@@ -23,7 +23,7 @@ import {
   HelpCircle,
   ShieldCheck,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import { useUIStore } from "@/stores/uiStore";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -82,14 +82,7 @@ function UserSection({ collapsed }: { collapsed: boolean }) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const initials = user?.full_name
-    ? user.full_name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : "ME";
+  const initials = getInitials(user?.full_name);
 
   return (
     <div ref={ref} className="relative">

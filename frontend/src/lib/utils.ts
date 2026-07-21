@@ -51,10 +51,13 @@ export function formatRelativeTime(date: string | Date): string {
   return `${diffYears} year${diffYears > 1 ? "s" : ""} ago`;
 }
 
-export function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
+export function getInitials(name?: string | null): string {
+  if (!name || !name.trim()) return "ME";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "ME";
+  return parts
+    .map((n) => (n && n[0] ? n[0] : ""))
+    .filter(Boolean)
     .join("")
     .toUpperCase()
     .slice(0, 2);

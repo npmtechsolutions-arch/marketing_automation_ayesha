@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/Badge";
 import { useAuthStore } from "@/stores/authStore";
 import { showSuccess } from "@/components/ui/Toast";
 import api from "@/lib/api";
+import { getInitials } from "@/lib/utils";
 
 export default function ProfilePage() {
   const { user, setUser } = useAuthStore();
@@ -24,14 +25,7 @@ export default function ProfilePage() {
   const [bio, setBio] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const initials = user?.full_name
-    ? user.full_name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : "ME";
+  const initials = getInitials(user?.full_name);
 
   const joined = user?.created_at
     ? new Date(user.created_at).toLocaleDateString("en-US", {

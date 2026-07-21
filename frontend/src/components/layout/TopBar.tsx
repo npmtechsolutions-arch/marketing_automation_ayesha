@@ -14,7 +14,7 @@ import {
   Sun,
   Moon,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import { useUIStore } from "@/stores/uiStore";
 import { useAuthStore } from "@/stores/authStore";
 import NotificationPanel from "@/components/shared/NotificationPanel";
@@ -84,14 +84,7 @@ export default function TopBar() {
     isLast: i === segments.length - 1,
   }));
 
-  const initials = user?.full_name
-    ? user.full_name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : "ME";
+  const initials = getInitials(user?.full_name);
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-4 border-b border-white/5 bg-slate-900/50 px-4 backdrop-blur-xl lg:px-6">
