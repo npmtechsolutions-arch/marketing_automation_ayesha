@@ -38,7 +38,7 @@ import { Button } from "@/components/ui/Button";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
 import { cn, formatNumber, formatDate } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { getAccountId } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Animation variants

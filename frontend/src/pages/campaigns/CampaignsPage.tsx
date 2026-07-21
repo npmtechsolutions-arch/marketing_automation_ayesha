@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { cn, formatNumber, formatDate, formatCurrency } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { getAccountId } from "@/lib/api";
 import { showSuccess, showError } from "@/components/ui/Toast";
 
 // ---------------------------------------------------------------------------
