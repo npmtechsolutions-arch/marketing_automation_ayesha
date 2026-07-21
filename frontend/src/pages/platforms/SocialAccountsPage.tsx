@@ -89,15 +89,30 @@ export default function SocialAccountsPage() {
   const accountId = localStorage.getItem("account_id");
 
   const fetchAccountsAndPlatforms = async () => {
-    if (!accountId) return;
+    let activeAccountId = localStorage.getItem("account_id");
+    if (!activeAccountId) {
+      try {
+        const accRes: any = await api.get("/accounts");
+        const items = accRes.items || accRes.data?.items || (Array.isArray(accRes) ? accRes : []);
+        if (items.length > 0 && items[0].id) {
+          activeAccountId = items[0].id;
+          localStorage.setItem("account_id", activeAccountId);
+        }
+      } catch (err) {
+        console.warn("Could not auto-resolve account_id:", err);
+      }
+    }
+
+    if (!activeAccountId) return;
+
     try {
       // Fetch platforms
-      const platformsRes: any = await api.get(`/accounts/${accountId}/social-platforms/`);
+      const platformsRes: any = await api.get(`/accounts/${activeAccountId}/social-platforms/`);
       const fetchedPlatforms = platformsRes.items || platformsRes.data?.items || [];
       setDbPlatforms(fetchedPlatforms);
 
       // Fetch accounts
-      const accountsRes: any = await api.get(`/accounts/${accountId}/social-accounts/`);
+      const accountsRes: any = await api.get(`/accounts/${activeAccountId}/social-accounts/`);
       const fetchedAccounts = accountsRes.items || accountsRes.data?.items || [];
       
       const mappedAccounts = fetchedAccounts.map((item: any) => ({
@@ -121,49 +136,49 @@ export default function SocialAccountsPage() {
       }));
       
       setAccounts(mappedAccounts);
-    } catch (error) {
-      console.error("Error fetching accounts/platforms:", error);
+    } catch (err) {
+      console.error("Failed to fetch accounts/platforms:", err);
     }
   };
 
   useEffect(() => {
     fetchAccountsAndPlatforms();
 
-    // Process OAuth callback indicators in the query string
-    const queryParams = new URLSearchParams(window.location.search);
-    const facebookResult = queryParams.get("facebook");
-    const linkedinResult = queryParams.get("linkedin");
-    const instagramResult = queryParams.get("instagram");
-    const twitterResult = queryParams.get("twitter");
-    const youtubeResult = queryParams.get("youtube");
-    const reason = queryParams.get("reason");
+    // Check URL params for OAuth return status
+    const params = new URLSearchParams(window.location.search);
+    const fbResult = params.get("facebook");
+    const igResult = params.get("instagram");
+    const liResult = params.get("linkedin");
+    const twitterResult = params.get("twitter");
+    const youtubeResult = params.get("youtube");
+    const reason = params.get("reason");
 
-    if (facebookResult === "success") {
+    if (fbResult === "success") {
       showSuccess("Facebook Page connected successfully!");
       const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
       window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
-    } else if (facebookResult === "error") {
+    } else if (fbResult === "error") {
       showError(reason || "Failed to connect Facebook Page.");
       const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
       window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
     }
 
-    if (linkedinResult === "success") {
-      showSuccess("LinkedIn Account connected successfully!");
+    if (igResult === "success") {
+      showSuccess("Instagram Business Account connected successfully!");
       const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
       window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
-    } else if (linkedinResult === "error") {
-      showError(reason || "Failed to connect LinkedIn Account.");
+    } else if (igResult === "error") {
+      showError(reason || "Failed to connect Instagram Business Account.");
       const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
       window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
     }
 
-    if (instagramResult === "success") {
-      showSuccess("Instagram Account connected successfully!");
+    if (liResult === "success") {
+      showSuccess("LinkedIn Account connected successfully!");
       const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
       window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
-    } else if (instagramResult === "error") {
-      showError(reason || "Failed to connect Instagram Account.");
+    } else if (liResult === "error") {
+      showError(reason || "Failed to connect LinkedIn Account.");
       const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
       window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
     }
@@ -187,7 +202,7 @@ export default function SocialAccountsPage() {
       const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
       window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
     }
-  }, [accountId]);
+  }, []);
 
   // Close dropdown menu when clicking outside of it
   useEffect(() => {

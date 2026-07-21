@@ -177,6 +177,26 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     set({ isLoading: true });
     try {
       const { data } = await api.get("/auth/me");
+      
+      let accountId = localStorage.getItem("account_id");
+      if (!accountId) {
+        try {
+          const accountsResponse: any = await api.get("/accounts");
+          if (accountsResponse.items?.[0]?.id) {
+            accountId = accountsResponse.items[0].id;
+          } else if (accountsResponse.data?.items?.[0]?.id) {
+            accountId = accountsResponse.data.items[0].id;
+          } else if (Array.isArray(accountsResponse) && accountsResponse[0]?.id) {
+            accountId = accountsResponse[0].id;
+          }
+          if (accountId) {
+            localStorage.setItem("account_id", accountId);
+          }
+        } catch (err) {
+          console.warn("Could not fetch accounts in loadUser:", err);
+        }
+      }
+
       set({ user: data, isAuthenticated: true, isLoading: false });
     } catch {
       set({ isLoading: false });
