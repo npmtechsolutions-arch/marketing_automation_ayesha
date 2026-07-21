@@ -90,6 +90,10 @@ class Settings(BaseSettings):
             
         if self.LINKEDIN_REDIRECT_URI:
             self.LINKEDIN_REDIRECT_URI = self.LINKEDIN_REDIRECT_URI.strip()
+        if self.GOOGLE_CLIENT_ID:
+            self.GOOGLE_CLIENT_ID = self.GOOGLE_CLIENT_ID.strip()
+        if self.GOOGLE_CLIENT_SECRET:
+            self.GOOGLE_CLIENT_SECRET = self.GOOGLE_CLIENT_SECRET.strip()
         if self.YOUTUBE_REDIRECT_URI:
             self.YOUTUBE_REDIRECT_URI = self.YOUTUBE_REDIRECT_URI.strip()
         if self.TWITTER_REDIRECT_URI:
