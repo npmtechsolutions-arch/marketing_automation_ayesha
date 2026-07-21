@@ -145,8 +145,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 /** Redirects already-authenticated users to /dashboard (login/register) */
 function ProtectedPublicRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  if (isAuthenticated) {
+  const { isAuthenticated, user } = useAuthStore();
+  if (isAuthenticated && user) {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;

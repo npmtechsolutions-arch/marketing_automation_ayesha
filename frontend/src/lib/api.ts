@@ -70,14 +70,13 @@ api.interceptors.response.use(
 
           return api(originalRequest);
         } catch {
-          // Refresh failed - clear tokens and redirect to login
-          localStorage.removeItem("access_token");
-          localStorage.removeItem("refresh_token");
+          // Refresh failed - clear tokens, reset auth store state, and redirect to login
+          useAuthStore.getState().logout();
           window.location.href = "/login";
           return Promise.reject(error);
         }
       } else {
-        localStorage.removeItem("access_token");
+        useAuthStore.getState().logout();
         window.location.href = "/login";
       }
     }
