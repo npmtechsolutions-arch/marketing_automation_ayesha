@@ -66,10 +66,14 @@ from app.api.v1.endpoints import (
     strategies,
     twitter_oauth,
     youtube_oauth,
+    webhooks,
 )
 
 # Include the aggregated v1 router (auth, users, accounts, teams, businesses)
 app.include_router(api_v1_router)
+
+# Webhooks router
+app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["Webhooks"])
 
 # Additional routers with account-scoped prefixes
 app.include_router(posts.router,            prefix="/api/v1/accounts/{account_id}/posts",       tags=["Content"])

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     META_APP_ID: str = ""
     META_APP_SECRET: str = ""
     META_CONFIG_ID: str = ""
+    META_WEBHOOK_VERIFY_TOKEN: str = "marketengine_verify_token"
     LINKEDIN_CLIENT_ID: str = ""
     LINKEDIN_CLIENT_SECRET: str = ""
     # Must EXACTLY match the "Authorized redirect URL" configured in the LinkedIn app.
