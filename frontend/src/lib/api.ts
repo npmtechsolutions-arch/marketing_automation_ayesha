@@ -3,6 +3,7 @@ import axios, {
   type AxiosRequestConfig,
   type InternalAxiosRequestConfig,
 } from "axios";
+import { useAuthStore } from "@/stores/authStore";
 
 const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_URL) {
@@ -128,7 +129,7 @@ export async function getAccountId(): Promise<string | null> {
       const items = accRes.items || accRes.data?.items || (Array.isArray(accRes) ? accRes : []);
       if (items.length > 0 && items[0].id) {
         accountId = items[0].id;
-        localStorage.setItem("account_id", accountId);
+        localStorage.setItem("account_id", accountId as string);
       }
     } catch (err) {
       console.warn("Could not auto-resolve account_id:", err);

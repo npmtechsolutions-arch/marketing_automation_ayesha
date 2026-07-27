@@ -96,7 +96,7 @@ export default function SocialAccountsPage() {
         const items = accRes.items || accRes.data?.items || (Array.isArray(accRes) ? accRes : []);
         if (items.length > 0 && items[0].id) {
           activeAccountId = items[0].id;
-          localStorage.setItem("account_id", activeAccountId);
+          localStorage.setItem("account_id", activeAccountId as string);
         }
       } catch (err) {
         console.warn("Could not auto-resolve account_id:", err);

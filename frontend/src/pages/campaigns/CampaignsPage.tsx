@@ -88,6 +88,7 @@ export default function CampaignsPage() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [accountId, setAccountId] = useState<string | null>(null);
   const [newCampaign, setNewCampaign] = useState({
     name: "",
     objective: "",
@@ -102,6 +103,7 @@ export default function CampaignsPage() {
   // ---------------------------------------------------------------------------
   const fetchCampaigns = async () => {
     const activeAccountId = await getAccountId();
+    setAccountId(activeAccountId);
     if (!activeAccountId) {
       setLoading(false);
       return;

@@ -1,4 +1,5 @@
-import React, { useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useEffect, Component } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/Toast';
@@ -118,6 +119,7 @@ import LandingPage from '@/pages/public/LandingPage';
 import PricingPage from '@/pages/public/PricingPage';
 import AboutPage from '@/pages/public/AboutPage';
 import PrivacyPolicyPage from '@/pages/public/PrivacyPolicyPage';
+import TermsOfServicePage from '@/pages/public/TermsOfServicePage';
 import DataDeletionPage from '@/pages/public/DataDeletionPage';
 
 // Admin pages
@@ -284,6 +286,7 @@ function App() {
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/privacy" element={<PrivacyPolicyPage />} />
+            <Route path="/terms" element={<TermsOfServicePage />} />
             <Route path="/data-deletion" element={<DataDeletionPage />} />
 
             {/* Auth */}

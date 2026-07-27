@@ -147,8 +147,8 @@ const emptyForm = {
   description: "",
   baseUrl: "",
   apiConfigTemplate: [
-    { key: "", label: "", type: "text" as const, required: true },
-  ],
+    { key: "", label: "", type: "text" as ApiConfigField["type"], required: true },
+  ] as ApiConfigField[],
   isActive: true,
 };
 
@@ -195,7 +195,7 @@ function PlatformCard({
         <div className="flex items-center gap-1 shrink-0">
           <Button
             variant="ghost"
-            size="xs"
+            size="sm"
             onClick={onEdit}
             className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
           >
@@ -203,7 +203,7 @@ function PlatformCard({
           </Button>
           <Button
             variant="ghost"
-            size="xs"
+            size="sm"
             onClick={onDelete}
             className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
           >
@@ -220,6 +220,7 @@ function PlatformCard({
 export default function PlatformsPage() {
   const [platforms, setPlatforms] = useState<SocialPlatform[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [accountId, setAccountId] = useState<string | null>(null);
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -233,6 +234,7 @@ export default function PlatformsPage() {
 
   const fetchPlatforms = async () => {
     const activeAccountId = await getAccountId();
+    setAccountId(activeAccountId);
     if (!activeAccountId) {
       setIsLoading(false);
       return;
@@ -276,7 +278,7 @@ export default function PlatformsPage() {
 
   function openCreateModal() {
     setEditingPlatform(null);
-    setForm({ ...emptyForm, apiConfigTemplate: [{ key: "", label: "", type: "text", required: true }] });
+    setForm({ ...emptyForm, apiConfigTemplate: [{ key: "", label: "", type: "text" as ApiConfigField["type"], required: true }] });
     setCustomColor("");
     setShowModal(true);
   }
@@ -413,15 +415,8 @@ export default function PlatformsPage() {
           icon={<Globe className="w-10 h-10 text-gray-400" />}
           title="No Platforms Configured"
           description="Create your first social media platform configuration to connect accounts."
-          action={
-            <Button
-              variant="primary"
-              icon={<Plus className="w-4 h-4" />}
-              onClick={openCreateModal}
-            >
-              Configure Platform
-            </Button>
-          }
+          actionLabel="Configure Platform"
+          onAction={openCreateModal}
         />
       ) : (
         <motion.div
@@ -490,8 +485,8 @@ export default function PlatformsPage() {
                 </label>
                 <Select
                   value={form.icon}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, icon: e.target.value }))
+                  onChange={(val) =>
+                    setForm((prev) => ({ ...prev, icon: val }))
                   }
                   options={ICON_OPTIONS}
                 />
@@ -536,7 +531,7 @@ export default function PlatformsPage() {
                 <Toggle
                   label="Is Platform Active"
                   checked={form.isActive}
-                  onChange={(checked) =>
+                  onCheckedChange={(checked) =>
                     setForm((prev) => ({ ...prev, isActive: checked }))
                   }
                 />
@@ -611,8 +606,8 @@ export default function PlatformsPage() {
                         </label>
                         <Select
                           value={field.type}
-                          onChange={(e: any) =>
-                            updateTemplateField(i, { type: e.target.value })
+                          onChange={(val) =>
+                            updateTemplateField(i, { type: val as ApiConfigField["type"] })
                           }
                           options={FIELD_TYPE_OPTIONS}
                         />
@@ -621,7 +616,7 @@ export default function PlatformsPage() {
                         <Toggle
                           label="Required"
                           checked={field.required}
-                          onChange={(checked) =>
+                          onCheckedChange={(checked) =>
                             updateTemplateField(i, { required: checked })
                           }
                         />
