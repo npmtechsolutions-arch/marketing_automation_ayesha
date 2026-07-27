@@ -294,8 +294,9 @@ export default function LandingPage() {
               className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed md:text-xl"
               style={{ color: "var(--page-text-secondary)" }}
             >
-              Create, schedule, and publish AI-generated content across all your social
-              accounts. Built for agencies managing multiple brands.
+              MarketEngine is an AI-powered marketing automation platform that helps you create, 
+              schedule, and publish content across your social accounts, including Facebook, 
+              Instagram, LinkedIn, X (Twitter), and YouTube.
             </motion.p>
 
             {/* CTA */}

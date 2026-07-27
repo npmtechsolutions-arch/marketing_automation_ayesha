@@ -75,7 +75,7 @@ export default function AuthLayout({
         >
           <img
             src="/marketengine_logo.png"
-            alt="MarketEngine AI"
+            alt="MarketEngine"
             className="h-11 w-11 rounded-xl object-cover shadow-lg"
           />
           <span className="text-xl font-bold text-white tracking-tight">
@@ -219,7 +219,7 @@ export default function AuthLayout({
           <div className="mb-8 flex items-center gap-3 lg:hidden">
             <img
               src="/marketengine_logo.png"
-              alt="MarketEngine AI"
+              alt="MarketEngine"
               className="h-10 w-10 rounded-xl object-cover"
             />
             <span

@@ -277,7 +277,7 @@ function SidebarContent({
         <div className="flex items-center gap-2.5">
           <img
             src="/marketengine_logo.png"
-            alt="MarketEngine AI"
+            alt="MarketEngine"
             className="h-8 w-8 shrink-0 rounded-lg object-cover shadow-lg shadow-purple-500/20"
           />
           {!collapsed && (

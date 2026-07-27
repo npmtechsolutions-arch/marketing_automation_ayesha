@@ -86,7 +86,7 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
           <Link to="/" className="flex items-center gap-2.5">
             <img
               src="/marketengine_logo.png"
-              alt="MarketEngine AI"
+              alt="MarketEngine"
               className="h-9 w-9 rounded-lg object-cover shadow-lg shadow-purple-500/20"
             />
             <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-lg font-bold text-transparent">
@@ -265,7 +265,7 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
               <div className="flex items-center gap-2.5">
                 <img
                   src="/marketengine_logo.png"
-                  alt="MarketEngine AI"
+                  alt="MarketEngine"
                   className="h-8 w-8 rounded-lg object-cover"
                 />
                 <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-lg font-bold text-transparent">
