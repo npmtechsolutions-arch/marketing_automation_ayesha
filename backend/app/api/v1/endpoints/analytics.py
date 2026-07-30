@@ -1,5 +1,4 @@
-"""Analytics endpoints with proper SQLAlchemy aggregate queries."""
-
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -7,12 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.post import Post, PostStatus
 from app.models.post_performance import PostPerformance
 from app.models.team_member import TeamMember
+from app.api.v1.endpoints.posts import _sync_post_performance
 from app.schemas.analytics import (
     AnalyticsExport,
     AnalyticsOverview,
@@ -27,6 +28,62 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_account_sync_locks: dict[uuid.UUID, asyncio.Lock] = {}
+
+def _get_account_sync_lock(account_id: uuid.UUID) -> asyncio.Lock:
+    if account_id not in _account_sync_locks:
+        _account_sync_locks[account_id] = asyncio.Lock()
+    return _account_sync_locks[account_id]
+
+async def _sync_all_account_posts(account_id: uuid.UUID, db: AsyncSession) -> None:
+    """Sync performance metrics for all published posts under the account."""
+    lock = _get_account_sync_lock(account_id)
+    async with lock:
+        now = datetime.now(timezone.utc)
+        limit_date = now - timedelta(days=90)
+        # Fetch all published posts within 90 days
+        stmt = (
+            select(Post)
+            .where(
+                Post.account_id == account_id,
+                Post.deleted_at.is_(None),
+                Post.status == PostStatus.PUBLISHED,
+                Post.published_at >= limit_date,
+            )
+            .options(selectinload(Post.performances))
+        )
+        result = await db.execute(stmt)
+        posts = result.scalars().all()
+
+        synced_any = False
+        for post in posts:
+            needs_sync = False
+            if not post.performances:
+                needs_sync = True
+            else:
+                for perf in post.performances:
+                    fetched_at = perf.fetched_at
+                    if fetched_at.tzinfo is None:
+                        fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+                    # Sync if fetched_at is older than 5 minutes
+                    if now - fetched_at > timedelta(minutes=5):
+                        needs_sync = True
+                        break
+            
+            if needs_sync:
+                try:
+                    await _sync_post_performance(post, db)
+                    synced_any = True
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "Failed to sync performance for post %s: %s", post.id, e
+                    )
+        
+        if synced_any:
+            await db.commit()
+
 
 async def _verify_account_access(account_id: uuid.UUID, user, db: AsyncSession) -> TeamMember:
     result = await db.execute(
@@ -79,6 +136,7 @@ async def analytics_overview(
 ):
     """Aggregate analytics metrics with comparison to the previous period."""
     await _verify_account_access(account_id, current_user, db)
+    await _sync_all_account_posts(account_id, db)
 
     delta = _period_to_timedelta(period)
     now = datetime.now(timezone.utc)
@@ -159,6 +217,7 @@ async def top_posts(
 ):
     """Return the top-performing posts by engagement rate."""
     await _verify_account_access(account_id, current_user, db)
+    await _sync_all_account_posts(account_id, db)
 
     delta = _period_to_timedelta(period)
     period_start = datetime.now(timezone.utc) - delta
@@ -212,6 +271,7 @@ async def performance_trends(
 ):
     """Performance trends over time grouped by day, week, or month."""
     await _verify_account_access(account_id, current_user, db)
+    await _sync_all_account_posts(account_id, db)
 
     delta = _period_to_timedelta(period)
     period_start = datetime.now(timezone.utc) - delta
@@ -271,6 +331,7 @@ async def platform_breakdown(
 ):
     """Metrics broken down by platform."""
     await _verify_account_access(account_id, current_user, db)
+    await _sync_all_account_posts(account_id, db)
 
     delta = _period_to_timedelta(period)
     period_start = datetime.now(timezone.utc) - delta
