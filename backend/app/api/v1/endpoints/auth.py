@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.deps import get_current_active_user
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -193,6 +194,14 @@ async def refresh_token(
         access_token=new_access_token,
         refresh_token=new_refresh_token,
     )
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_auth_me(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return current authenticated user profile."""
+    return UserResponse.model_validate(current_user)
 
 
 @router.post("/logout", response_model=MessageResponse)

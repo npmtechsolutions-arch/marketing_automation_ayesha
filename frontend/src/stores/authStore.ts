@@ -186,7 +186,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
     set({ isLoading: true });
     try {
-      const { data } = await api.get("/auth/me");
+      const { data } = await api.get("/users/me");
       
       let accountId = localStorage.getItem("account_id");
       if (!accountId) {

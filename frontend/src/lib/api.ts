@@ -14,7 +14,7 @@ const getApiBaseUrl = () => {
     window.location.hostname !== "localhost" &&
     window.location.hostname !== "127.0.0.1"
   ) {
-    return "https://marketing-automation-ayesha.onrender.com/api/v1";
+    return `${window.location.origin}/api/v1`;
   }
   return "http://localhost:8000/api/v1";
 };

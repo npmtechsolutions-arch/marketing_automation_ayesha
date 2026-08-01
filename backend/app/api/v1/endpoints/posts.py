@@ -652,7 +652,7 @@ async def publish_post(
     await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
     post = await _get_post_or_404(post_id, account_id, db)
 
-    if post.status not in (PostStatus.DRAFT, PostStatus.APPROVED, PostStatus.SCHEDULED):
+    if post.status not in (PostStatus.DRAFT, PostStatus.APPROVED, PostStatus.SCHEDULED, PostStatus.FAILED):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot publish a post with status '{post.status.value}'",
@@ -681,7 +681,7 @@ async def schedule_post(
     await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
     post = await _get_post_or_404(post_id, account_id, db)
 
-    if post.status not in (PostStatus.DRAFT, PostStatus.APPROVED):
+    if post.status not in (PostStatus.DRAFT, PostStatus.APPROVED, PostStatus.FAILED, PostStatus.SCHEDULED):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot schedule a post with status '{post.status.value}'",
