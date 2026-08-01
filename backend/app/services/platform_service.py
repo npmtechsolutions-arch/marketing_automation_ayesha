@@ -810,51 +810,40 @@ class PlatformService:
             "Content-Type": "application/json",
         }
 
-        try:
-            with httpx.Client() as client:
-                res = client.post(
-                    "https://api.twitter.com/2/tweets",
-                    headers=headers,
-                    json={"text": text},
-                    timeout=30.0,
-                )
-                if res.status_code in (200, 201):
-                    res_data = res.json().get("data", {})
-                    tweet_id = res_data.get("id")
-                    username = (getattr(platform, "config", None) or {}).get("username")
-                    post_url = f"https://x.com/{username}/status/{tweet_id}" if username and tweet_id else f"https://x.com/i/status/{tweet_id}"
-                    logger.info("Successfully published tweet to X: %s", post_url)
-                    return {
-                        "status": "success",
-                        "platform": "twitter",
-                        "external_post_id": tweet_id,
-                        "post_url": post_url,
-                        "published_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                else:
-                    logger.warning("X tweet publishing returned status %s: %s. Falling back to simulated publication mode.", res.status_code, res.text)
-                    tweet_id = f"tw_{uuid.uuid4().hex[:8]}"
-                    username = (getattr(platform, "config", None) or {}).get("username") or "user"
-                    return {
-                        "status": "success",
-                        "platform": "twitter",
-                        "external_post_id": tweet_id,
-                        "post_url": f"https://x.com/{username}/status/{tweet_id}",
-                        "published_at": datetime.now(timezone.utc).isoformat(),
-                        "note": f"Twitter API status {res.status_code}: fallback simulated publication"
-                    }
-        except Exception as exc:
-            logger.exception("Twitter API error (%s). Falling back to simulated publication mode.", exc)
-            tweet_id = f"tw_{uuid.uuid4().hex[:8]}"
-            username = (getattr(platform, "config", None) or {}).get("username") or "user"
-            return {
-                "status": "success",
-                "platform": "twitter",
-                "external_post_id": tweet_id,
-                "post_url": f"https://x.com/{username}/status/{tweet_id}",
-                "published_at": datetime.now(timezone.utc).isoformat(),
-                "note": f"Twitter posting exception ({exc}): fallback simulated publication"
-            }
+        with httpx.Client() as client:
+            res = client.post(
+                "https://api.twitter.com/2/tweets",
+                headers=headers,
+                json={"text": text},
+                timeout=30.0,
+            )
+            if res.status_code in (200, 201):
+                res_data = res.json().get("data", {})
+                tweet_id = res_data.get("id")
+                username = (getattr(platform, "config", None) or {}).get("username")
+                post_url = f"https://x.com/{username}/status/{tweet_id}" if username and tweet_id else f"https://x.com/i/status/{tweet_id}"
+                logger.info("Successfully published tweet to X: %s", post_url)
+                return {
+                    "status": "success",
+                    "platform": "twitter",
+                    "external_post_id": tweet_id,
+                    "post_url": post_url,
+                    "published_at": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                logger.error("X tweet publishing failed with status %s: %s", res.status_code, res.text)
+                err_detail = res.text
+                try:
+                    err_json = res.json()
+                    err_detail = err_json.get("detail") or err_json.get("title") or err_json.get("message") or res.text
+                except Exception:
+                    pass
+                if res.status_code == 402 or "credits-depleted" in res.text or "credits depleted" in res.text:
+                    raise ValueError(
+                        "X (Twitter) API Error (402 Payment Required): Your X Developer API monthly posting credits have been depleted. "
+                        "Please check your X Developer portal subscription or billing on developer.x.com."
+                    )
+                raise ValueError(f"X (Twitter) API error ({res.status_code}): {err_detail}")
 
     @staticmethod
     def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:
