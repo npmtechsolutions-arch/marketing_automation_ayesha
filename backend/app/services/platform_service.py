@@ -770,25 +770,21 @@ class PlatformService:
         """
         import httpx
         import uuid
-        from app.core.config import settings
 
         access_token = getattr(platform, "access_token", None)
         if not access_token:
             raise ValueError(
                 "This X account has no access token. Reconnect it using the "
-                "'Connect X' button."
+                "'Connect X (Twitter)' button."
             )
 
         token_lower = access_token.lower()
         if (
-            "mock" in token_lower
-            or "test" in token_lower
-            or "dummy" in token_lower
-            or access_token.startswith("refreshed_")
-            or access_token.startswith("tw_mock_")
-            or not (settings.TWITTER_CLIENT_ID and settings.TWITTER_CLIENT_SECRET)
+            token_lower == "mock_token"
+            or token_lower.startswith("mock_")
+            or token_lower.startswith("test_")
         ):
-            logger.info("Mock token or unconfigured Twitter API detected for X publishing, using simulated success.")
+            logger.info("Explicit mock token detected for X publishing, using simulated success.")
             tweet_id = f"tw_mock_{uuid.uuid4().hex[:8]}"
             username = (getattr(platform, "config", None) or {}).get("username") or "user"
             return {
@@ -813,45 +809,36 @@ class PlatformService:
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
         }
-        try:
-            with httpx.Client() as client:
-                res = client.post(
-                    "https://api.twitter.com/2/tweets",
-                    headers=headers,
-                    json={"text": text},
-                    timeout=30.0,
-                )
-                if res.status_code in (200, 201):
-                    tweet_id = res.json().get("data", {}).get("id")
-                    username = (getattr(platform, "config", None) or {}).get("username")
-                    post_url = f"https://x.com/{username}/status/{tweet_id}" if username and tweet_id else f"https://x.com/i/status/{tweet_id}"
-                    return {
-                        "status": "success",
-                        "platform": "twitter",
-                        "external_post_id": tweet_id,
-                        "post_url": post_url,
-                        "published_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                else:
-                    logger.warning("Twitter API v2 endpoint returned status %s: %s. Using simulated fallback.", res.status_code, res.text)
-                    tweet_id = f"tw_{uuid.uuid4().hex[:8]}"
-                    return {
-                        "status": "success",
-                        "platform": "twitter",
-                        "external_post_id": tweet_id,
-                        "post_url": f"https://x.com/i/status/{tweet_id}",
-                        "published_at": datetime.now(timezone.utc).isoformat(),
-                    }
-        except Exception as exc:
-            logger.exception("Twitter posting exception: %s. Using simulated fallback.", exc)
-            tweet_id = f"tw_{uuid.uuid4().hex[:8]}"
-            return {
-                "status": "success",
-                "platform": "twitter",
-                "external_post_id": tweet_id,
-                "post_url": f"https://x.com/i/status/{tweet_id}",
-                "published_at": datetime.now(timezone.utc).isoformat(),
-            }
+
+        with httpx.Client() as client:
+            res = client.post(
+                "https://api.twitter.com/2/tweets",
+                headers=headers,
+                json={"text": text},
+                timeout=30.0,
+            )
+            if res.status_code in (200, 201):
+                res_data = res.json().get("data", {})
+                tweet_id = res_data.get("id")
+                username = (getattr(platform, "config", None) or {}).get("username")
+                post_url = f"https://x.com/{username}/status/{tweet_id}" if username and tweet_id else f"https://x.com/i/status/{tweet_id}"
+                logger.info("Successfully published tweet to X: %s", post_url)
+                return {
+                    "status": "success",
+                    "platform": "twitter",
+                    "external_post_id": tweet_id,
+                    "post_url": post_url,
+                    "published_at": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                logger.error("X tweet publishing failed with status %s: %s", res.status_code, res.text)
+                err_detail = res.text
+                try:
+                    err_json = res.json()
+                    err_detail = err_json.get("detail") or err_json.get("title") or err_json.get("message") or res.text
+                except Exception:
+                    pass
+                raise ValueError(f"X (Twitter) API error ({res.status_code}): {err_detail}")
 
     @staticmethod
     def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:

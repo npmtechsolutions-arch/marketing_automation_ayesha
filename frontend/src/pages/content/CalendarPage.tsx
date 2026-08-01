@@ -19,6 +19,8 @@ import {
   Image as ImageIcon,
   TrendingUp,
   Music2,
+  AlertTriangle,
+  Send,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -53,6 +55,7 @@ interface CalendarPost {
   };
   instagramMusicTrack?: string | null;
   instagramPostType?: "post" | "reel" | null;
+  errorMessage?: string | null;
 }
 
 // ---------- Constants ----------
@@ -305,6 +308,23 @@ export default function CalendarPage() {
   const [platformFilter, setPlatformFilter] = useState<Platform | "all">("all");
   const [statusFilter, setStatusFilter] = useState<PostStatus | "all">("all");
   const [selectedPost, setSelectedPost] = useState<CalendarPost | null>(null);
+  const [isPublishingNow, setIsPublishingNow] = useState(false);
+
+  const handleRetryPublish = async () => {
+    if (!selectedPost) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
+    setIsPublishingNow(true);
+    try {
+      await api.post(`/accounts/${activeAccountId}/posts/${selectedPost.id}/publish`);
+      await handlePostClick(selectedPost);
+    } catch (err: any) {
+      console.error("Retry publish failed:", err);
+    } finally {
+      setIsPublishingNow(false);
+    }
+  };
+
   const handlePostClick = async (post: CalendarPost) => {
     setSelectedPost(post);
     const activeAccountId = await getAccountId();
@@ -322,6 +342,7 @@ export default function CalendarPage() {
             shares: p.performance?.shares ?? 0,
             views: p.performance?.views ?? 0,
           },
+          errorMessage: p.error_message || p.posting_results?.[0]?.error || null,
         };
         setSelectedPost(updatedPost);
         setPosts((prev) =>
@@ -377,6 +398,7 @@ export default function CalendarPage() {
             shares: p.performance?.shares ?? 0,
             views: p.performance?.views ?? 0,
           },
+          errorMessage: p.error_message || p.posting_results?.[0]?.error || null,
           instagramMusicTrack: p.instagram_music_track,
           instagramPostType: p.instagram_post_type,
         } as CalendarPost;
@@ -1062,8 +1084,30 @@ export default function CalendarPage() {
                 </div>
               )}
 
+            {/* Error Message callout */}
+            {selectedPost.errorMessage && (
+              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-semibold text-red-200">Publishing Details / Warning</p>
+                  <p className="text-gray-300 leading-normal">{selectedPost.errorMessage}</p>
+                </div>
+              </div>
+            )}
+
             {/* Action buttons */}
-            <div className="flex items-center gap-3 pt-3 border-t border-white/10">
+            <div className="flex items-center gap-3 pt-3 border-t border-white/10 flex-wrap">
+              {selectedPost.status === "failed" && (
+                <Button
+                  variant="primary"
+                  icon={<Send className="w-4 h-4" />}
+                  size="sm"
+                  onClick={handleRetryPublish}
+                  disabled={isPublishingNow}
+                >
+                  {isPublishingNow ? "Publishing..." : "Retry Publishing"}
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 icon={<Pencil className="w-4 h-4" />}
