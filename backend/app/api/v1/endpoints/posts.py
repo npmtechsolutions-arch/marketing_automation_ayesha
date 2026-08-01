@@ -584,11 +584,16 @@ async def publish_to_platforms(post_id: uuid.UUID):
             if success_count > 0 and failed_count == 0:
                 post.status = PostStatus.PUBLISHED
                 post.published_at = datetime.now(timezone.utc)
+                post.error_message = None
             elif success_count > 0 and failed_count > 0:
                 post.status = PostStatus.PARTIALLY_PUBLISHED
                 post.published_at = datetime.now(timezone.utc)
+                failed_item = next((r for r in posting_results if r.get("status") == "failed"), None)
+                post.error_message = failed_item.get("error") if failed_item else "Some account postings failed"
             else:
                 post.status = PostStatus.FAILED
+                failed_item = next((r for r in posting_results if r.get("status") == "failed"), None)
+                post.error_message = failed_item.get("error") if failed_item else "Publishing failed"
 
             if success_count > 0:
                 from app.models.post_performance import PostPerformance

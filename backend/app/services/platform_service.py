@@ -832,6 +832,11 @@ class PlatformService:
                 }
             else:
                 logger.error("X tweet publishing failed with status %s: %s", res.status_code, res.text)
+                if res.status_code == 402 or "credits-depleted" in res.text or "credits depleted" in res.text:
+                    raise ValueError(
+                        "X (Twitter) API Error (402 Payment Required): Your X Developer API monthly posting credits have been depleted. "
+                        "Please check your X Developer portal subscription or billing on developer.x.com."
+                    )
                 err_detail = res.text
                 try:
                     err_json = res.json()
