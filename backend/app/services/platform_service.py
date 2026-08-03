@@ -146,9 +146,9 @@ def _render_image_audio_to_video(
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise ValueError(
-            "Cannot attach audio to an Instagram photo: the server has no ffmpeg "
+            "Cannot attach audio to a photo: the server has no ffmpeg "
             "installed to render the image + music into a video. Install ffmpeg, "
-            "or post as a Reel with a video file."
+            "or post with a video file."
         )
 
     try:
