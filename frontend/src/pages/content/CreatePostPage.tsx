@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, type ChangeEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
@@ -154,6 +154,69 @@ function ShimmerBlock({ className }: { className?: string }) {
 // ────────────────────────────────────────────────────────
 export default function CreatePostPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const editState = location.state as { post?: any; mode?: "edit" | "duplicate" } | null;
+    if (editState?.post) {
+      const p = editState.post;
+      if (editState.mode === "edit") {
+        setEditingPostId(p.id);
+      }
+      if (p.title) setTitle(p.title);
+      if (p.content) setContent(p.content);
+      
+      // Select platforms/accounts if they match
+      if (Array.isArray(p.target_accounts)) {
+        const ids = p.target_accounts.map((acc: any) => acc.id || acc);
+        setSelectedAccounts(ids);
+      }
+      
+      // Load media urls
+      if (Array.isArray(p.media_urls) && p.media_urls.length > 0) {
+        setUploadedImages(p.media_urls);
+      }
+      
+      // Load other platform post types
+      if (p.instagram_post_type) setIgPostType(p.instagram_post_type);
+      if (p.facebook_post_type) setFbPostType(p.facebook_post_type);
+      if (p.youtube_post_type) setYtPostType(p.youtube_post_type);
+      if (p.linkedin_post_type) setLiPostType(p.linkedin_post_type);
+      if (p.twitter_post_type) setTwPostType(p.twitter_post_type);
+      
+      // Load music track
+      if (p.instagram_music_track) setIgMusicTrack(p.instagram_music_track);
+      if (p.instagram_music_url) {
+        setSelectedTrack({ previewUrl: p.instagram_music_url });
+      }
+      if (p.instagram_music_start_offset !== undefined) {
+        setMusicStartOffset(p.instagram_music_start_offset);
+      }
+      if (p.instagram_music_end_offset !== undefined) {
+        setMusicEndOffset(p.instagram_music_end_offset);
+      }
+      if (p.instagram_video_url) {
+        setVideoPreviewUrl(p.instagram_video_url);
+      }
+      
+      // Load schedule time if present
+      if (p.scheduled_at) {
+        setPostMode("schedule");
+        const sched = new Date(p.scheduled_at);
+        const yyyy = sched.getFullYear();
+        const mm = String(sched.getMonth() + 1).padStart(2, "0");
+        const dd = String(sched.getDate()).padStart(2, "0");
+        setScheduleDate(`${yyyy}-${mm}-${dd}`);
+        
+        const hh = String(sched.getHours()).padStart(2, "0");
+        const min = String(sched.getMinutes()).padStart(2, "0");
+        setScheduleTime(`${hh}:${min}`);
+      } else {
+        setPostMode("now");
+      }
+    }
+  }, [location.state]);
   // Wizard state
   const [currentStep, setCurrentStep] = useState<WizardStep>(1);
   const [direction, setDirection] = useState(1);
@@ -657,8 +720,14 @@ export default function CreatePostPage() {
         twitter_post_type: twPostType,
       };
 
-      const res: any = await api.post(`/accounts/${accountId}/posts/`, payload);
-      const post = res.data || res;
+      let post;
+      if (editingPostId) {
+        const res: any = await api.put(`/accounts/${accountId}/posts/${editingPostId}`, payload);
+        post = res.data || res;
+      } else {
+        const res: any = await api.post(`/accounts/${accountId}/posts/`, payload);
+        post = res.data || res;
+      }
 
       // 2. Publish or Schedule
       if (postMode === "now") {
@@ -702,6 +771,7 @@ export default function CreatePostPage() {
     musicStartOffset,
     musicEndOffset,
     videoPreviewUrl,
+    editingPostId,
   ]);
 
   // Group accounts by platform

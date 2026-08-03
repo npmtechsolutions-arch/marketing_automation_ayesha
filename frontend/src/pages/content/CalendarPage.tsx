@@ -30,6 +30,7 @@ import { Modal } from "@/components/ui/Modal";
 import PlatformIcon from "@/components/shared/PlatformIcon";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
 import api, { getAccountId } from "@/lib/api";
+import { showSuccess, showError } from "@/components/ui/Toast";
 
 // ---------- Types ----------
 type Platform = "facebook" | "instagram" | "linkedin" | "twitter" | "youtube";
@@ -322,6 +323,53 @@ export default function CalendarPage() {
       console.error("Retry publish failed:", err);
     } finally {
       setIsPublishingNow(false);
+    }
+  };
+
+  const handleEditPost = async () => {
+    if (!selectedPost) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
+    try {
+      const res: any = await api.get(`/accounts/${activeAccountId}/posts/${selectedPost.id}`);
+      const fullPost = res.data;
+      navigate("/create-post", { state: { post: fullPost, mode: "edit" } });
+    } catch (err) {
+      console.error("Failed to load post details for edit:", err);
+      showError("Failed to load post details for editing");
+    }
+  };
+
+  const handleDuplicatePost = async () => {
+    if (!selectedPost) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
+    try {
+      await api.post(`/accounts/${activeAccountId}/posts/${selectedPost.id}/duplicate`);
+      showSuccess("Post duplicated as draft successfully!");
+      setSelectedPost(null);
+      await fetchPosts();
+    } catch (err: any) {
+      console.error("Duplicate post failed:", err);
+      const errMsg = err.response?.data?.detail || err.message || "Failed to duplicate post";
+      showError(`Failed to duplicate post: ${errMsg}`);
+    }
+  };
+
+  const handleDeletePost = async () => {
+    if (!selectedPost) return;
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
+    if (!window.confirm("Are you sure you want to delete this post?")) return;
+    try {
+      await api.delete(`/accounts/${activeAccountId}/posts/${selectedPost.id}`);
+      showSuccess("Post deleted successfully!");
+      setSelectedPost(null);
+      await fetchPosts();
+    } catch (err: any) {
+      console.error("Delete post failed:", err);
+      const errMsg = err.response?.data?.detail || err.message || "Failed to delete post";
+      showError(`Failed to delete post: ${errMsg}`);
     }
   };
 
@@ -1112,6 +1160,7 @@ export default function CalendarPage() {
                 variant="secondary"
                 icon={<Pencil className="w-4 h-4" />}
                 size="sm"
+                onClick={handleEditPost}
               >
                 Edit
               </Button>
@@ -1119,6 +1168,7 @@ export default function CalendarPage() {
                 variant="secondary"
                 icon={<Copy className="w-4 h-4" />}
                 size="sm"
+                onClick={handleDuplicatePost}
               >
                 Duplicate
               </Button>
@@ -1126,6 +1176,7 @@ export default function CalendarPage() {
                 variant="secondary"
                 icon={<RefreshCw className="w-4 h-4" />}
                 size="sm"
+                onClick={handleEditPost}
               >
                 Reschedule
               </Button>
@@ -1135,6 +1186,7 @@ export default function CalendarPage() {
                   variant="danger"
                   icon={<Trash2 className="w-4 h-4" />}
                   size="sm"
+                  onClick={handleDeletePost}
                 >
                   Delete
                 </Button>
