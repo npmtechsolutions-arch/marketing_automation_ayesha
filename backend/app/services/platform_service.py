@@ -113,6 +113,66 @@ def _first_media_url(post: Any) -> str | None:
     return None
 
 
+def _normalize_hashtags(hashtags: Any) -> list[str]:
+    """Turn a post's stored hashtags into clean ``#tag`` tokens.
+
+    Hashtags are stored as a list (usually without the leading '#'). This
+    normalizes each: strips whitespace and any leading '#', removes internal
+    spaces (a hashtag can't contain them), drops empties, and re-adds a single
+    '#'. Accepts a JSON string list too, for safety.
+    """
+    if not hashtags:
+        return []
+    if isinstance(hashtags, str):
+        import json
+        try:
+            hashtags = json.loads(hashtags)
+        except json.JSONDecodeError:
+            hashtags = [hashtags]
+    if not isinstance(hashtags, (list, tuple)):
+        return []
+    result: list[str] = []
+    for tag in hashtags:
+        if not tag:
+            continue
+        clean = str(tag).strip().lstrip("#").strip().replace(" ", "")
+        if clean:
+            result.append(f"#{clean}")
+    return result
+
+
+def _content_with_hashtags(post: Any, limit: int | None = None) -> str:
+    """Build the caption/message actually sent to a platform: the post content
+    with its hashtags appended on a new line.
+
+    If ``limit`` is given (e.g. Twitter's 280 chars), the content is trimmed so
+    that content + hashtags fit, prioritizing keeping the hashtags intact.
+    """
+    content = (getattr(post, "content", None) or "").strip()
+    tags = _normalize_hashtags(getattr(post, "hashtags", None))
+    tag_str = " ".join(tags)
+
+    if not tag_str:
+        text = content
+        if limit is not None and len(text) > limit:
+            text = text[: max(0, limit - 3)].rstrip() + "..."
+        return text
+
+    sep = "\n\n"
+    if limit is None:
+        return f"{content}{sep}{tag_str}" if content else tag_str
+
+    # Bounded (e.g. Twitter): keep hashtags, trim content to fit.
+    if len(tag_str) >= limit:
+        return tag_str[:limit]
+    max_content = limit - len(tag_str) - len(sep)
+    if max_content <= 0:
+        return tag_str
+    if len(content) > max_content:
+        content = content[: max(0, max_content - 3)].rstrip() + "..."
+    return f"{content}{sep}{tag_str}" if content else tag_str
+
+
 def _fetch_to_file(url: str, path: str) -> None:
     """Download a URL (or decode a base64 data URL) to a local file path."""
     if url.startswith("data:"):
@@ -337,7 +397,7 @@ class PlatformService:
             url = f"https://graph.facebook.com/v18.0/{page_id}/videos"
             payload = {
                 "file_url": media_url,
-                "description": post.content or "",
+                "description": _content_with_hashtags(post),
                 "access_token": page_access_token,
             }
             with httpx.Client() as client:
@@ -350,7 +410,7 @@ class PlatformService:
             url = f"https://graph.facebook.com/v18.0/{page_id}/photos"
             payload = {
                 "url": media_url,
-                "caption": post.content or "",
+                "caption": _content_with_hashtags(post),
                 "access_token": page_access_token,
             }
             with httpx.Client() as client:
@@ -362,7 +422,7 @@ class PlatformService:
             # Publish text only
             url = f"https://graph.facebook.com/v18.0/{page_id}/feed"
             payload = {
-                "message": post.content or "",
+                "message": _content_with_hashtags(post),
                 "access_token": page_access_token,
             }
             with httpx.Client() as client:
@@ -522,7 +582,7 @@ class PlatformService:
         # 3. Create Media Container
         container_url = f"{base_url}/{ig_user_id}/media"
         payload = {
-            "caption": post.content or "",
+            "caption": _content_with_hashtags(post),
             "access_token": access_token
         }
         if is_reel:
@@ -698,7 +758,7 @@ class PlatformService:
 
         logger.info("Publishing to LinkedIn author %s", author_urn)
 
-        text = post.content or ""
+        text = _content_with_hashtags(post)
         media_url = _first_media_url(post)
 
         share_media: list[dict[str, Any]] = []
@@ -795,9 +855,8 @@ class PlatformService:
                 "published_at": datetime.now(timezone.utc).isoformat(),
             }
 
-        text = post.content or ""
-        if len(text) > 280:
-            text = text[:277] + "..."
+        # Include hashtags, trimming content if needed to stay within X's 280 chars.
+        text = _content_with_hashtags(post, limit=280)
         if not text.strip():
             raise ValueError("X requires non-empty text content to post a tweet.")
 
@@ -918,7 +977,7 @@ class PlatformService:
 
         title = (getattr(post, "title", None) or (post.content or "")[:90] or "New video").strip()
         metadata = {
-            "snippet": {"title": title[:100], "description": post.content or ""},
+            "snippet": {"title": title[:100], "description": _content_with_hashtags(post)},
             "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False},
         }
 
