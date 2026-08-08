@@ -681,7 +681,7 @@ export default function CreatePostPage() {
 
   const toggleAccount = useCallback((id: string) => {
     setSelectedAccounts((prev) =>
-      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
+      prev.includes(id) ? [] : [id]
     );
   }, []);
 
@@ -2157,22 +2157,6 @@ export default function CreatePostPage() {
                           <div className="flex items-center gap-2.5">
                             <PlatformIcon platform={platform} size="md" showLabel />
                           </div>
-                          <label className="flex items-center gap-2 cursor-pointer group">
-                            <span className="text-xs text-gray-500 group-hover:text-gray-300 transition-colors">
-                              Select All
-                            </span>
-                            <button
-                              onClick={() => togglePlatformAll(platform)}
-                              className={cn(
-                                "w-5 h-5 rounded-md flex items-center justify-center transition-all duration-200 border",
-                                allSelected
-                                  ? "bg-purple-500 border-purple-500 text-white"
-                                  : "bg-white/5 border-white/20 hover:border-purple-500/50"
-                              )}
-                            >
-                              {allSelected && <Check className="w-3 h-3" />}
-                            </button>
-                          </label>
                         </div>
 
                         {/* Account list */}
