@@ -427,7 +427,13 @@ async def update_post(
     await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
     post = await _get_post_or_404(post_id, account_id, db)
 
-    if post.status not in (PostStatus.DRAFT, PostStatus.PENDING_APPROVAL):
+    if post.status not in (
+        PostStatus.DRAFT,
+        PostStatus.PENDING_APPROVAL,
+        PostStatus.APPROVED,
+        PostStatus.SCHEDULED,
+        PostStatus.FAILED,
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot edit a post with status '{post.status.value}'",
