@@ -31,6 +31,7 @@ import {
   Film,
   ChevronDown,
   Play,
+  Send,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -273,6 +274,9 @@ export default function CreatePostPage() {
           avatar: sa.profile_image_url || sa.profile_picture_url || undefined,
         }));
         setAccounts(mapped);
+        if (mapped.length === 1) {
+          setSelectedAccounts([mapped[0].id]);
+        }
       } catch (err) {
         console.error("Failed to load social accounts:", err);
       } finally {
@@ -317,6 +321,7 @@ export default function CreatePostPage() {
   const [igPostType, setIgPostType] = useState<"post" | "reel">("post");
   const [fbPostType, setFbPostType] = useState<"post" | "reel">("post");
   const [ytPostType, setYtPostType] = useState<"post" | "video">("post");
+  const [ytCommunityCopied, setYtCommunityCopied] = useState(false);
   const [liPostType, setLiPostType] = useState<"post" | "video">("post");
   const [twPostType, setTwPostType] = useState<"post" | "video">("post");
   const [igMusicTrack, setIgMusicTrack] = useState<string | null>(null);
@@ -324,6 +329,24 @@ export default function CreatePostPage() {
   const [igMusicOpen, setIgMusicOpen] = useState(false);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   const [videoFileName, setVideoFileName] = useState<string | null>(null);
+
+  // YouTube Community posts cannot be published via any official API, so we help
+  // the user do it by hand: copy the caption + hashtags to the clipboard, open
+  // the first image so it can be saved, and open YouTube Studio's Community tab.
+  const handleYouTubeCommunityManual = async () => {
+    const tags = hashtags.length > 0 ? "\n\n" + hashtags.map((t) => `#${t}`).join(" ") : "";
+    const text = `${content || ""}${tags}`.trim();
+    try {
+      if (text) await navigator.clipboard.writeText(text);
+      setYtCommunityCopied(true);
+      setTimeout(() => setYtCommunityCopied(false), 2500);
+    } catch {
+      // Clipboard can fail on http/older browsers — the Studio tab still opens.
+    }
+    const firstImage = [...uploadedImages, ...generatedImages][0];
+    if (firstImage) window.open(firstImage, "_blank", "noopener");
+    window.open("https://studio.youtube.com/", "_blank", "noopener");
+  };
 
   // Real Audio Picker States
   const [selectedTrack, setSelectedTrack] = useState<any | null>(null);
@@ -774,6 +797,77 @@ export default function CreatePostPage() {
     editingPostId,
   ]);
 
+  const handleQuickPublish = useCallback(async () => {
+    const accountId = localStorage.getItem("account_id");
+    if (!accountId) {
+      showError("Account ID not found");
+      return;
+    }
+    if (selectedAccounts.length === 0) {
+      showError("Please select at least one account to publish to.");
+      return;
+    }
+
+    setIsPosting(true);
+    try {
+      const payload: any = {
+        title: title || undefined,
+        content: content,
+        hashtags: hashtags.length > 0 ? hashtags : undefined,
+        target_account_ids: selectedAccounts,
+        media_urls: allImages.length > 0 ? allImages : undefined,
+        instagram_post_type: igPostType,
+        instagram_music_track: igMusicTrack || undefined,
+        instagram_music_url: selectedTrack?.previewUrl || undefined,
+        instagram_music_start_offset: Math.round(musicStartOffset),
+        instagram_music_end_offset: Math.round(musicEndOffset),
+        instagram_video_url: videoPreviewUrl || undefined,
+        facebook_post_type: fbPostType,
+        facebook_music_track: igMusicTrack || undefined,
+        facebook_music_url: selectedTrack?.previewUrl || undefined,
+        facebook_music_start_offset: Math.round(musicStartOffset),
+        facebook_music_end_offset: Math.round(musicEndOffset),
+        facebook_video_url: videoPreviewUrl || undefined,
+        youtube_post_type: ytPostType,
+        linkedin_post_type: liPostType,
+        twitter_post_type: twPostType,
+      };
+
+      let post;
+      if (editingPostId) {
+        const res: any = await api.put(`/accounts/${accountId}/posts/${editingPostId}`, payload);
+        post = res.data || res;
+      } else {
+        const res: any = await api.post(`/accounts/${accountId}/posts/`, payload);
+        post = res.data || res;
+      }
+
+      await api.post(`/accounts/${accountId}/posts/${post.id}/publish`);
+      showSuccess("Post published successfully!");
+      navigate("/calendar");
+    } catch (err: any) {
+      console.error(err);
+      const errMsg = err.response?.data?.detail || err.message || "Failed to publish post";
+      showError(`Failed to publish post: ${errMsg}`);
+    } finally {
+      setIsPosting(false);
+    }
+  }, [
+    title,
+    content,
+    hashtags,
+    selectedAccounts,
+    allImages,
+    navigate,
+    igPostType,
+    igMusicTrack,
+    selectedTrack,
+    musicStartOffset,
+    musicEndOffset,
+    videoPreviewUrl,
+    editingPostId,
+  ]);
+
   // Group accounts by platform
   const accountsByPlatform = accounts.reduce(
     (acc, account) => {
@@ -1184,6 +1278,22 @@ export default function CreatePostPage() {
                     </div>
                     {ytPostType === "video" && (
                       <p className="text-[10px] text-red-300/70 mt-2 text-center">Upload a vertical video · 9:16 recommended</p>
+                    )}
+                    {ytPostType === "post" && (
+                      <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                        <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                          <strong>Heads up:</strong> YouTube provides no API to create Community posts, so this
+                          can't be auto-published. Use the button below to copy your text and open YouTube
+                          Studio, then post it to the Community tab manually.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleYouTubeCommunityManual}
+                          className="mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 border border-amber-500/30 transition-colors"
+                        >
+                          {ytCommunityCopied ? "✓ Copied — opening YouTube Studio…" : "Copy text & open YouTube Studio"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}
@@ -1970,9 +2080,19 @@ export default function CreatePostPage() {
                 )}
 
                 {/* Next button */}
-                <div className="flex gap-3 mt-4">
+                <div className="flex flex-col sm:flex-row gap-3 mt-4 w-full">
                   <Button variant="secondary" onClick={prevStep} icon={<ArrowLeft className="w-4 h-4" />} size="lg">
                     Back
+                  </Button>
+                  <Button
+                    onClick={handleQuickPublish}
+                    size="lg"
+                    variant="primary"
+                    disabled={!content.trim() || isPosting}
+                    icon={<Send className="w-4 h-4" />}
+                    fullWidth
+                  >
+                    {isPosting ? "Posting..." : "Publish Now"}
                   </Button>
                   <Button
                     onClick={nextStep}
