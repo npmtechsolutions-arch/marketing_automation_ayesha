@@ -170,7 +170,7 @@ export default function CreatePostPage() {
       
       // Select platforms/accounts if they match
       if (Array.isArray(p.target_accounts)) {
-        const ids = p.target_accounts.map((acc: any) => acc.id || acc);
+        const ids = p.target_accounts.map((acc: any) => acc.social_account_id || acc.id || acc);
         setSelectedAccounts(ids);
       }
       
