@@ -598,11 +598,22 @@ async def _do_publish_to_platforms(post_id: uuid.UUID):
                     })
                 except Exception as exc:
                     failed_count += 1
-                    posting_results.append({
-                        "social_account_id": sa_id,
-                        "status": "failed",
-                        "error": str(exc),
-                    })
+                    err = str(exc)
+                    # YouTube Community posts have no API and must be published by
+                    # hand. Tag them distinctly so the UI shows a "publish
+                    # manually" helper instead of a generic red error.
+                    if err.startswith("MANUAL_YOUTUBE_COMMUNITY:"):
+                        posting_results.append({
+                            "social_account_id": sa_id,
+                            "status": "manual_required",
+                            "error": err.replace("MANUAL_YOUTUBE_COMMUNITY:", "").strip(),
+                        })
+                    else:
+                        posting_results.append({
+                            "social_account_id": sa_id,
+                            "status": "failed",
+                            "error": err,
+                        })
 
             if success_count > 0 and failed_count == 0:
                 post.status = PostStatus.PUBLISHED
@@ -611,11 +622,11 @@ async def _do_publish_to_platforms(post_id: uuid.UUID):
             elif success_count > 0 and failed_count > 0:
                 post.status = PostStatus.PARTIALLY_PUBLISHED
                 post.published_at = datetime.now(timezone.utc)
-                failed_item = next((r for r in posting_results if r.get("status") == "failed"), None)
+                failed_item = next((r for r in posting_results if r.get("status") in ("failed", "manual_required")), None)
                 post.error_message = failed_item.get("error") if failed_item else "Some account postings failed"
             else:
                 post.status = PostStatus.FAILED
-                failed_item = next((r for r in posting_results if r.get("status") == "failed"), None)
+                failed_item = next((r for r in posting_results if r.get("status") in ("failed", "manual_required")), None)
                 post.error_message = failed_item.get("error") if failed_item else "Publishing failed"
 
             if success_count > 0:

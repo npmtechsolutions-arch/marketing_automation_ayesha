@@ -855,6 +855,21 @@ class PlatformService:
         import httpx
         import uuid
 
+        # YouTube Community posts (text/image posts on the channel's Community
+        # tab) CANNOT be created through any official Google API — the YouTube
+        # Data API v3 has no endpoint for them. Rather than silently uploading a
+        # wrong video, fail honestly with an actionable message. The frontend
+        # detects youtube_post_type == "post" and offers a manual-publish helper.
+        yt_type = (getattr(post, "youtube_post_type", None) or "").strip().lower()
+        if yt_type in ("post", "community", "community_post"):
+            raise ValueError(
+                "MANUAL_YOUTUBE_COMMUNITY: YouTube Community posts can't be "
+                "published automatically — YouTube provides no API to create "
+                "them. Open YouTube Studio and post it manually (use the "
+                "'Publish to Community manually' button to copy the text and "
+                "image)."
+            )
+
         access_token = getattr(platform, "access_token", None)
         if not access_token:
             raise ValueError(
