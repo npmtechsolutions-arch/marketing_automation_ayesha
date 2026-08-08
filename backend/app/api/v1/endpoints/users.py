@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
-from app.core.security import get_password_hash, verify_password
+from app.core.security import get_password_hash_async, verify_password_async
 from app.models.user import User
 from app.schemas.common import MessageResponse
 from app.schemas.user import (
@@ -65,7 +65,7 @@ async def change_password(
 
     Requires the current password for verification.
     """
-    if not verify_password(payload.current_password, current_user.password_hash):
+    if not await verify_password_async(payload.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
@@ -77,7 +77,7 @@ async def change_password(
             detail="New password must be different from the current password",
         )
 
-    current_user.password_hash = get_password_hash(payload.new_password)
+    current_user.password_hash = await get_password_hash_async(payload.new_password)
     await db.flush()
 
     return MessageResponse(message="Password updated successfully")
@@ -96,7 +96,7 @@ async def delete_current_user(
     owns. Records are retained (soft delete) for data integrity and any
     legally required retention period.
     """
-    if not verify_password(payload.password, current_user.password_hash):
+    if not await verify_password_async(payload.password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password is incorrect",

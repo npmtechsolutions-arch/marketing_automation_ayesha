@@ -11,6 +11,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
@@ -45,6 +46,13 @@ class PostStatus(str, enum.Enum):
 
 class Post(Base):
     __tablename__ = "posts"
+    __table_args__ = (
+        # Dashboard / calendar listing: filter by account, newest first.
+        Index("ix_posts_account_created", "account_id", "created_at"),
+        # Scheduler poll (runs every 10s): find due SCHEDULED posts. Without this
+        # the poll does a full table scan of `posts` on every tick.
+        Index("ix_posts_status_scheduled_at", "status", "scheduled_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

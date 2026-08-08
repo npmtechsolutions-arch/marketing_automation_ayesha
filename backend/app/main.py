@@ -8,12 +8,26 @@ from app.core.database import init_db
 
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
 from app.core.scheduler import scheduled_post_worker
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     # Startup
+    # Blocking work (bcrypt password hashing, ffmpeg video rendering, blocking
+    # platform HTTP calls) runs via asyncio.to_thread on the loop's default
+    # executor. Python's default pool is only ~min(32, cpu+4) threads — on a
+    # small instance that's ~5, which a publish burst can exhaust and starve
+    # logins. Give the loop an explicit, roomier pool sized from settings.
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(
+        ThreadPoolExecutor(
+            max_workers=settings.PUBLISH_THREAD_POOL_SIZE,
+            thread_name_prefix="blocking",
+        )
+    )
     await init_db()
     worker_task = asyncio.create_task(scheduled_post_worker())
     yield

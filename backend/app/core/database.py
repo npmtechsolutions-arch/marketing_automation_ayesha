@@ -69,6 +69,21 @@ async def init_db() -> None:
                 await conn.execute(
                     text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS instagram_music_end_offset INTEGER")
                 )
+                # Self-healing indexes for hot query paths. create_all() only adds
+                # indexes when it creates a table, so existing production tables
+                # need these explicitly. IF NOT EXISTS makes this idempotent.
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_posts_account_created "
+                        "ON posts (account_id, created_at)"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_posts_status_scheduled_at "
+                        "ON posts (status, scheduled_at)"
+                    )
+                )
             logger.info("Database initialized successfully.")
             return
         except Exception as e:

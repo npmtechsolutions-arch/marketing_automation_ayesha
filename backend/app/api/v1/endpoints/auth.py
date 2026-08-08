@@ -14,8 +14,8 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    get_password_hash,
-    verify_password,
+    get_password_hash_async,
+    verify_password_async,
     create_password_reset_token,
     verify_password_reset_token,
 )
@@ -71,7 +71,7 @@ async def register(
         id=uuid.uuid4(),
         email=payload.email,
         full_name=payload.full_name,
-        password_hash=get_password_hash(payload.password),
+        password_hash=await get_password_hash_async(payload.password),
         is_active=True,
     )
     db.add(user)
@@ -122,7 +122,7 @@ async def login(
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
 
-    if user is None or not verify_password(payload.password, user.password_hash):
+    if user is None or not await verify_password_async(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -260,7 +260,7 @@ async def reset_password(
             detail="User not found or inactive",
         )
 
-    user.password_hash = get_password_hash(payload.new_password)
+    user.password_hash = await get_password_hash_async(payload.new_password)
     db.add(user)
 
     return MessageResponse(message="Password has been reset successfully")

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -25,6 +26,26 @@ def get_password_hash(password: str) -> str:
         password.encode("utf-8"),
         bcrypt.gensalt(rounds=12),
     ).decode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Async wrappers
+#
+# bcrypt (rounds=12) is intentionally CPU-heavy (~200-400ms per call). Calling
+# it directly inside an async request handler blocks the single event loop for
+# that whole time, so under load every other request — including logins — queues
+# behind it and feels slow/delayed. These wrappers offload the hashing to the
+# thread pool so the event loop stays responsive. Prefer them in async code.
+# ---------------------------------------------------------------------------
+
+async def verify_password_async(plain_password: str, hashed_password: str) -> bool:
+    """Async, non-blocking version of :func:`verify_password`."""
+    return await asyncio.to_thread(verify_password, plain_password, hashed_password)
+
+
+async def get_password_hash_async(password: str) -> str:
+    """Async, non-blocking version of :func:`get_password_hash`."""
+    return await asyncio.to_thread(get_password_hash, password)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

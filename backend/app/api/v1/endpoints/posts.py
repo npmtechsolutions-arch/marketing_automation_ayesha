@@ -1,5 +1,6 @@
 """Post management endpoints."""
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 import logging
@@ -9,6 +10,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.deps import get_current_active_user
 from app.models.platform import SocialAccount
@@ -18,6 +20,13 @@ from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.post import PostCreate, PostResponse, PostUpdate, PostWithPerformance
 
 router = APIRouter()
+
+# Caps how many posts publish to the social platforms at the same time across the
+# whole process. Both the immediate-publish endpoint and the scheduled-post
+# worker funnel through publish_to_platforms(), so this single semaphore bounds
+# total publish concurrency and protects CPU, the thread pool and DB connections
+# during a burst (e.g. many users' scheduled posts firing at once).
+_PUBLISH_SEMAPHORE = asyncio.Semaphore(settings.MAX_CONCURRENT_PUBLISHES)
 
 
 # ---------------------------------------------------------------------------
@@ -478,6 +487,20 @@ async def delete_post(
 
 
 async def publish_to_platforms(post_id: uuid.UUID):
+    """Publish a post to all its target platforms, bounded by a global
+    concurrency limit.
+
+    A burst of simultaneous publishes (many scheduled posts becoming due at the
+    same time, or several users hitting publish at once) would otherwise spawn
+    unbounded blocking work — ffmpeg renders, platform HTTP calls, one DB session
+    each — and saturate the single web process. The semaphore is acquired BEFORE
+    opening a DB session so queued publishes wait without holding a connection.
+    """
+    async with _PUBLISH_SEMAPHORE:
+        await _do_publish_to_platforms(post_id)
+
+
+async def _do_publish_to_platforms(post_id: uuid.UUID):
     from app.services.platform_service import PlatformService
     from app.models.platform import SocialAccount
     import logging

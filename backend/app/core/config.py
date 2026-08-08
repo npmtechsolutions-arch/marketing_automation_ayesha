@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:MyNewPassword123@localhost:5432/marketing_automation"
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # Concurrency / performance
+    # Max number of posts that may be published to the social platforms at the
+    # same time. Keeps a spike of simultaneous publishes (e.g. many users firing
+    # scheduled posts at once) from saturating CPU, threads and DB connections.
+    MAX_CONCURRENT_PUBLISHES: int = 5
+    # Size of the thread pool used for blocking work (bcrypt hashing, ffmpeg
+    # rendering, blocking platform HTTP calls). Must comfortably exceed
+    # MAX_CONCURRENT_PUBLISHES so password hashing/login is never starved.
+    PUBLISH_THREAD_POOL_SIZE: int = 16
+
     # Data retention: number of days a soft-deleted user is kept before the
     # scheduled hard-purge permanently removes them and their owned workspaces.
     SOFT_DELETE_RETENTION_DAYS: int = 30
