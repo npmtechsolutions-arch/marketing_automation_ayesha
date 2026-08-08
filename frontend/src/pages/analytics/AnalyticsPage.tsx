@@ -383,7 +383,7 @@ export default function AnalyticsPage() {
                 </div>
               </div>
               <div className="h-[360px] -mx-2">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <AreaChart data={chartData}>
                     <defs>
                       {Object.entries(metricColors).map(([_key, val]) => (
@@ -424,7 +424,7 @@ export default function AnalyticsPage() {
                 ))}
               </div>
               <div className="h-[280px] -mx-2">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <BarChart data={platformChartData} layout="vertical" barCategoryGap="20%">
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
                     <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: "#6B7280", fontSize: 11 }} tickFormatter={(v) => formatNumber(v)} />
@@ -523,7 +523,7 @@ export default function AnalyticsPage() {
                 {engagementBreakdown.length > 0 ? (
                   <>
                     <div className="h-[240px] relative">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <PieChart>
                           <Pie data={engagementBreakdown} cx="50%" cy="50%" innerRadius={70} outerRadius={100}
                             dataKey="value" stroke="none" paddingAngle={3}>
