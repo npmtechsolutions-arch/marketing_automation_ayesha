@@ -182,7 +182,7 @@ export default function CreatePostPage() {
       // Load other platform post types
       if (p.instagram_post_type) setIgPostType(p.instagram_post_type);
       if (p.facebook_post_type) setFbPostType(p.facebook_post_type);
-      if (p.youtube_post_type) setYtPostType(p.youtube_post_type);
+      if (p.youtube_post_type) setYtPostType(p.youtube_post_type === "shorts" ? "shorts" : "video");
       if (p.linkedin_post_type) setLiPostType(p.linkedin_post_type);
       if (p.twitter_post_type) setTwPostType(p.twitter_post_type);
       
@@ -320,8 +320,7 @@ export default function CreatePostPage() {
   // ── Instagram & Facebook & YouTube & LinkedIn & Twitter formats ──
   const [igPostType, setIgPostType] = useState<"post" | "reel">("post");
   const [fbPostType, setFbPostType] = useState<"post" | "reel">("post");
-  const [ytPostType, setYtPostType] = useState<"post" | "video">("post");
-  const [ytCommunityCopied, setYtCommunityCopied] = useState(false);
+  const [ytPostType, setYtPostType] = useState<"video" | "shorts">("video");
   const [liPostType, setLiPostType] = useState<"post" | "video">("post");
   const [twPostType, setTwPostType] = useState<"post" | "video">("post");
   const [igMusicTrack, setIgMusicTrack] = useState<string | null>(null);
@@ -329,24 +328,6 @@ export default function CreatePostPage() {
   const [igMusicOpen, setIgMusicOpen] = useState(false);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   const [videoFileName, setVideoFileName] = useState<string | null>(null);
-
-  // YouTube Community posts cannot be published via any official API, so we help
-  // the user do it by hand: copy the caption + hashtags to the clipboard, open
-  // the first image so it can be saved, and open YouTube Studio's Community tab.
-  const handleYouTubeCommunityManual = async () => {
-    const tags = hashtags.length > 0 ? "\n\n" + hashtags.map((t) => `#${t}`).join(" ") : "";
-    const text = `${content || ""}${tags}`.trim();
-    try {
-      if (text) await navigator.clipboard.writeText(text);
-      setYtCommunityCopied(true);
-      setTimeout(() => setYtCommunityCopied(false), 2500);
-    } catch {
-      // Clipboard can fail on http/older browsers — the Studio tab still opens.
-    }
-    const firstImage = [...uploadedImages, ...generatedImages][0];
-    if (firstImage) window.open(firstImage, "_blank", "noopener");
-    window.open("https://studio.youtube.com/", "_blank", "noopener");
-  };
 
   // Real Audio Picker States
   const [selectedTrack, setSelectedTrack] = useState<any | null>(null);
@@ -900,7 +881,7 @@ export default function CreatePostPage() {
 
   const isReelMode = (hasSelectedInstagram && igPostType === "reel") || 
                      (hasSelectedFacebook && fbPostType === "reel") ||
-                     (hasSelectedYouTube && ytPostType === "video") ||
+                     (hasSelectedYouTube && (ytPostType === "video" || ytPostType === "shorts")) ||
                      (hasSelectedLinkedIn && liPostType === "video") ||
                      (hasSelectedTwitter && twPostType === "video");
 
@@ -1250,19 +1231,6 @@ export default function CreatePostPage() {
                     </div>
                     <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
                       <button
-                        onClick={() => setYtPostType("post")}
-                        className={cn(
-                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
-                          ytPostType === "post"
-                            ? "bg-gradient-to-r from-red-500/25 to-rose-400/20 text-white border border-red-500/30 shadow-sm shadow-red-500/10"
-                            : "text-gray-400 hover:text-gray-200"
-                        )}
-                        type="button"
-                      >
-                        <ImageIcon className="w-3.5 h-3.5" />
-                        Community Post
-                      </button>
-                      <button
                         onClick={() => setYtPostType("video")}
                         className={cn(
                           "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
@@ -1272,28 +1240,28 @@ export default function CreatePostPage() {
                         )}
                         type="button"
                       >
+                        <Video className="w-3.5 h-3.5" />
+                        Video
+                      </button>
+                      <button
+                        onClick={() => setYtPostType("shorts")}
+                        className={cn(
+                          "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all duration-200",
+                          ytPostType === "shorts"
+                            ? "bg-gradient-to-r from-red-500/25 to-rose-400/20 text-white border border-red-500/30 shadow-sm shadow-red-500/10"
+                            : "text-gray-400 hover:text-gray-200"
+                        )}
+                        type="button"
+                      >
                         <Film className="w-3.5 h-3.5" />
-                        Video / Shorts
+                        Shorts
                       </button>
                     </div>
                     {ytPostType === "video" && (
-                      <p className="text-[10px] text-red-300/70 mt-2 text-center">Upload a vertical video · 9:16 recommended</p>
+                      <p className="text-[10px] text-red-300/70 mt-2 text-center">Upload a landscape video · 16:9 recommended</p>
                     )}
-                    {ytPostType === "post" && (
-                      <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-                        <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                          <strong>Heads up:</strong> YouTube provides no API to create Community posts, so this
-                          can't be auto-published. Use the button below to copy your text and open YouTube
-                          Studio, then post it to the Community tab manually.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={handleYouTubeCommunityManual}
-                          className="mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 border border-amber-500/30 transition-colors"
-                        >
-                          {ytCommunityCopied ? "✓ Copied — opening YouTube Studio…" : "Copy text & open YouTube Studio"}
-                        </button>
-                      </div>
+                    {ytPostType === "shorts" && (
+                      <p className="text-[10px] text-red-300/70 mt-2 text-center">Upload a vertical video · 9:16, under 3 min · #Shorts added automatically</p>
                     )}
                   </div>
                 )}
@@ -1416,7 +1384,7 @@ export default function CreatePostPage() {
                               </div>
                               <div className="text-center">
                                 <p className="text-sm text-gray-300">Upload Reel video</p>
-                                <p className="text-xs text-gray-500 mt-1">MP4, MOV up to 100 MB · 9:16 recommended</p>
+                                <p className="text-xs text-gray-500 mt-1">MP4, MOV up to 500 MB · 9:16 recommended</p>
                               </div>
                             </button>
                             <input
