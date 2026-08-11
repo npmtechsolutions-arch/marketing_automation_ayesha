@@ -593,13 +593,21 @@ function SecurityTab() {
 
 // ── Notifications ───────────────────────────────────────────────────
 
+type NotificationSettings = typeof emailNotifDefaults;
+
 function NotificationsTab() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
 
   const savedNotifs = user?.preferences?.notifications;
-  const [emailNotifs, setEmailNotifs] = useState({ ...emailNotifDefaults, ...(savedNotifs?.email ?? {}) });
-  const [inAppNotifs, setInAppNotifs] = useState({ ...inAppNotifDefaults, ...(savedNotifs?.inApp ?? {}) });
+  const [emailNotifs, setEmailNotifs] = useState<NotificationSettings>({
+    ...emailNotifDefaults,
+    ...(savedNotifs?.email ?? {}),
+  });
+  const [inAppNotifs, setInAppNotifs] = useState<NotificationSettings>({
+    ...inAppNotifDefaults,
+    ...(savedNotifs?.inApp ?? {}),
+  });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -645,7 +653,15 @@ function NotificationsTab() {
         <h3 className="text-base font-semibold text-white mb-5">Email Notifications</h3>
         <div className="space-y-4">
           {notifItems.map((item) => (
-            <Toggle key={item.key} checked={emailNotifs[item.key]} onCheckedChange={(val) => setEmailNotifs((prev) => ({ ...prev, [item.key]: val }))} label={item.label} description={item.desc} />
+            <Toggle
+              key={item.key}
+              checked={emailNotifs[item.key]}
+              onCheckedChange={(val) =>
+                setEmailNotifs((prev: NotificationSettings) => ({ ...prev, [item.key]: val }))
+              }
+              label={item.label}
+              description={item.desc}
+            />
           ))}
         </div>
       </GlassCard>
@@ -654,7 +670,15 @@ function NotificationsTab() {
         <h3 className="text-base font-semibold text-white mb-5">In-App Notifications</h3>
         <div className="space-y-4">
           {notifItems.map((item) => (
-            <Toggle key={item.key} checked={inAppNotifs[item.key]} onCheckedChange={(val) => setInAppNotifs((prev) => ({ ...prev, [item.key]: val }))} label={item.label} description={item.desc} />
+            <Toggle
+              key={item.key}
+              checked={inAppNotifs[item.key]}
+              onCheckedChange={(val) =>
+                setInAppNotifs((prev: NotificationSettings) => ({ ...prev, [item.key]: val }))
+              }
+              label={item.label}
+              description={item.desc}
+            />
           ))}
         </div>
       </GlassCard>
