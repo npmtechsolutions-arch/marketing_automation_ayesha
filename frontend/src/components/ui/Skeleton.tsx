@@ -28,13 +28,14 @@ export function Skeleton({
     <div
       key={i}
       className={cn(
-        "animate-pulse bg-white/[0.06]",
+        "animate-pulse",
         defaults.rounded,
         className
       )}
       style={{
         width: width ?? defaults.w,
         height: height ?? defaults.h,
+        backgroundColor: "var(--shimmer-bg)",
       }}
     />
   ));

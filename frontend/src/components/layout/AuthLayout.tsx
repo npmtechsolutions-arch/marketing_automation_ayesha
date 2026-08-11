@@ -30,7 +30,7 @@ export default function AuthLayout({
           className="absolute inset-0"
           style={{
             background:
-              "linear-gradient(135deg, #7c3aed 0%, #ec4899 40%, #f97316 80%, #f472b6 100%)",
+              "linear-gradient(135deg, #6d5ef6 0%, #8b5cf6 45%, #a78bfa 100%)",
           }}
         />
 

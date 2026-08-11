@@ -74,6 +74,9 @@ export function Modal({
               backdropFilter: "blur(12px)",
             }}
             className={cn("relative w-full rounded-2xl", sizeMap[size])}
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
           >
             {/* Header */}
             {(title || showClose) && (
@@ -82,14 +85,18 @@ export function Modal({
                 style={{ borderBottom: "1px solid var(--surface-border)" }}
               >
                 {title && (
-                  <h2 className="text-lg font-semibold text-white">
+                  <h2 className="text-lg font-semibold" style={{ color: "var(--page-heading)" }}>
                     {title}
                   </h2>
                 )}
                 {showClose && (
                   <button
                     onClick={onClose}
-                    className="ml-auto rounded-lg p-1.5 transition-colors text-gray-400 hover:text-white hover:bg-white/10"
+                    aria-label="Close dialog"
+                    className="ml-auto rounded-lg p-1.5 transition-colors cursor-pointer"
+                    style={{ color: "var(--page-text-muted)" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--page-text)"; e.currentTarget.style.backgroundColor = "var(--sidebar-hover-bg)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--page-text-muted)"; e.currentTarget.style.backgroundColor = "transparent"; }}
                   >
                     <X className="h-5 w-5" />
                   </button>

@@ -32,7 +32,7 @@ export function GlassCard({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
-      whileHover={hover ? { y: -3, transition: { duration: 0.2 } } : undefined}
+      whileHover={hover ? { y: -2, transition: { duration: 0.2 } } : undefined}
       onClick={onClick}
       style={{
         backgroundColor: "var(--surface-bg)",
@@ -42,7 +42,7 @@ export function GlassCard({
       }}
       className={cn(
         paddingMap[padding],
-        hover && "cursor-pointer transition-shadow duration-300 hover:shadow-md",
+        hover && "cursor-pointer transition-shadow duration-300 hover:shadow-[var(--surface-shadow-hover)]",
         onClick && "cursor-pointer",
         className
       )}

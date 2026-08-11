@@ -175,29 +175,35 @@ function ProfileTab() {
       {/* Avatar */}
       <GlassCard>
         <div className="flex items-center gap-6">
-          <div className="relative group cursor-pointer" onClick={() => fileRef.current?.click()}>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            aria-label="Upload profile photo"
+            aria-busy={uploading}
+            className="relative group cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+          >
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-2xl font-bold text-white overflow-hidden">
               {avatarUrl ? (
-                <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
               ) : (
                 initials
               )}
             </div>
-            <div className="absolute inset-0 rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            <div className="absolute inset-0 rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center justify-center">
               {uploading ? (
                 <Loader2 className="w-6 h-6 text-white animate-spin" />
               ) : (
                 <Camera className="w-6 h-6 text-white" />
               )}
             </div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatar}
-            />
-          </div>
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatar}
+          />
           <div>
             <p className="text-white font-medium">{name || "User"}</p>
             <p className="text-sm text-gray-400">Click avatar to upload a new photo</p>
@@ -535,7 +541,12 @@ function SecurityTab() {
                   </div>
                 </div>
                 {!s.current && (
-                  <button onClick={() => handleRevokeSession(s.id)} className="text-gray-400 hover:text-red-400 transition-colors flex-shrink-0" title="Revoke session">
+                  <button
+                    onClick={() => handleRevokeSession(s.id)}
+                    className="text-gray-400 hover:text-red-400 transition-colors flex-shrink-0 cursor-pointer rounded-md p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/70"
+                    aria-label={`Revoke session on ${s.device || "this device"}`}
+                    title="Revoke session"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 )}
@@ -858,9 +869,9 @@ function BusinessProfileTab() {
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">Brand Logo</h3>
         <div className="flex items-center gap-5">
-          <div onClick={() => logoRef.current?.click()} className="w-20 h-20 rounded-2xl bg-white/5 border-2 border-dashed border-white/10 flex items-center justify-center cursor-pointer hover:border-purple-500/30 transition-colors overflow-hidden">
-            {uploading ? <Loader2 className="w-6 h-6 text-gray-400 animate-spin" /> : logoUrl ? <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" /> : <Camera className="w-6 h-6 text-gray-500" />}
-          </div>
+          <button type="button" onClick={() => logoRef.current?.click()} aria-label="Upload brand logo" aria-busy={uploading} className="w-20 h-20 rounded-2xl bg-white/5 border-2 border-dashed border-white/10 flex items-center justify-center cursor-pointer hover:border-purple-500/30 transition-colors overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent">
+            {uploading ? <Loader2 className="w-6 h-6 text-gray-400 animate-spin" /> : logoUrl ? <img src={logoUrl} alt="" className="w-full h-full object-cover" /> : <Camera className="w-6 h-6 text-gray-500" />}
+          </button>
           <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={handleLogo} />
           <div>
             <p className="text-sm text-gray-300">Upload your brand logo</p>

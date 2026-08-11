@@ -67,9 +67,9 @@ export function Button({
   // Inline styles per variant to avoid CSS override conflicts
   const variantInline: Record<Variant, React.CSSProperties> = {
     primary: {
-      backgroundColor: "#7c3aed",
+      backgroundColor: "#6d5ef6",
       color: "#ffffff",
-      boxShadow: "0 2px 8px rgba(124,58,237,0.2)",
+      boxShadow: "0 2px 8px rgba(109,94,246,0.24)",
     },
     secondary: {
       backgroundColor: "transparent",
@@ -102,10 +102,12 @@ export function Button({
       style={variantInline[variant]}
       className={cn(
         "relative inline-flex items-center justify-center font-semibold transition-all duration-200",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent",
         sizeStyles[size],
         variant === "secondary" && "hover:bg-violet-50",
         variant === "ghost" && "hover:bg-gray-100",
         fullWidth && "w-full",
+        !isDisabled && "cursor-pointer",
         isDisabled && "opacity-50 cursor-not-allowed pointer-events-none",
         className
       )}

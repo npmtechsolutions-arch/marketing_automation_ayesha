@@ -21,17 +21,21 @@ export function Tabs({ tabs, defaultValue, className }: TabsProps) {
       defaultValue={defaultValue ?? tabs[0]?.value}
       className={className}
     >
-      <TabsPrimitive.List className="flex items-center gap-1 p-1 rounded-xl bg-white/5 backdrop-blur-sm border border-white/10 mb-4">
+      <TabsPrimitive.List
+        className="flex items-center gap-1 p-1 rounded-xl mb-4"
+        style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
+      >
         {tabs.map((tab) => (
           <TabsPrimitive.Trigger
             key={tab.value}
             value={tab.value}
             className={cn(
-              "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 outline-none flex-1 justify-center",
-              "text-gray-400 hover:text-white",
-              "data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600/20 data-[state=active]:to-blue-600/20",
-              "data-[state=active]:text-white data-[state=active]:border data-[state=active]:border-purple-500/20",
-              "data-[state=active]:shadow-lg data-[state=active]:shadow-purple-500/5"
+              "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 outline-none flex-1 justify-center cursor-pointer",
+              "text-[color:var(--page-text-secondary)] hover:text-[color:var(--page-text)]",
+              "focus-visible:ring-2 focus-visible:ring-purple-400/60",
+              "data-[state=active]:bg-[rgba(109,94,246,0.14)]",
+              "data-[state=active]:text-[color:var(--page-heading)]",
+              "data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-[rgba(109,94,246,0.28)]"
             )}
           >
             {tab.icon && <span className="w-4 h-4">{tab.icon}</span>}

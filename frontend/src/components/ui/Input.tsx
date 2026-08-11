@@ -1,4 +1,4 @@
-import { useState, type InputHTMLAttributes, type ReactNode } from "react";
+import { useId, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 interface InputProps
@@ -18,16 +18,21 @@ export function Input({
   value,
   disabled,
   placeholder,
+  id,
   onFocus,
   onBlur,
   ...rest
 }: InputProps) {
   const [focused, setFocused] = useState(false);
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
+  const errorId = `${inputId}-error`;
 
   return (
     <div className={cn("relative w-full", className)}>
       {label && (
         <label
+          htmlFor={inputId}
           className="mb-1.5 block text-sm font-medium"
           style={{ color: "var(--page-text)" }}
         >
@@ -44,10 +49,13 @@ export function Input({
           </div>
         )}
         <input
+          id={inputId}
           type={type}
           value={value}
           disabled={disabled}
           placeholder={placeholder || label || ""}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           onFocus={(e) => {
             setFocused(true);
             onFocus?.(e);
@@ -76,7 +84,7 @@ export function Input({
         />
       </div>
       {error && (
-        <p className="mt-1.5 pl-1 text-xs" style={{ color: "var(--accent-red)" }}>
+        <p id={errorId} role="alert" className="mt-1.5 pl-1 text-xs" style={{ color: "var(--accent-red)" }}>
           {error}
         </p>
       )}

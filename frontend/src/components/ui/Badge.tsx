@@ -12,31 +12,39 @@ interface BadgeProps {
   size?: "sm" | "md";
 }
 
-const variantStyles: Record<Exclude<Variant, "platform">, { bg: string; text: string; dot: string }> = {
+// Translucent tinted chips so badges read correctly on both light and dark
+// surfaces (the tint composites over whatever surface it sits on) and keep a
+// consistent, premium feel across the app.
+const variantStyles: Record<Exclude<Variant, "platform">, { bg: string; text: string; dot: string; border: string }> = {
   default: {
-    bg: "#f3f4f6",
-    text: "#4b5563",
-    dot: "#9ca3af",
+    bg: "rgba(100,116,139,0.14)",
+    text: "var(--page-text-secondary)",
+    dot: "#94a3b8",
+    border: "rgba(100,116,139,0.22)",
   },
   success: {
-    bg: "#ecfdf5",
-    text: "#059669",
+    bg: "rgba(16,185,129,0.14)",
+    text: "#10b981",
     dot: "#10b981",
+    border: "rgba(16,185,129,0.28)",
   },
   warning: {
-    bg: "#fffbeb",
-    text: "#d97706",
+    bg: "rgba(245,158,11,0.15)",
+    text: "#f59e0b",
     dot: "#f59e0b",
+    border: "rgba(245,158,11,0.30)",
   },
   danger: {
-    bg: "#fef2f2",
-    text: "#dc2626",
+    bg: "rgba(239,68,68,0.14)",
+    text: "#f43f5e",
     dot: "#ef4444",
+    border: "rgba(239,68,68,0.28)",
   },
   info: {
-    bg: "#eff6ff",
-    text: "#2563eb",
-    dot: "#3b82f6",
+    bg: "rgba(109,94,246,0.15)",
+    text: "#8b7ff9",
+    dot: "#6d5ef6",
+    border: "rgba(109,94,246,0.30)",
   },
 };
 
@@ -71,7 +79,7 @@ export function Badge({
   return (
     <span
       className={cn("inline-flex items-center gap-1.5 rounded-full font-medium", sizeStyles[size], className)}
-      style={{ backgroundColor: styles.bg, color: styles.text }}
+      style={{ backgroundColor: styles.bg, color: styles.text, border: `1px solid ${styles.border}` }}
     >
       {dot && <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: styles.dot }} />}
       {children}

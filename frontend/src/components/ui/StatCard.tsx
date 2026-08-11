@@ -23,7 +23,14 @@ export function StatCard({
 }: StatCardProps) {
   if (loading) {
     return (
-      <div className="rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 p-5">
+      <div
+        className="rounded-2xl p-5"
+        style={{
+          backgroundColor: "var(--surface-bg)",
+          border: "1px solid var(--surface-border)",
+          boxShadow: "var(--surface-shadow)",
+        }}
+      >
         <div className="flex items-center justify-between mb-4">
           <Skeleton variant="text" width="100px" height="14px" />
           <Skeleton variant="circle" width="40px" height="40px" />
@@ -40,30 +47,43 @@ export function StatCard({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 p-5 group hover:border-white/20 transition-all duration-300"
+      whileHover={{ y: -2, transition: { duration: 0.2 } }}
+      style={{
+        backgroundColor: "var(--surface-bg)",
+        border: "1px solid var(--surface-border)",
+        boxShadow: "var(--surface-shadow)",
+      }}
+      className="rounded-2xl p-5 group transition-shadow duration-300 hover:shadow-[var(--surface-shadow-hover)]"
     >
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm text-gray-400 font-medium">{label}</p>
+        <p className="text-sm font-medium" style={{ color: "var(--page-text-secondary)" }}>{label}</p>
         {icon && (
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600/20 to-blue-600/20 border border-purple-500/20 flex items-center justify-center text-purple-400 group-hover:from-purple-600/30 group-hover:to-blue-600/30 transition-colors">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors"
+            style={{
+              backgroundColor: "rgba(109,94,246,0.12)",
+              border: "1px solid rgba(109,94,246,0.22)",
+              color: "var(--accent-purple)",
+            }}
+          >
             {icon}
           </div>
         )}
       </div>
 
-      <p className="text-2xl font-bold text-white tracking-tight">{value}</p>
+      <p className="text-2xl font-bold tracking-tight tabular-nums" style={{ color: "var(--page-heading)" }}>{value}</p>
 
       {change !== undefined && (
         <div className="flex items-center gap-1.5 mt-2">
           <span
             className={cn(
-              "inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-md",
+              "inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-md tabular-nums",
               isPositive
-                ? "text-emerald-400 bg-emerald-500/10"
-                : "text-red-400 bg-red-500/10"
+                ? "text-emerald-500 bg-emerald-500/10"
+                : "text-red-500 bg-red-500/10"
             )}
           >
             {isPositive ? (
@@ -75,7 +95,7 @@ export function StatCard({
             {change}%
           </span>
           {changeLabel && (
-            <span className="text-xs text-gray-500">{changeLabel}</span>
+            <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>{changeLabel}</span>
           )}
         </div>
       )}
