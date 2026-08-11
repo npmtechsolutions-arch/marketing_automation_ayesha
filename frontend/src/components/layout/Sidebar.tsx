@@ -176,7 +176,8 @@ export default function Sidebar() {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col border-r border-white/5 bg-slate-950/95 backdrop-blur-xl lg:hidden"
+              className="fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col border-r backdrop-blur-xl lg:hidden"
+              style={{ backgroundColor: "var(--sidebar-bg)", borderColor: "var(--sidebar-border)" }}
             >
               <SidebarContent
                 collapsed={false}
@@ -193,7 +194,8 @@ export default function Sidebar() {
         variants={sidebarVariants}
         animate={sidebarCollapsed ? "collapsed" : "expanded"}
         transition={{ type: "spring", damping: 25, stiffness: 300 }}
-        className="hidden flex-col border-r border-white/5 bg-slate-950/80 backdrop-blur-xl lg:flex"
+        className="hidden flex-col border-r backdrop-blur-xl lg:flex"
+        style={{ backgroundColor: "var(--sidebar-bg)", borderColor: "var(--sidebar-border)" }}
       >
         <SidebarContent
           collapsed={sidebarCollapsed}

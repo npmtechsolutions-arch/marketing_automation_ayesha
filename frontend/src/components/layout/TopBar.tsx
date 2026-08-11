@@ -87,7 +87,7 @@ export default function TopBar() {
   const initials = getInitials(user?.full_name);
 
   return (
-    <header className="flex h-16 shrink-0 items-center gap-4 border-b border-white/5 bg-slate-900/50 px-4 backdrop-blur-xl lg:px-6">
+    <header className="flex h-16 shrink-0 items-center gap-4 border-b px-4 backdrop-blur-xl lg:px-6" style={{ backgroundColor: "var(--topbar-bg)", borderColor: "var(--surface-border)" }}>
       {/* Mobile hamburger */}
       <button
         onClick={() => setSidebarOpen(true)}

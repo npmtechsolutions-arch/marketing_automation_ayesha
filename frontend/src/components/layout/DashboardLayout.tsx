@@ -10,7 +10,7 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
-    <div className="relative flex h-screen overflow-hidden bg-slate-950">
+    <div className="relative flex h-screen overflow-hidden" style={{ backgroundColor: "var(--page-bg)" }}>
       {/* Animated background */}
       <GradientMesh />
 
