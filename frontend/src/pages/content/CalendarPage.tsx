@@ -31,6 +31,7 @@ import PlatformIcon from "@/components/shared/PlatformIcon";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
 import api, { getAccountId } from "@/lib/api";
 import { showSuccess, showError } from "@/components/ui/Toast";
+import { useAuthStore } from "@/stores/authStore";
 
 // ---------- Types ----------
 type Platform = "facebook" | "instagram" | "linkedin" | "twitter" | "youtube";
@@ -304,7 +305,23 @@ function mapPlatform(name: string): Platform {
 }
 
 export default function CalendarPage() {
-  const [view, setView] = useState<CalendarView>("month");
+  const user = useAuthStore((s) => s.user);
+  const initialView: CalendarView = (
+    (localStorage.getItem("calendar_default_view") as CalendarView) ||
+    user?.preferences?.appearance?.calendarView ||
+    "month"
+  );
+  const [view, setView] = useState<CalendarView>(initialView);
+
+  useEffect(() => {
+    const saved =
+      (localStorage.getItem("calendar_default_view") as CalendarView) ||
+      user?.preferences?.appearance?.calendarView;
+    if (saved && (saved === "week" || saved === "month")) {
+      setView(saved);
+    }
+  }, [user?.preferences?.appearance?.calendarView]);
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [platformFilter, setPlatformFilter] = useState<Platform | "all">("all");
   const [statusFilter, setStatusFilter] = useState<PostStatus | "all">("all");

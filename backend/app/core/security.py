@@ -85,6 +85,30 @@ def decode_token(token: str) -> dict:
         ) from e
 
 
+def create_2fa_challenge_token(user_id: str) -> str:
+    """Create a short-lived token proving a user passed the password step and
+    now owes a 2FA code. Valid for 5 minutes.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=5)
+    to_encode = {"sub": str(user_id), "exp": expire, "type": "2fa_challenge"}
+    return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+def verify_2fa_challenge_token(token: str) -> str | None:
+    """Return the user id if the challenge token is valid, else None."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+        if payload.get("type") == "2fa_challenge":
+            return payload.get("sub")
+        return None
+    except JWTError:
+        return None
+
+
 def create_password_reset_token(email: str) -> str:
     """Create a JWT token for password reset, valid for 1 hour."""
     expire = datetime.now(timezone.utc) + timedelta(hours=1)

@@ -1,4 +1,4 @@
-import { useState, type JSX } from "react";
+import { useState, useEffect, useRef, useCallback, type JSX } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -9,7 +9,6 @@ import {
   Palette,
   Camera,
   Shield,
-  QrCode,
   Copy,
   Eye,
   EyeOff,
@@ -21,6 +20,9 @@ import {
   PanelLeft,
   LayoutDashboard,
   CalendarDays,
+  Loader2,
+  Monitor,
+  Trash2,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -33,7 +35,7 @@ import { Select } from "@/components/ui/Select";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/stores/uiStore";
 import { useAuthStore } from "@/stores/authStore";
-import { del } from "@/lib/api";
+import api, { get, put, post, del, getAccountId } from "@/lib/api";
 import { showSuccess, showError } from "@/components/ui/Toast";
 
 // ── Settings nav items ──────────────────────────────────────────────
@@ -78,7 +80,7 @@ const industryOptions = [
 
 const tonePills = ["Professional", "Friendly", "Bold", "Witty", "Inspirational", "Casual", "Authoritative", "Empathetic"];
 
-// ── Password strength helper ────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────
 function getPasswordStrength(pw: string) {
   let score = 0;
   if (pw.length >= 8) score++;
@@ -93,15 +95,75 @@ function getPasswordStrength(pw: string) {
   return { label: "Very Strong", color: "bg-emerald-400", pct: 100 };
 }
 
-// ── Sub-page Components ─────────────────────────────────────────────
+function apiError(err: unknown, fallback: string): string {
+  return (
+    (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? fallback
+  );
+}
+
+async function uploadImage(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await api.post("/uploads/", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return (res.data as { url: string }).url;
+}
+
+// ── Profile ─────────────────────────────────────────────────────────
 
 function ProfileTab() {
-  const [name, setName] = useState("");
-  const [email] = useState("");
-  const [role] = useState("");
-  const [saved, setSaved] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
 
-  const initials = name.split(" ").map((n) => n[0]).join("").toUpperCase();
+  const [name, setName] = useState(user?.full_name ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url ?? "");
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setName(user?.full_name ?? "");
+    setAvatarUrl(user?.avatar_url ?? "");
+  }, [user]);
+
+  const initials =
+    (name || user?.email || "U").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      showError("Name cannot be empty.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated: any = await put("/users/me", { full_name: name.trim() });
+      setUser({ ...(user as any), ...updated });
+      showSuccess("Profile updated.");
+    } catch (err) {
+      showError(apiError(err, "Could not save your profile."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadImage(file);
+      const updated: any = await put("/users/me", { avatar_url: url });
+      setAvatarUrl(url);
+      setUser({ ...(user as any), ...updated });
+      showSuccess("Profile photo updated.");
+    } catch (err) {
+      showError(apiError(err, "Could not upload your photo."));
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -113,18 +175,33 @@ function ProfileTab() {
       {/* Avatar */}
       <GlassCard>
         <div className="flex items-center gap-6">
-          <div className="relative group cursor-pointer">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-2xl font-bold text-white">
-              {initials}
+          <div className="relative group cursor-pointer" onClick={() => fileRef.current?.click()}>
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-2xl font-bold text-white overflow-hidden">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                initials
+              )}
             </div>
             <div className="absolute inset-0 rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <Camera className="w-6 h-6 text-white" />
+              {uploading ? (
+                <Loader2 className="w-6 h-6 text-white animate-spin" />
+              ) : (
+                <Camera className="w-6 h-6 text-white" />
+              )}
             </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatar}
+            />
           </div>
           <div>
             <p className="text-white font-medium">{name || "User"}</p>
             <p className="text-sm text-gray-400">Click avatar to upload a new photo</p>
-            <p className="text-xs text-gray-500 mt-1">JPG, PNG or GIF. Max 2MB.</p>
+            <p className="text-xs text-gray-500 mt-1">JPG, PNG or GIF. Max 5MB.</p>
           </div>
         </div>
       </GlassCard>
@@ -132,39 +209,63 @@ function ProfileTab() {
       {/* Info */}
       <GlassCard>
         <div className="space-y-5">
-          <Input label="Full Name" value={name} onChange={(e) => { setName(e.target.value); setSaved(false); }} />
+          <Input label="Full Name" value={name} onChange={(e) => setName(e.target.value)} />
           <div className="relative">
-            <Input label="Email" value={email} disabled />
-            <Badge variant="info" className="absolute right-3 top-1/2 -translate-y-1/2">Verified</Badge>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">Role</label>
-            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white/5 border border-white/10">
-              <Shield className="w-4 h-4 text-purple-400" />
-              <span className="text-sm text-white">{role || "Member"}</span>
-            </div>
+            <Input label="Email" value={user?.email ?? ""} disabled />
+            <Badge variant="info" className="absolute right-3 top-1/2 translate-y-1">Account</Badge>
           </div>
         </div>
       </GlassCard>
 
       <div className="flex justify-end">
-        <Button variant="primary" icon={saved ? <Check className="w-4 h-4" /> : undefined} onClick={() => setSaved(true)}>
-          {saved ? "Saved!" : "Save Changes"}
+        <Button variant="primary" loading={saving} onClick={handleSave}>
+          Save Changes
         </Button>
       </div>
     </div>
   );
 }
 
+// ── Security ────────────────────────────────────────────────────────
+
+interface SessionItem {
+  id: string;
+  device?: string;
+  user_agent?: string;
+  ip_address?: string;
+  created_at: string;
+  last_active_at: string;
+  current: boolean;
+}
+
 function SecurityTab() {
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
 
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const [twoFa, setTwoFa] = useState(false);
+  const [changingPw, setChangingPw] = useState(false);
+
+  // 2FA state
+  const twoFaEnabled = !!user?.two_factor_enabled;
+  const [setup, setSetup] = useState<{ secret: string; qr_code: string } | null>(null);
+  const [enrollCode, setEnrollCode] = useState("");
+  const [enrolling, setEnrolling] = useState(false);
+  const [startingSetup, setStartingSetup] = useState(false);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+  const [showDisable2fa, setShowDisable2fa] = useState(false);
+  const [disable2faPw, setDisable2faPw] = useState("");
+  const [disabling2fa, setDisabling2fa] = useState(false);
+
+  // Sessions
+  const [sessions, setSessions] = useState<SessionItem[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(true);
+
+  // Delete account
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deletePassword, setDeletePassword] = useState("");
@@ -172,9 +273,117 @@ function SecurityTab() {
 
   const strength = getPasswordStrength(newPw);
 
-  const canDelete =
-    deleteConfirm === "DELETE" && deletePassword.length > 0 && !deleting;
+  const loadSessions = useCallback(async () => {
+    setLoadingSessions(true);
+    try {
+      const data: any = await get("/users/me/sessions");
+      setSessions(Array.isArray(data) ? data : data?.items ?? []);
+    } catch {
+      setSessions([]);
+    } finally {
+      setLoadingSessions(false);
+    }
+  }, []);
 
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  const handleChangePassword = async () => {
+    if (newPw.length < 8) {
+      showError("New password must be at least 8 characters.");
+      return;
+    }
+    if (newPw !== confirmPw) {
+      showError("Passwords do not match.");
+      return;
+    }
+    setChangingPw(true);
+    try {
+      await post("/users/me/change-password", {
+        current_password: currentPw,
+        new_password: newPw,
+      });
+      showSuccess("Password updated.");
+      setCurrentPw("");
+      setNewPw("");
+      setConfirmPw("");
+    } catch (err) {
+      showError(apiError(err, "Could not update your password."));
+    } finally {
+      setChangingPw(false);
+    }
+  };
+
+  const handleStartSetup = async () => {
+    setStartingSetup(true);
+    try {
+      const data: any = await post("/users/me/2fa/setup", {});
+      setSetup({ secret: data.secret, qr_code: data.qr_code });
+      setRecoveryCodes(null);
+      setEnrollCode("");
+    } catch (err) {
+      showError(apiError(err, "Could not start 2FA setup."));
+    } finally {
+      setStartingSetup(false);
+    }
+  };
+
+  const handleEnable = async () => {
+    if (enrollCode.trim().length < 6) {
+      showError("Enter the 6-digit code from your authenticator app.");
+      return;
+    }
+    setEnrolling(true);
+    try {
+      const data: any = await post("/users/me/2fa/enable", { code: enrollCode.trim() });
+      setRecoveryCodes(data.recovery_codes || []);
+      setSetup(null);
+      setEnrollCode("");
+      setUser({ ...(user as any), two_factor_enabled: true });
+      showSuccess("Two-factor authentication enabled.");
+    } catch (err) {
+      showError(apiError(err, "Invalid code. Please try again."));
+    } finally {
+      setEnrolling(false);
+    }
+  };
+
+  const handleDisable2fa = async () => {
+    if (!disable2faPw) return;
+    setDisabling2fa(true);
+    try {
+      await post("/users/me/2fa/disable", { password: disable2faPw });
+      setUser({ ...(user as any), two_factor_enabled: false });
+      setShowDisable2fa(false);
+      setDisable2faPw("");
+      setRecoveryCodes(null);
+      showSuccess("Two-factor authentication disabled.");
+    } catch (err) {
+      showError(apiError(err, "Could not disable 2FA."));
+    } finally {
+      setDisabling2fa(false);
+    }
+  };
+
+  const handleRevokeSession = async (id: string) => {
+    try {
+      await del(`/users/me/sessions/${id}`);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      showSuccess("Session revoked.");
+    } catch (err) {
+      showError(apiError(err, "Could not revoke session."));
+    }
+  };
+
+  const copyCodes = () => {
+    if (recoveryCodes) {
+      navigator.clipboard.writeText(recoveryCodes.join("\n"));
+      showSuccess("Recovery codes copied.");
+    }
+  };
+
+  const canDelete = deleteConfirm === "DELETE" && deletePassword.length > 0 && !deleting;
   const closeDeleteModal = () => {
     if (deleting) return;
     setShowDeleteModal(false);
@@ -190,11 +399,8 @@ function SecurityTab() {
       showSuccess("Your account has been deleted.");
       logout();
       navigate("/", { replace: true });
-    } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? "Could not delete your account. Please try again.";
-      showError(detail);
+    } catch (err) {
+      showError(apiError(err, "Could not delete your account. Please try again."));
       setDeleting(false);
     }
   };
@@ -210,9 +416,9 @@ function SecurityTab() {
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">Change Password</h3>
         <div className="space-y-4 max-w-md">
-          <Input label="Current Password" type={showPw ? "text" : "password"} value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} />
+          <Input label="Current Password" type={showPw ? "text" : "password"} value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} autoComplete="current-password" />
           <div>
-            <Input label="New Password" type={showPw ? "text" : "password"} value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+            <Input label="New Password" type={showPw ? "text" : "password"} value={newPw} onChange={(e) => setNewPw(e.target.value)} autoComplete="new-password" />
             {newPw && (
               <div className="mt-2">
                 <div className="flex items-center justify-between mb-1">
@@ -220,70 +426,123 @@ function SecurityTab() {
                   <span className={cn("text-xs font-medium", strength.pct >= 60 ? "text-emerald-400" : strength.pct >= 40 ? "text-amber-400" : "text-red-400")}>{strength.label}</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${strength.pct}%` }}
-                    transition={{ duration: 0.3 }}
-                    className={cn("h-full rounded-full", strength.color)}
-                  />
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${strength.pct}%` }} transition={{ duration: 0.3 }} className={cn("h-full rounded-full", strength.color)} />
                 </div>
               </div>
             )}
           </div>
-          <Input label="Confirm New Password" type={showPw ? "text" : "password"} value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} error={confirmPw && confirmPw !== newPw ? "Passwords do not match" : undefined} />
+          <Input label="Confirm New Password" type={showPw ? "text" : "password"} value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} autoComplete="new-password" error={confirmPw && confirmPw !== newPw ? "Passwords do not match" : undefined} />
           <div className="flex items-center gap-3">
             <button onClick={() => setShowPw(!showPw)} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition-colors">
               {showPw ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               {showPw ? "Hide" : "Show"} passwords
             </button>
           </div>
-          <Button variant="primary">Update Password</Button>
+          <Button variant="primary" loading={changingPw} onClick={handleChangePassword} disabled={!currentPw || !newPw || !confirmPw}>
+            Update Password
+          </Button>
         </div>
       </GlassCard>
 
       {/* Two-Factor Authentication */}
       <GlassCard>
-        <div className="flex items-start justify-between mb-5">
+        <div className="flex items-start justify-between mb-2">
           <div>
-            <h3 className="text-base font-semibold text-white">Two-Factor Authentication</h3>
+            <h3 className="text-base font-semibold text-white flex items-center gap-2">
+              Two-Factor Authentication
+              {twoFaEnabled && <Badge variant="success" size="sm">Enabled</Badge>}
+            </h3>
             <p className="text-sm text-gray-400 mt-0.5">Add an extra layer of security to your account</p>
           </div>
-          <Toggle checked={twoFa} onCheckedChange={setTwoFa} />
+          {twoFaEnabled ? (
+            <Button variant="danger" size="sm" onClick={() => setShowDisable2fa(true)}>Disable</Button>
+          ) : setup ? null : (
+            <Button variant="secondary" size="sm" loading={startingSetup} onClick={handleStartSetup}>
+              Set Up
+            </Button>
+          )}
         </div>
 
+        {/* Setup flow */}
         <AnimatePresence>
-          {twoFa && (
+          {setup && !twoFaEnabled && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3 }} className="overflow-hidden">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-white/10">
-                {/* QR Code */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-white/10 mt-4">
                 <div>
-                  <p className="text-sm text-gray-300 mb-3">Scan this QR code with your authenticator app</p>
-                  <div className="w-40 h-40 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center">
-                    <QrCode className="w-20 h-20 text-gray-500" />
+                  <p className="text-sm text-gray-300 mb-3">1. Scan this QR code with your authenticator app (Google Authenticator, Authy, 1Password…)</p>
+                  <div className="w-44 h-44 rounded-xl bg-white p-2 flex items-center justify-center">
+                    <img src={setup.qr_code} alt="2FA QR code" className="w-full h-full" />
                   </div>
+                  <p className="text-xs text-gray-500 mt-3">Or enter this key manually:</p>
+                  <code className="text-xs text-purple-300 font-mono break-all">{setup.secret}</code>
                 </div>
-                {/* Recovery Codes */}
                 <div>
-                  <p className="text-sm text-gray-300 mb-3">Recovery Codes</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {["A4K9-M2X7", "B8L3-N5Y1", "C2P6-Q9Z4", "D7R1-S3W8", "E5T4-U6V2", "F1X8-G3H9"].map((code) => (
-                      <div key={code} className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300 font-mono text-center">{code}</div>
-                    ))}
+                  <p className="text-sm text-gray-300 mb-3">2. Enter the 6-digit code from the app to finish</p>
+                  <Input label="Verification code" value={enrollCode} onChange={(e) => setEnrollCode(e.target.value)} placeholder="123456" />
+                  <div className="flex gap-2 mt-4">
+                    <Button variant="primary" size="sm" loading={enrolling} onClick={handleEnable}>Enable 2FA</Button>
+                    <Button variant="ghost" size="sm" onClick={() => { setSetup(null); setEnrollCode(""); }}>Cancel</Button>
                   </div>
-                  <Button variant="ghost" size="sm" icon={<Copy className="w-3.5 h-3.5" />} className="mt-3">Copy All Codes</Button>
                 </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Recovery codes (shown once after enabling) */}
+        {recoveryCodes && (
+          <div className="pt-4 border-t border-white/10 mt-4">
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-3">
+              <p className="text-sm text-amber-300">Save these recovery codes somewhere safe. Each can be used once if you lose access to your authenticator. They won't be shown again.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {recoveryCodes.map((code) => (
+                <div key={code} className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300 font-mono text-center">{code}</div>
+              ))}
+            </div>
+            <Button variant="ghost" size="sm" icon={<Copy className="w-3.5 h-3.5" />} className="mt-3" onClick={copyCodes}>Copy All Codes</Button>
+          </div>
+        )}
       </GlassCard>
 
       {/* Active Sessions */}
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">Active Sessions</h3>
-        <div className="text-center py-6 text-sm text-gray-400">
-          <p>No active sessions found. Sign in on a device to see it here.</p>
-        </div>
+        {loadingSessions ? (
+          <div className="flex items-center justify-center py-6 text-gray-400">
+            <Loader2 className="w-5 h-5 animate-spin" />
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="text-center py-6 text-sm text-gray-400">
+            <p>No active sessions found.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {sessions.map((s) => (
+              <div key={s.id} className="flex items-center justify-between gap-4 p-3 rounded-xl bg-white/5 border border-white/10">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0">
+                    <Monitor className="w-4 h-4 text-gray-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm text-white flex items-center gap-2">
+                      {s.device || "Unknown device"}
+                      {s.current && <Badge variant="success" size="sm">This device</Badge>}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {s.ip_address || "Unknown IP"} · Active {new Date(s.last_active_at).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                {!s.current && (
+                  <button onClick={() => handleRevokeSession(s.id)} className="text-gray-400 hover:text-red-400 transition-colors flex-shrink-0" title="Revoke session">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </GlassCard>
 
       {/* Danger Zone */}
@@ -300,26 +559,26 @@ function SecurityTab() {
         </div>
       </GlassCard>
 
+      {/* Disable 2FA Modal */}
+      <Modal isOpen={showDisable2fa} onClose={() => !disabling2fa && setShowDisable2fa(false)} title="Disable Two-Factor Authentication" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-400">Enter your password to turn off two-factor authentication.</p>
+          <Input label="Password" type="password" value={disable2faPw} onChange={(e) => setDisable2faPw(e.target.value)} autoComplete="current-password" disabled={disabling2fa} />
+          <div className="flex gap-3 justify-end">
+            <Button variant="ghost" onClick={() => setShowDisable2fa(false)} disabled={disabling2fa}>Cancel</Button>
+            <Button variant="danger" loading={disabling2fa} disabled={!disable2faPw} onClick={handleDisable2fa}>Disable</Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Delete Confirmation Modal */}
       <Modal isOpen={showDeleteModal} onClose={closeDeleteModal} title="Delete Account" size="sm">
         <div className="space-y-4">
           <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-300">This will permanently delete your account, all content, analytics, and team data. This cannot be undone.</p>
           </div>
-          <Input
-            label="Confirm your password"
-            type="password"
-            value={deletePassword}
-            onChange={(e) => setDeletePassword(e.target.value)}
-            disabled={deleting}
-            autoComplete="current-password"
-          />
-          <Input
-            label='Type "DELETE" to confirm'
-            value={deleteConfirm}
-            onChange={(e) => setDeleteConfirm(e.target.value)}
-            disabled={deleting}
-          />
+          <Input label="Confirm your password" type="password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} disabled={deleting} autoComplete="current-password" />
+          <Input label='Type "DELETE" to confirm' value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} disabled={deleting} />
           <div className="flex gap-3 justify-end">
             <Button variant="ghost" onClick={closeDeleteModal} disabled={deleting}>Cancel</Button>
             <Button variant="danger" disabled={!canDelete} loading={deleting} onClick={handleDeleteAccount}>
@@ -332,10 +591,24 @@ function SecurityTab() {
   );
 }
 
+// ── Notifications ───────────────────────────────────────────────────
+
 function NotificationsTab() {
-  const [emailNotifs, setEmailNotifs] = useState(emailNotifDefaults);
-  const [inAppNotifs, setInAppNotifs] = useState(inAppNotifDefaults);
-  const [pushEnabled, setPushEnabled] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+
+  const savedNotifs = user?.preferences?.notifications;
+  const [emailNotifs, setEmailNotifs] = useState({ ...emailNotifDefaults, ...(savedNotifs?.email ?? {}) });
+  const [inAppNotifs, setInAppNotifs] = useState({ ...inAppNotifDefaults, ...(savedNotifs?.inApp ?? {}) });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const n = user?.preferences?.notifications;
+    if (n) {
+      setEmailNotifs({ ...emailNotifDefaults, ...(n.email ?? {}) });
+      setInAppNotifs({ ...inAppNotifDefaults, ...(n.inApp ?? {}) });
+    }
+  }, [user]);
 
   const notifItems: { key: keyof typeof emailNotifDefaults; label: string; desc: string }[] = [
     { key: "postPublished", label: "Post Published", desc: "When a scheduled post is successfully published" },
@@ -346,6 +619,21 @@ function NotificationsTab() {
     { key: "billingAlerts", label: "Billing Alerts", desc: "Payment reminders and billing updates" },
   ];
 
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const updated: any = await put("/users/me", {
+        preferences: { notifications: { email: emailNotifs, inApp: inAppNotifs } },
+      });
+      setUser({ ...(user as any), ...updated });
+      showSuccess("Notification preferences saved.");
+    } catch (err) {
+      showError(apiError(err, "Could not save preferences."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -353,69 +641,147 @@ function NotificationsTab() {
         <p className="text-sm text-gray-400">Choose how you want to be notified</p>
       </div>
 
-      {/* Email Notifications */}
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">Email Notifications</h3>
         <div className="space-y-4">
           {notifItems.map((item) => (
-            <Toggle
-              key={item.key}
-              checked={emailNotifs[item.key]}
-              onCheckedChange={(val) => setEmailNotifs((prev) => ({ ...prev, [item.key]: val }))}
-              label={item.label}
-              description={item.desc}
-            />
+            <Toggle key={item.key} checked={emailNotifs[item.key]} onCheckedChange={(val) => setEmailNotifs((prev) => ({ ...prev, [item.key]: val }))} label={item.label} description={item.desc} />
           ))}
         </div>
       </GlassCard>
 
-      {/* In-App Notifications */}
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">In-App Notifications</h3>
         <div className="space-y-4">
           {notifItems.map((item) => (
-            <Toggle
-              key={item.key}
-              checked={inAppNotifs[item.key]}
-              onCheckedChange={(val) => setInAppNotifs((prev) => ({ ...prev, [item.key]: val }))}
-              label={item.label}
-              description={item.desc}
-            />
+            <Toggle key={item.key} checked={inAppNotifs[item.key]} onCheckedChange={(val) => setInAppNotifs((prev) => ({ ...prev, [item.key]: val }))} label={item.label} description={item.desc} />
           ))}
         </div>
       </GlassCard>
 
-      {/* Push Notifications */}
-      <GlassCard>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div>
-              <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                Push Notifications
-                <Badge variant="default" size="sm">Coming Soon</Badge>
-              </h3>
-              <p className="text-sm text-gray-400 mt-0.5">Receive push notifications on your devices</p>
-            </div>
-          </div>
-          <Toggle checked={pushEnabled} onCheckedChange={setPushEnabled} disabled />
-        </div>
-      </GlassCard>
+      <div className="flex justify-end">
+        <Button variant="primary" loading={saving} onClick={handleSave}>Save Preferences</Button>
+      </div>
     </div>
   );
 }
 
+// ── Business Profile ────────────────────────────────────────────────
+
 function BusinessProfileTab() {
-  const [businessName, setBizName] = useState("Visionary Space");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [businessId, setBusinessId] = useState<string | null>(null);
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const logoRef = useRef<HTMLInputElement>(null);
+
+  const [businessName, setBizName] = useState("");
   const [industry, setIndustry] = useState("saas");
-  const [description, setDescription] = useState("AI-powered marketing automation platform helping businesses scale their social media presence.");
-  const [website, setWebsite] = useState("https://visionaryspace.io");
-  const [audience, setAudience] = useState("SaaS founders, marketing managers, small business owners, content creators");
-  const [selectedTones, setSelectedTones] = useState<string[]>(["Professional", "Bold", "Witty"]);
-  const [brandDesc, setBrandDesc] = useState("We are a forward-thinking technology company that empowers marketers with AI-driven insights and automation tools.");
+  const [description, setDescription] = useState("");
+  const [website, setWebsite] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [audience, setAudience] = useState("");
+  const [selectedTones, setSelectedTones] = useState<string[]>([]);
+  const [brandDesc, setBrandDesc] = useState("");
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const acc = await getAccountId();
+        setAccountId(acc);
+        if (!acc) return;
+        const res: any = await get(`/accounts/${acc}/businesses/?per_page=1`);
+        const biz = (res.items || res.data?.items || [])[0];
+        if (biz) {
+          setBusinessId(biz.id);
+          setBizName(biz.name ?? "");
+          setIndustry(biz.industry ?? "saas");
+          setDescription(biz.description ?? "");
+          setWebsite(biz.website ?? "");
+          setLogoUrl(biz.logo_url ?? "");
+          setAudience(biz.target_audience?.description ?? "");
+          setSelectedTones(biz.brand_voice?.tones ?? []);
+          setBrandDesc(biz.brand_voice?.description ?? "");
+        }
+      } catch {
+        /* no business yet — that's fine */
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   const toggleTone = (tone: string) => {
-    setSelectedTones((prev) => prev.includes(tone) ? prev.filter((t) => t !== tone) : [...prev, tone]);
+    setSelectedTones((prev) => (prev.includes(tone) ? prev.filter((t) => t !== tone) : [...prev, tone]));
   };
+
+  const handleLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadImage(file);
+      setLogoUrl(url);
+      showSuccess("Logo uploaded. Remember to save.");
+    } catch (err) {
+      showError(apiError(err, "Could not upload logo."));
+    } finally {
+      setUploading(false);
+      if (logoRef.current) logoRef.current.value = "";
+    }
+  };
+
+  const handleSave = async () => {
+    if (!accountId) {
+      showError("No account found.");
+      return;
+    }
+    if (!businessName.trim()) {
+      showError("Business name is required.");
+      return;
+    }
+    setSaving(true);
+    const payload = {
+      name: businessName.trim(),
+      industry,
+      description,
+      website,
+      logo_url: logoUrl || null,
+      target_audience: { description: audience },
+      brand_voice: { tones: selectedTones, description: brandDesc },
+    };
+    try {
+      if (businessId) {
+        await put(`/accounts/${accountId}/businesses/${businessId}`, payload);
+      } else {
+        // Create then patch the JSON fields the create endpoint doesn't accept.
+        const created: any = await post(`/accounts/${accountId}/businesses/`, {
+          name: payload.name,
+          industry: payload.industry,
+          description: payload.description,
+          website: payload.website,
+        });
+        setBusinessId(created.id);
+        await put(`/accounts/${accountId}/businesses/${created.id}`, payload);
+      }
+      showSuccess("Business profile saved.");
+    } catch (err) {
+      showError(apiError(err, "Could not save business profile."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-gray-400">
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -424,7 +790,6 @@ function BusinessProfileTab() {
         <p className="text-sm text-gray-400">Define your brand identity for AI-powered content generation</p>
       </div>
 
-      {/* Basic Info */}
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">Basic Information</h3>
         <div className="space-y-5">
@@ -432,32 +797,20 @@ function BusinessProfileTab() {
           <Select label="Industry" options={industryOptions} value={industry} onChange={setIndustry} />
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 resize-none"
-            />
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 resize-none" />
           </div>
           <Input label="Website URL" value={website} onChange={(e) => setWebsite(e.target.value)} />
         </div>
       </GlassCard>
 
-      {/* Target Audience */}
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">Target Audience</h3>
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">Who is your ideal customer?</label>
-          <textarea
-            value={audience}
-            onChange={(e) => setAudience(e.target.value)}
-            rows={3}
-            className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 resize-none"
-          />
+          <textarea value={audience} onChange={(e) => setAudience(e.target.value)} rows={3} className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 resize-none" />
         </div>
       </GlassCard>
 
-      {/* Brand Voice */}
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">Brand Voice</h3>
         <div className="space-y-5">
@@ -465,16 +818,7 @@ function BusinessProfileTab() {
             <label className="block text-xs font-medium text-gray-400 mb-3 pl-1">Tone (select all that apply)</label>
             <div className="flex flex-wrap gap-2">
               {tonePills.map((tone) => (
-                <button
-                  key={tone}
-                  onClick={() => toggleTone(tone)}
-                  className={cn(
-                    "px-4 py-1.5 rounded-full text-sm font-medium border transition-all duration-200",
-                    selectedTones.includes(tone)
-                      ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
-                      : "bg-white/5 border-white/10 text-gray-400 hover:border-white/20 hover:text-gray-300"
-                  )}
-                >
+                <button key={tone} onClick={() => toggleTone(tone)} className={cn("px-4 py-1.5 rounded-full text-sm font-medium border transition-all duration-200", selectedTones.includes(tone) ? "bg-purple-500/20 border-purple-500/40 text-purple-300" : "bg-white/5 border-white/10 text-gray-400 hover:border-white/20 hover:text-gray-300")}>
                   {tone}
                 </button>
               ))}
@@ -482,23 +826,18 @@ function BusinessProfileTab() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">Brand Description</label>
-            <textarea
-              value={brandDesc}
-              onChange={(e) => setBrandDesc(e.target.value)}
-              rows={3}
-              className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 resize-none"
-            />
+            <textarea value={brandDesc} onChange={(e) => setBrandDesc(e.target.value)} rows={3} className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 resize-none" />
           </div>
         </div>
       </GlassCard>
 
-      {/* Logo */}
       <GlassCard>
         <h3 className="text-base font-semibold text-white mb-5">Brand Logo</h3>
         <div className="flex items-center gap-5">
-          <div className="w-20 h-20 rounded-2xl bg-white/5 border-2 border-dashed border-white/10 flex items-center justify-center cursor-pointer hover:border-purple-500/30 transition-colors">
-            <Camera className="w-6 h-6 text-gray-500" />
+          <div onClick={() => logoRef.current?.click()} className="w-20 h-20 rounded-2xl bg-white/5 border-2 border-dashed border-white/10 flex items-center justify-center cursor-pointer hover:border-purple-500/30 transition-colors overflow-hidden">
+            {uploading ? <Loader2 className="w-6 h-6 text-gray-400 animate-spin" /> : logoUrl ? <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" /> : <Camera className="w-6 h-6 text-gray-500" />}
           </div>
+          <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={handleLogo} />
           <div>
             <p className="text-sm text-gray-300">Upload your brand logo</p>
             <p className="text-xs text-gray-500 mt-1">SVG, PNG or JPG. Recommended 512x512px.</p>
@@ -507,18 +846,59 @@ function BusinessProfileTab() {
       </GlassCard>
 
       <div className="flex justify-end">
-        <Button variant="primary">Save Business Profile</Button>
+        <Button variant="primary" loading={saving} onClick={handleSave}>Save Business Profile</Button>
       </div>
     </div>
   );
 }
 
+// ── Appearance ──────────────────────────────────────────────────────
+
 function AppearanceTab() {
-  const [sidebar, setSidebar] = useState<"expanded" | "collapsed">("expanded");
-  const [defaultView, setDefaultView] = useState("overview");
-  const [calendarView, setCalendarView] = useState("week");
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const theme = useUIStore((s) => s.theme);
   const setTheme = useUIStore((s) => s.setTheme);
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed);
+
+  const savedAppearance = user?.preferences?.appearance ?? {};
+  const [sidebar, setSidebar] = useState<"expanded" | "collapsed">(
+    sidebarCollapsed ? "collapsed" : (savedAppearance.sidebar ?? "expanded")
+  );
+  const [defaultView, setDefaultView] = useState(savedAppearance.defaultView ?? "overview");
+  const [calendarView, setCalendarView] = useState<"week" | "month">(
+    (localStorage.getItem("calendar_default_view") as "week" | "month") ||
+    savedAppearance.calendarView ||
+    "week"
+  );
+
+  useEffect(() => {
+    if (savedAppearance.sidebar) {
+      setSidebar(savedAppearance.sidebar);
+      setSidebarCollapsed(savedAppearance.sidebar === "collapsed");
+    }
+    if (savedAppearance.defaultView) {
+      setDefaultView(savedAppearance.defaultView);
+    }
+    if (savedAppearance.calendarView) {
+      setCalendarView(savedAppearance.calendarView);
+      localStorage.setItem("calendar_default_view", savedAppearance.calendarView);
+    }
+  }, [user]);
+
+  const persist = useCallback(
+    async (patch: Record<string, string>) => {
+      try {
+        const updated: any = await put("/users/me", { preferences: { appearance: patch } });
+        setUser({ ...(user as any), ...updated });
+        showSuccess("Appearance preference saved.");
+      } catch (err) {
+        showError(apiError(err, "Could not save preference."));
+      }
+    },
+    [user, setUser]
+  );
 
   const themeOptions = [
     { id: "dark" as const, icon: Moon, label: "Dark" },
@@ -541,7 +921,10 @@ function AppearanceTab() {
             return (
               <button
                 key={opt.id}
-                onClick={() => setTheme(opt.id)}
+                onClick={() => {
+                  setTheme(opt.id);
+                  persist({ theme: opt.id });
+                }}
                 className={cn(
                   "relative p-4 rounded-xl border-2 text-center transition-all",
                   active
@@ -573,10 +956,17 @@ function AppearanceTab() {
           ].map((opt) => (
             <button
               key={opt.id}
-              onClick={() => setSidebar(opt.id)}
+              onClick={() => {
+                const isCollapsed = opt.id === "collapsed";
+                setSidebar(opt.id);
+                setSidebarCollapsed(isCollapsed);
+                persist({ sidebar: opt.id });
+              }}
               className={cn(
                 "relative p-4 rounded-xl border-2 text-center transition-all",
-                sidebar === opt.id ? "bg-purple-500/10 border-purple-500/40" : "bg-white/5 border-white/10 hover:border-white/20"
+                sidebar === opt.id
+                  ? "bg-purple-500/10 border-purple-500/40"
+                  : "bg-white/5 border-white/10 hover:border-white/20"
               )}
             >
               <opt.icon className={cn("w-8 h-8 mx-auto mb-2", sidebar === opt.id ? "text-purple-400" : "text-gray-500")} />
@@ -602,7 +992,10 @@ function AppearanceTab() {
             { value: "campaigns", label: "Campaigns" },
           ]}
           value={defaultView}
-          onChange={setDefaultView}
+          onChange={(v) => {
+            setDefaultView(v);
+            persist({ defaultView: v });
+          }}
           placeholder="Select default view"
           className="max-w-sm"
         />
@@ -613,15 +1006,21 @@ function AppearanceTab() {
         <h3 className="text-base font-semibold text-white mb-5">Calendar Default View</h3>
         <div className="grid grid-cols-2 gap-4 max-w-md">
           {[
-            { id: "week", icon: CalendarDays, label: "Week View" },
-            { id: "month", icon: LayoutDashboard, label: "Month View" },
+            { id: "week" as const, icon: CalendarDays, label: "Week View" },
+            { id: "month" as const, icon: LayoutDashboard, label: "Month View" },
           ].map((opt) => (
             <button
               key={opt.id}
-              onClick={() => setCalendarView(opt.id)}
+              onClick={() => {
+                setCalendarView(opt.id);
+                localStorage.setItem("calendar_default_view", opt.id);
+                persist({ calendarView: opt.id });
+              }}
               className={cn(
                 "relative p-4 rounded-xl border-2 text-center transition-all",
-                calendarView === opt.id ? "bg-purple-500/10 border-purple-500/40" : "bg-white/5 border-white/10 hover:border-white/20"
+                calendarView === opt.id
+                  ? "bg-purple-500/10 border-purple-500/40"
+                  : "bg-white/5 border-white/10 hover:border-white/20"
               )}
             >
               <opt.icon className={cn("w-8 h-8 mx-auto mb-2", calendarView === opt.id ? "text-purple-400" : "text-gray-500")} />
@@ -651,6 +1050,14 @@ const tabComponents: Record<SettingsTab, JSX.Element> = {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
+  const user = useAuthStore((s) => s.user);
+  const loadUser = useAuthStore((s) => s.loadUser);
+
+  // Ensure we have the freshest user (preferences, 2FA state) when landing here.
+  useEffect(() => {
+    if (!user) loadUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <DashboardLayout>
@@ -668,16 +1075,7 @@ export default function SettingsPage() {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
                 return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
-                      isActive
-                        ? "bg-gradient-to-r from-purple-600/20 to-blue-600/20 text-white border border-purple-500/20"
-                        : "text-gray-400 hover:text-white hover:bg-white/5"
-                    )}
-                  >
+                  <button key={item.id} onClick={() => setActiveTab(item.id)} className={cn("w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200", isActive ? "bg-gradient-to-r from-purple-600/20 to-blue-600/20 text-white border border-purple-500/20" : "text-gray-400 hover:text-white hover:bg-white/5")}>
                     <Icon className="w-4 h-4" />
                     {item.label}
                   </button>

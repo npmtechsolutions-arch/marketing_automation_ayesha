@@ -13,6 +13,7 @@ from app.models.post_performance import PostPerformance
 from app.models.strategy import Strategy
 from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
+from app.models.user_session import UserSession
 from app.models.webhook import Webhook, WebhookStatus
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
     "Campaign",
     # System
     "Notification",
+    "UserSession",
     "ActivityLog",
     "AIGeneration",
     "Webhook",

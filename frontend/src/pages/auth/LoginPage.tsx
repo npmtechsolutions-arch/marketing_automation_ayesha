@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Mail, Lock, Eye, EyeOff, LogIn } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, LogIn, ShieldCheck } from "lucide-react";
 import AuthLayout from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -10,13 +10,17 @@ import { cn } from "@/lib/utils";
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login, isLoading } = useAuthStore();
+  const { login, complete2faLogin, isLoading } = useAuthStore();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
+
+  // Two-factor challenge state
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [twoFaCode, setTwoFaCode] = useState("");
 
   function validate(): boolean {
     const next: typeof errors = {};
@@ -34,7 +38,11 @@ export default function LoginPage() {
 
     try {
       setErrors({});
-      await login(email, password);
+      const result = await login(email, password);
+      if (result.requires2fa && result.challengeToken) {
+        setChallengeToken(result.challengeToken);
+        return;
+      }
       navigate("/dashboard");
     } catch (err: unknown) {
       const message =
@@ -42,6 +50,89 @@ export default function LoginPage() {
         "Invalid email or password. Please try again.";
       setErrors({ general: message });
     }
+  }
+
+  async function handle2faSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!challengeToken) return;
+    if (twoFaCode.trim().length < 6) {
+      setErrors({ general: "Enter the 6-digit code from your authenticator app." });
+      return;
+    }
+    try {
+      setErrors({});
+      await complete2faLogin(challengeToken, twoFaCode.trim());
+      navigate("/dashboard");
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Invalid verification code. Please try again.";
+      setErrors({ general: message });
+    }
+  }
+
+  if (challengeToken) {
+    return (
+      <AuthLayout title="" subtitle="">
+        <div
+          className="w-full rounded-2xl p-8"
+          style={{
+            background: "var(--surface-bg)",
+            border: "1px solid var(--surface-border)",
+            boxShadow: "var(--surface-shadow)",
+          }}
+        >
+          <form onSubmit={handle2faSubmit} className="space-y-6">
+            <div className="text-center mb-2">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: "var(--gradient-primary)" }}>
+                <ShieldCheck className="h-6 w-6 text-white" />
+              </div>
+              <h1 className="text-2xl font-bold" style={{ color: "var(--page-text)" }}>
+                Two-Factor Verification
+              </h1>
+              <p className="mt-2 text-sm" style={{ color: "var(--page-text-secondary)" }}>
+                Enter the 6-digit code from your authenticator app, or a recovery code.
+              </p>
+            </div>
+
+            {errors.general && (
+              <div
+                className="rounded-xl px-4 py-3 text-sm"
+                style={{
+                  background: "rgba(239,68,68,0.08)",
+                  border: "1px solid rgba(239,68,68,0.2)",
+                  color: "var(--accent-red)",
+                }}
+              >
+                {errors.general}
+              </div>
+            )}
+
+            <Input
+              label="Verification code"
+              value={twoFaCode}
+              onChange={(e) => setTwoFaCode(e.target.value)}
+              placeholder="123456"
+              autoComplete="one-time-code"
+              autoFocus
+            />
+
+            <Button type="submit" fullWidth size="lg" loading={isLoading} icon={<ShieldCheck className="w-4 h-4" />}>
+              Verify & Sign In
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => { setChallengeToken(null); setTwoFaCode(""); setErrors({}); }}
+              className="w-full text-center text-xs font-medium"
+              style={{ color: "var(--page-text-secondary)" }}
+            >
+              ← Back to login
+            </button>
+          </form>
+        </div>
+      </AuthLayout>
+    );
   }
 
   return (

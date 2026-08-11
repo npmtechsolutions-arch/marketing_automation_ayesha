@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import api from "@/lib/api";
+import { useUIStore } from "./uiStore";
 
 export interface User {
   id: string;
@@ -8,6 +9,8 @@ export interface User {
   avatar_url?: string;
   role: string;
   is_active: boolean;
+  two_factor_enabled?: boolean;
+  preferences?: Record<string, any> | null;
   created_at: string;
 }
 
@@ -19,13 +22,59 @@ interface AuthState {
   isLoading: boolean;
 }
 
+export interface LoginResult {
+  requires2fa: boolean;
+  challengeToken?: string;
+}
+
 interface AuthActions {
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  complete2faLogin: (challengeToken: string, code: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
   logout: () => void;
   refreshAccessToken: () => Promise<void>;
   setUser: (user: User) => void;
   loadUser: () => Promise<void>;
+}
+
+export function syncUserPreferences(user: User | null): void {
+  if (!user?.preferences) return;
+  const app = user.preferences.appearance;
+  if (app) {
+    if (app.sidebar) {
+      const isCollapsed = app.sidebar === "collapsed";
+      localStorage.setItem("sidebar_collapsed", String(isCollapsed));
+      useUIStore.getState().setSidebarCollapsed(isCollapsed);
+    }
+    if (app.calendarView) {
+      localStorage.setItem("calendar_default_view", app.calendarView);
+    }
+    if (app.theme === "dark" || app.theme === "light") {
+      useUIStore.getState().setTheme(app.theme);
+    }
+  }
+}
+
+// Resolve and persist the user's first account id after authentication.
+async function resolveAccountId(): Promise<void> {
+  try {
+    const accountsResponse: any = await api.get("/accounts");
+    let accountId = null;
+    if (accountsResponse.items?.[0]?.id) {
+      accountId = accountsResponse.items[0].id;
+    } else if (accountsResponse.data?.items?.[0]?.id) {
+      accountId = accountsResponse.data.items[0].id;
+    } else if (Array.isArray(accountsResponse) && accountsResponse[0]?.id) {
+      accountId = accountsResponse[0].id;
+    }
+    if (accountId) {
+      localStorage.setItem("account_id", accountId);
+    } else {
+      console.warn("No account found in response:", accountsResponse);
+    }
+  } catch (err) {
+    console.warn("Could not fetch accounts:", err);
+  }
 }
 
 const getInitialToken = () => {
@@ -49,35 +98,46 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     set({ isLoading: true });
     try {
       const { data } = await api.post("/auth/login", { email, password });
-      const { access_token, refresh_token, user } = data;
 
-      localStorage.setItem("access_token", access_token);
-      localStorage.setItem("refresh_token", refresh_token);
-
-      // Fetch user's first account
-      try {
-        const accountsResponse: any = await api.get("/accounts");
-        let accountId = null;
-
-        // Handle different response formats
-        if (accountsResponse.items?.[0]?.id) {
-          accountId = accountsResponse.items[0].id;
-        } else if (accountsResponse.data?.items?.[0]?.id) {
-          accountId = accountsResponse.data.items[0].id;
-        } else if (Array.isArray(accountsResponse) && accountsResponse[0]?.id) {
-          accountId = accountsResponse[0].id;
-        }
-
-        if (accountId) {
-          localStorage.setItem("account_id", accountId);
-          console.log("Stored account_id:", accountId);
-        } else {
-          console.warn("No account found in response:", accountsResponse);
-        }
-      } catch (err) {
-        console.warn("Could not fetch accounts:", err);
+      // Account has 2FA enabled — caller must complete the challenge.
+      if (data.requires_2fa) {
+        set({ isLoading: false });
+        return { requires2fa: true, challengeToken: data.challenge_token };
       }
 
+      const { access_token, refresh_token, user } = data;
+      localStorage.setItem("access_token", access_token);
+      localStorage.setItem("refresh_token", refresh_token);
+      await resolveAccountId();
+
+      syncUserPreferences(user);
+      set({
+        user,
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      return { requires2fa: false };
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  complete2faLogin: async (challengeToken: string, code: string) => {
+    set({ isLoading: true });
+    try {
+      const { data } = await api.post("/auth/login/2fa", {
+        challenge_token: challengeToken,
+        code,
+      });
+      const { access_token, refresh_token, user } = data;
+      localStorage.setItem("access_token", access_token);
+      localStorage.setItem("refresh_token", refresh_token);
+      await resolveAccountId();
+
+      syncUserPreferences(user);
       set({
         user,
         accessToken: access_token,
@@ -128,6 +188,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         console.warn("Could not fetch accounts:", err);
       }
 
+      syncUserPreferences(user);
       set({
         user,
         accessToken: access_token,
@@ -177,6 +238,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   setUser: (user: User) => {
+    syncUserPreferences(user);
     set({ user });
   },
 
@@ -207,6 +269,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         }
       }
 
+      syncUserPreferences(data);
       set({ user: data, isAuthenticated: true, isLoading: false });
     } catch (error: any) {
       set({ isLoading: false });

@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import init_db
@@ -79,12 +81,21 @@ from app.api.v1.endpoints import (
     social_platforms,
     strategies,
     twitter_oauth,
+    uploads,
     youtube_oauth,
     webhooks,
 )
 
+# Serve uploaded files (avatars, business logos) as static assets.
+_uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
+
 # Include the aggregated v1 router (auth, users, accounts, teams, businesses)
 app.include_router(api_v1_router)
+
+# Generic authenticated file uploads
+app.include_router(uploads.router, prefix="/api/v1/uploads", tags=["Uploads"])
 
 # Webhooks router
 app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["Webhooks"])

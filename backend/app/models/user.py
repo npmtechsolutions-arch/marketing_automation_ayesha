@@ -2,9 +2,9 @@
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, JSON, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.platform import SocialPlatform
     from app.models.post import Post
     from app.models.team_member import TeamMember
+    from app.models.user_session import UserSession
 
 
 class User(Base):
@@ -34,6 +35,24 @@ class User(Base):
     is_superadmin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_suspended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Per-user preferences (notification toggles, appearance choices, etc.).
+    # Free-form JSON so new preference keys don't require a schema change.
+    preferences: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
+    # Two-factor authentication (TOTP). ``totp_pending_secret`` holds a secret
+    # during setup, before the user has confirmed a code; on confirmation it is
+    # promoted to ``totp_secret`` and ``two_factor_enabled`` is set. Recovery
+    # codes are stored as one-way hashes (never plaintext).
+    totp_secret: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    totp_pending_secret: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    two_factor_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    totp_recovery_codes: Mapped[Optional[list[str]]] = mapped_column(
+        JSON, nullable=True
+    )
+
     last_login_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -65,6 +84,12 @@ class User(Base):
     )
     notifications: Mapped[list["Notification"]] = relationship(
         "Notification", back_populates="user", foreign_keys="Notification.user_id"
+    )
+    sessions: Mapped[list["UserSession"]] = relationship(
+        "UserSession",
+        back_populates="user",
+        foreign_keys="UserSession.user_id",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

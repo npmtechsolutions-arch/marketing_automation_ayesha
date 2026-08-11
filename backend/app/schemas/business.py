@@ -20,6 +20,7 @@ class BusinessUpdate(BaseModel):
     industry: str | None = None
     description: str | None = None
     website: str | None = None
+    logo_url: str | None = None
     target_audience: dict | None = None
     brand_voice: dict | None = None
     goals: dict | None = None

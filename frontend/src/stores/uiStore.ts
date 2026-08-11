@@ -15,6 +15,7 @@ interface UIActions {
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   collapseSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   setCurrentAccount: (accountId: string | null) => void;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
@@ -26,6 +27,11 @@ function getInitialTheme(): Theme {
   const stored = localStorage.getItem("theme");
   if (stored === "light" || stored === "dark") return stored;
   return "light";
+}
+
+function getInitialSidebar(): boolean {
+  const stored = localStorage.getItem("sidebar_collapsed");
+  return stored === "true";
 }
 
 function applyTheme(theme: Theme) {
@@ -40,7 +46,7 @@ applyTheme(getInitialTheme());
 
 export const useUIStore = create<UIState & UIActions>((set) => ({
   sidebarOpen: true,
-  sidebarCollapsed: false,
+  sidebarCollapsed: getInitialSidebar(),
   currentAccountId: localStorage.getItem("current_account_id"),
   theme: getInitialTheme(),
   notificationsOpen: false,
@@ -53,7 +59,16 @@ export const useUIStore = create<UIState & UIActions>((set) => ({
     set({ sidebarOpen: open }),
 
   collapseSidebar: () =>
-    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+    set((state) => {
+      const next = !state.sidebarCollapsed;
+      localStorage.setItem("sidebar_collapsed", String(next));
+      return { sidebarCollapsed: next };
+    }),
+
+  setSidebarCollapsed: (collapsed: boolean) => {
+    localStorage.setItem("sidebar_collapsed", String(collapsed));
+    set({ sidebarCollapsed: collapsed });
+  },
 
   setCurrentAccount: (accountId: string | null) => {
     if (accountId) {

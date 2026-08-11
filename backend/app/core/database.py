@@ -69,6 +69,15 @@ async def init_db() -> None:
                 await conn.execute(
                     text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS instagram_music_end_offset INTEGER")
                 )
+                # User settings: per-user preferences + two-factor auth columns.
+                for col_ddl in (
+                    "ADD COLUMN IF NOT EXISTS preferences JSON",
+                    "ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64)",
+                    "ADD COLUMN IF NOT EXISTS totp_pending_secret VARCHAR(64)",
+                    "ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ADD COLUMN IF NOT EXISTS totp_recovery_codes JSON",
+                ):
+                    await conn.execute(text(f"ALTER TABLE users {col_ddl}"))
                 # Self-healing indexes for hot query paths. create_all() only adds
                 # indexes when it creates a table, so existing production tables
                 # need these explicitly. IF NOT EXISTS makes this idempotent.
