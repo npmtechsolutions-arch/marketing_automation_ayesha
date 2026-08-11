@@ -735,17 +735,11 @@
 [class*="blur-3xl"] { opacity: 0.15 !important; }
 :root.dark [class*="blur-3xl"] { opacity: 0.35 !important; }
 
-/* ── Force gradient buttons/elements to solid purple ── */
-/* These catch inline Tailwind gradient classes used in components */
+/* ── Force FULL-OPACITY gradient buttons to solid purple ── */
+/* NOTE: Only targets bg-gradient-to-r (not bg-gradient-to-br used for icon boxes) */
+/* and only full-opacity from-purple-600 to-blue-600 (not /20 variants) */
 .bg-gradient-to-r.from-purple-600.to-blue-600,
 .bg-gradient-to-r.from-purple-500.to-blue-500 {
-  background: #7c3aed !important;
-  color: #ffffff !important;
-}
-
-/* Ensure any text inside gradient bg buttons is white */
-[class*="from-purple-600"][class*="to-blue-600"],
-[class*="from-purple-500"][class*="to-blue-500"] {
   background: #7c3aed !important;
   color: #ffffff !important;
 }
@@ -963,3 +957,63 @@
 
 /* GradientMesh in light mode should be very subtle */
 :root:not(.dark) .animate-aurora { opacity: 0.08 !important; }
+
+/* ============================================
+   ICON & BUTTON WHITE TEXT EXCEPTIONS
+   text-white is globally mapped to var(--page-heading)
+   which becomes dark in light mode. But icons/text
+   INSIDE colored containers (purple circles, buttons,
+   avatars, gradient backgrounds) MUST stay white.
+   ============================================ */
+
+/* Icons inside gradient-tinted containers stay the accent color */
+[class*="bg-gradient-to-br"][class*="from-purple"] .text-purple-400,
+[class*="bg-gradient-to-br"][class*="from-purple"] svg {
+  color: var(--accent-purple) !important;
+}
+
+/* Primary buttons — always white text */
+.btn-primary,
+.btn-primary *,
+.btn-danger,
+.btn-danger * {
+  color: #ffffff !important;
+}
+
+/* Avatar initials — always white */
+[class*="bg-gradient-to-br"][class*="from-purple-500"] {
+  color: #ffffff !important;
+}
+
+/* Sidebar gradient logo text stays transparent/gradient */
+.bg-gradient-to-r.from-purple-400.to-blue-400.bg-clip-text {
+  background: linear-gradient(to right, var(--accent-purple), var(--accent-blue)) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
+}
+
+/* ── Light mode: stat card value text must be readable ── */
+:root:not(.dark) .text-2xl.font-bold.text-white,
+:root:not(.dark) .text-3xl.font-bold.text-white,
+:root:not(.dark) .text-4xl.font-bold.text-white {
+  color: var(--page-heading) !important;
+}
+
+/* ── Light mode: keep StatCard bg-white/5 lighter, not as dark surface ── */
+:root:not(.dark) .rounded-2xl.backdrop-blur-xl[class*="bg-white/5"] {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 24px rgba(0,0,0,0.03) !important;
+}
+
+/* ── Light mode: icon inside stat card gradient container ── */
+:root:not(.dark) [class*="bg-gradient-to-br"][class*="from-purple-600/20"] {
+  background: rgba(124, 58, 237, 0.08) !important;
+  border-color: rgba(124, 58, 237, 0.15) !important;
+}
+:root:not(.dark) [class*="bg-gradient-to-br"][class*="from-purple-600/20"] svg,
+:root:not(.dark) [class*="bg-gradient-to-br"][class*="from-purple-600/20"] .text-purple-400 {
+  color: #7c3aed !important;
+}
