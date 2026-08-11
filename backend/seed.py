@@ -157,13 +157,6 @@ async def seed():
                  {"key": "api_key", "label": "API Key", "type": "text", "required": True},
                  {"key": "channel_id", "label": "Channel ID", "type": "text", "required": True},
              ]}},
-            {"name": "TikTok", "slug": "tiktok", "icon": "tiktok", "color": "#010101",
-             "description": "Short-form video platform",
-             "base_url": "https://open.tiktokapis.com/v2",
-             "api_config_template": {"fields": [
-                 {"key": "client_key", "label": "Client Key", "type": "text", "required": True},
-                 {"key": "client_secret", "label": "Client Secret", "type": "password", "required": True},
-             ]}},
         ]
 
         platform_ids = {}
@@ -200,8 +193,6 @@ async def seed():
              "profile_url": "https://x.com/techstartup", "verified": True},
             {"platform": "youtube", "name": "TechStartup Pro Channel", "handle": "@TechStartupPro",
              "profile_url": "https://youtube.com/@TechStartupPro", "verified": False},
-            {"platform": "tiktok", "name": "Digital Spark TikTok", "handle": "@digispark",
-             "profile_url": "https://tiktok.com/@digispark", "verified": False},
         ]
 
         social_account_ids = {}
@@ -231,10 +222,10 @@ async def seed():
             business_id=business_id,
             name="Q2 Multi-Platform Growth",
             goal="Increase brand awareness across all client accounts",
-            platform_mix={"instagram": 35, "linkedin": 25, "facebook": 20, "twitter": 15, "tiktok": 5},
-            posting_frequency={"instagram": 5, "linkedin": 3, "facebook": 3, "twitter": 7, "tiktok": 2},
+            platform_mix={"instagram": 35, "linkedin": 25, "facebook": 20, "twitter": 15, "youtube": 5},
+            posting_frequency={"instagram": 5, "linkedin": 3, "facebook": 3, "twitter": 7, "youtube": 2},
             content_themes=["Product tips", "Behind-the-scenes", "Industry insights", "Client spotlights", "Team culture"],
-            reasoning="Instagram and LinkedIn provide the best ROI for B2B tech audiences. Twitter for real-time engagement. TikTok for experimental short-form content.",
+            reasoning="Instagram and LinkedIn provide the best ROI for B2B tech audiences. Twitter for real-time engagement. YouTube for video content.",
             confidence_score=0.91, is_active=True,
         ))
         print("✅ Strategy created: Q2 Multi-Platform Growth")
@@ -434,7 +425,7 @@ async def seed():
             {"type": "post_published", "title": "Post Published!", "message": "Your post 'AI Collaboration Feature Launch' was published to 3 accounts.", "is_read": True},
             {"type": "ai_insight", "title": "AI Insight", "message": "Posts published at 10 AM get 3x more engagement on Instagram.", "is_read": False},
             {"type": "strategy_ready", "title": "Strategy Updated", "message": "Your Q2 strategy has been optimized based on recent performance.", "is_read": False},
-            {"type": "account_alert", "title": "Token Expiring", "message": "The access token for 'Digital Spark TikTok' expires in 3 days.", "is_read": False},
+            {"type": "account_alert", "title": "Token Expiring", "message": "The access token for 'TechStartup Pro Channel' expires in 3 days.", "is_read": False},
             {"type": "system", "title": "Welcome to MarketEngine!", "message": "Your agency is set up. Start by creating platforms and connecting accounts!", "is_read": True},
         ]
         for n in notifications:
@@ -455,8 +446,8 @@ async def seed():
     print("   Email:    user@gmail.com")
     print("   Password: user123")
     print("   Agency:   Digital Spark Agency (Growth)")
-    print("   Platforms: 6 (Facebook, Instagram, LinkedIn, X, YouTube, TikTok)")
-    print("   Accounts: 10 (multiple per platform)")
+    print("   Platforms: 5 (Facebook, Instagram, LinkedIn, X, YouTube)")
+    print("   Accounts: 9 (multiple per platform)")
     print("   Posts:    7 (published, scheduled, draft, preview)")
     print()
     print("🔑 Admin User (Super Admin):")

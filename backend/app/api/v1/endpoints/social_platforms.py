@@ -143,13 +143,6 @@ async def list_social_platforms(
                  {"key": "api_key", "label": "API Key", "type": "text", "required": True},
                  {"key": "channel_id", "label": "Channel ID", "type": "text", "required": True},
              ]}},
-            {"name": "TikTok", "slug": "tiktok", "icon": "tiktok", "color": "#010101",
-             "description": "Short-form video platform",
-             "base_url": "https://open.tiktokapis.com/v2",
-             "api_config_template": {"fields": [
-                 {"key": "client_key", "label": "Client Key", "type": "text", "required": True},
-                 {"key": "client_secret", "label": "Client Secret", "type": "password", "required": True},
-             ]}},
         ]
         for i, pdata in enumerate(platforms_data):
             db.add(SocialPlatform(

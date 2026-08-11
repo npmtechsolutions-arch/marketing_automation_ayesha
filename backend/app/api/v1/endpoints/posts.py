@@ -18,8 +18,20 @@ from app.models.post import Post, PostStatus
 from app.models.team_member import TeamMember, TeamRole
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.post import PostCreate, PostResponse, PostUpdate, PostWithPerformance
+from app.services.activity_service import log_activity
 
 router = APIRouter()
+
+
+def _post_label(post: Post) -> str:
+    """A short human-readable name for a post, for activity descriptions."""
+    title = (getattr(post, "title", None) or "").strip()
+    if title:
+        return title
+    content = (getattr(post, "content", None) or "").strip()
+    if content:
+        return content[:60] + ("…" if len(content) > 60 else "")
+    return "Untitled post"
 
 # Caps how many posts publish to the social platforms at the same time across the
 # whole process. Both the immediate-publish endpoint and the scheduled-post
@@ -217,6 +229,19 @@ async def create_post(
     db.add(post)
     await db.flush()
     await db.refresh(post)
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        account_id=account_id,
+        action="post.created",
+        category="post",
+        description=f"Created post '{_post_label(post)}'",
+        resource_type="post",
+        resource_id=str(post.id),
+        resource_name=_post_label(post),
+    )
+
     return PostResponse.model_validate(post)
 
 
@@ -335,12 +360,15 @@ async def _sync_post_performance(post: Post, db: AsyncSession):
         try:
             sa_uuid = uuid.UUID(sa_id)
             sa_result = await db.execute(
-                select(SocialAccount).where(SocialAccount.id == sa_uuid)
+                select(SocialAccount)
+                .options(selectinload(SocialAccount.platform))
+                .where(SocialAccount.id == sa_uuid)
             )
             sa = sa_result.scalar_one_or_none()
             if not sa:
                 continue
 
+            await _ensure_valid_token(sa, db)
             import asyncio
             metrics = await asyncio.to_thread(PlatformService.fetch_performance, ext_id, sa)
             if not metrics:
@@ -473,6 +501,19 @@ async def update_post(
 
     await db.flush()
     await db.refresh(post)
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        account_id=account_id,
+        action="post.updated",
+        category="post",
+        description=f"Updated post '{_post_label(post)}'",
+        resource_type="post",
+        resource_id=str(post.id),
+        resource_name=_post_label(post),
+    )
+
     return PostResponse.model_validate(post)
 
 
@@ -489,6 +530,19 @@ async def delete_post(
 
     post.deleted_at = datetime.now(timezone.utc)
     await db.flush()
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        account_id=account_id,
+        action="post.deleted",
+        category="post",
+        description=f"Deleted post '{_post_label(post)}'",
+        resource_type="post",
+        resource_id=str(post.id),
+        resource_name=_post_label(post),
+    )
+
     return MessageResponse(message="Post deleted successfully")
 
 
@@ -562,7 +616,9 @@ async def _do_publish_to_platforms(post_id: uuid.UUID):
                     continue
 
                 sa_result = await session.execute(
-                    select(SocialAccount).where(SocialAccount.id == sa_uuid)
+                    select(SocialAccount)
+                    .options(selectinload(SocialAccount.platform))
+                    .where(SocialAccount.id == sa_uuid)
                 )
                 sa = sa_result.scalar_one_or_none()
                 if not sa:
@@ -668,6 +724,30 @@ async def _do_publish_to_platforms(post_id: uuid.UUID):
                         ))
 
             post.posting_results = posting_results
+
+            if post.status == PostStatus.PUBLISHED:
+                activity_status, verb = "success", "Published"
+            elif post.status == PostStatus.PARTIALLY_PUBLISHED:
+                activity_status, verb = "warning", "Partially published"
+            else:
+                activity_status, verb = "failed", "Failed to publish"
+            total_targets = success_count + failed_count
+            await log_activity(
+                session,
+                user_id=post.user_id,
+                account_id=post.account_id,
+                action="post.published",
+                category="post",
+                description=(
+                    f"{verb} post '{_post_label(post)}' "
+                    f"({success_count}/{total_targets} account(s) succeeded)"
+                ),
+                resource_type="post",
+                resource_id=str(post.id),
+                resource_name=_post_label(post),
+                status=activity_status,
+            )
+
             await session.flush()
             await session.commit()
 
@@ -745,6 +825,19 @@ async def schedule_post(
     post.scheduled_at = target
     await db.flush()
     await db.refresh(post)
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        account_id=account_id,
+        action="post.scheduled",
+        category="post",
+        description=f"Scheduled post '{_post_label(post)}' for {target.isoformat()}",
+        resource_type="post",
+        resource_id=str(post.id),
+        resource_name=_post_label(post),
+    )
+
     return PostResponse.model_validate(post)
 
 
@@ -780,6 +873,19 @@ async def duplicate_post(
     db.add(new_post)
     await db.flush()
     await db.refresh(new_post)
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        account_id=account_id,
+        action="post.duplicated",
+        category="post",
+        description=f"Duplicated post '{_post_label(new_post)}'",
+        resource_type="post",
+        resource_id=str(new_post.id),
+        resource_name=_post_label(new_post),
+    )
+
     return PostResponse.model_validate(new_post)
 
 
@@ -806,6 +912,19 @@ async def approve_post(
     post.rejection_reason = None
     await db.flush()
     await db.refresh(post)
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        account_id=account_id,
+        action="post.approved",
+        category="post",
+        description=f"Approved post '{_post_label(post)}'",
+        resource_type="post",
+        resource_id=str(post.id),
+        resource_name=_post_label(post),
+    )
+
     return PostResponse.model_validate(post)
 
 
@@ -831,4 +950,18 @@ async def reject_post(
     post.rejection_reason = reason
     await db.flush()
     await db.refresh(post)
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        account_id=account_id,
+        action="post.rejected",
+        category="post",
+        description=f"Rejected post '{_post_label(post)}': {reason}",
+        resource_type="post",
+        resource_id=str(post.id),
+        resource_name=_post_label(post),
+        status="warning",
+    )
+
     return PostResponse.model_validate(post)

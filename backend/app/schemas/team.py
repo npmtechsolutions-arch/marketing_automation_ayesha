@@ -23,6 +23,7 @@ class TeamMemberResponse(BaseModel):
     role: str
     invitation_email: str | None = None
     invitation_status: str
+    invitation_token: str | None = None
     user: UserResponse | None = None
     created_at: datetime
 

@@ -581,12 +581,6 @@ export default function CalendarPage() {
 
             <Button
               variant="secondary"
-              icon={<Sparkles className="w-4 h-4" />}
-            >
-              Auto Schedule
-            </Button>
-            <Button
-              variant="secondary"
               icon={<RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />}
               onClick={fetchPosts}
               disabled={isLoading}

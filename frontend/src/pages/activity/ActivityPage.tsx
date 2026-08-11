@@ -135,7 +135,7 @@ const categoryFilters: { value: string; label: string }[] = [
   { value: "settings", label: "Settings" },
 ];
 
-const dateFilters = ["Today", "This Week", "This Month", "Custom"] as const;
+const dateFilters = ["All Time", "Today", "This Week", "This Month", "Custom"] as const;
 const statusFilters = ["All", "Success", "Failed"] as const;
 
 /* ------------------------------------------------------------------ */
@@ -270,7 +270,7 @@ function TimelineEntry({ entry, isLast }: { entry: ActivityEntry; isLast: boolea
 
 export default function ActivityPage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState<(typeof dateFilters)[number]>("This Month");
+  const [dateFilter, setDateFilter] = useState<(typeof dateFilters)[number]>("All Time");
   const [statusFilter, setStatusFilter] = useState<(typeof statusFilters)[number]>("All");
   const [visibleCount, setVisibleCount] = useState(10);
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
@@ -286,7 +286,7 @@ export default function ActivityPage() {
         return;
       }
       try {
-        const res: any = await api.get(`/accounts/${activeAccountId}/activity/?limit=100`);
+        const res: any = await api.get(`/accounts/${activeAccountId}/activity/?per_page=100`);
         const payload = res.data || res;
         const items = payload.items || payload || [];
         const mapped: ActivityEntry[] = items.map((a: any) => ({
@@ -340,7 +340,7 @@ export default function ActivityPage() {
     }
 
     return items;
-  }, [categoryFilter, statusFilter, dateFilter]);
+  }, [activities, categoryFilter, statusFilter, dateFilter]);
 
   const visible = filtered.slice(0, visibleCount);
   const hasMore = visibleCount < filtered.length;
@@ -348,7 +348,7 @@ export default function ActivityPage() {
 
   return (
     <DashboardLayout>
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="space-y-6 pb-8">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-white">Activity Log</h1>
