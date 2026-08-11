@@ -576,11 +576,14 @@ export default function CalendarPage() {
               {(["week", "month"] as CalendarView[]).map((v) => (
                 <button
                   key={v}
-                  onClick={() => setView(v)}
+                  onClick={() => {
+                    setView(v);
+                    localStorage.setItem("calendar_default_view", v);
+                  }}
                   className={cn(
                     "relative px-4 py-1.5 text-sm font-medium rounded-lg transition-all duration-200 capitalize",
                     view === v
-                      ? "text-white"
+                      ? "text-white font-semibold"
                       : "text-gray-400 hover:text-white"
                   )}
                 >

@@ -870,7 +870,7 @@ function AppearanceTab() {
   const [calendarView, setCalendarView] = useState<"week" | "month">(
     (localStorage.getItem("calendar_default_view") as "week" | "month") ||
     savedAppearance.calendarView ||
-    "week"
+    "month"
   );
 
   useEffect(() => {
