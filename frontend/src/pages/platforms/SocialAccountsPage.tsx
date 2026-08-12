@@ -51,6 +51,7 @@ interface SocialAccount {
 
 const getProxiedImageUrl = (url?: string) => {
   if (!url) return "";
+  if (url.includes("/uploads/")) return url;
   if (url.includes("fbcdn.net") || url.includes("cdninstagram.com") || url.includes("instagram.com")) {
     const accountId = localStorage.getItem("account_id");
     if (accountId) {
