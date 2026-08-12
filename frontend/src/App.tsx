@@ -96,6 +96,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
 import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage';
+import GoogleCallbackPage from '@/pages/auth/GoogleCallbackPage';
 import OnboardingPage from '@/pages/onboarding/OnboardingPage';
 
 // Dashboard pages
@@ -113,6 +114,7 @@ import SettingsPage from '@/pages/settings/SettingsPage';
 import BillingPage from '@/pages/billing/BillingPage';
 import NotificationsPage from '@/pages/notifications/NotificationsPage';
 import ProfilePage from '@/pages/profile/ProfilePage';
+import AcceptInvitePage from '@/pages/team/AcceptInvitePage';
 
 // Public pages
 import LandingPage from '@/pages/public/LandingPage';
@@ -307,6 +309,8 @@ function App() {
               }
             />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/accept-invite" element={<AcceptInvitePage />} />
+            <Route path="/auth/callback/google" element={<GoogleCallbackPage />} />
             <Route
               path="/onboarding"
               element={

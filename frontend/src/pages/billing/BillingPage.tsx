@@ -139,13 +139,13 @@ function UsageMeter({ label, used, limit, icon }: { label: string; used: number;
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           {icon}
-          <span className="text-sm text-gray-300">{label}</span>
+          <span className="text-sm" style={{ color: "var(--page-text)" }}>{label}</span>
         </div>
-        <span className={cn("text-sm font-medium", isHigh ? "text-amber-400" : "text-white")}>
+        <span className={cn("text-sm font-medium tabular-nums", isHigh && "text-amber-400")} style={!isHigh ? { color: "var(--page-text)" } : undefined}>
           {used}{isUnlimited ? "" : ` / ${limit}`}
         </span>
       </div>
-      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+      <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: isUnlimited ? "5%" : `${pct}%` }}
@@ -164,8 +164,8 @@ export default function BillingPage() {
   return (
     <DashboardLayout>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="mb-8">
-        <h1 className="text-3xl font-bold text-white">Billing & Subscription</h1>
-        <p className="text-gray-400 mt-1">Manage your plan, payment method, and billing history</p>
+        <h1 className="text-3xl font-bold" style={{ color: "var(--page-heading)" }}>Billing & Subscription</h1>
+        <p className="mt-1" style={{ color: "var(--page-text-secondary)" }}>Manage your plan, payment method, and billing history</p>
       </motion.div>
 
       {/* Current Plan */}
@@ -179,17 +179,17 @@ export default function BillingPage() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-bold text-white">{currentPlan.name} Plan</h2>
+                    <h2 className="text-xl font-bold" style={{ color: "var(--page-heading)" }}>{currentPlan.name} Plan</h2>
                     <Badge variant="info">Current</Badge>
                   </div>
-                  <p className="text-sm text-gray-400">{currentPlan.description}</p>
+                  <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>{currentPlan.description}</p>
                 </div>
               </div>
               <div className="mt-4">
-                <span className="text-4xl font-bold text-white">${annual ? currentPlan.annualPrice : currentPlan.monthlyPrice}</span>
-                <span className="text-gray-400 text-sm">/month</span>
+                <span className="text-4xl font-bold tabular-nums" style={{ color: "var(--page-heading)" }}>${annual ? currentPlan.annualPrice : currentPlan.monthlyPrice}</span>
+                <span className="text-sm" style={{ color: "var(--page-text-secondary)" }}>/month</span>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs mt-1" style={{ color: "var(--page-text-muted)" }}>
                 <Calendar className="w-3.5 h-3.5 inline mr-1" />
                 Next renewal: April 1, 2026
               </p>
@@ -200,7 +200,7 @@ export default function BillingPage() {
               <UsageMeter label="Platforms" used={usage.platforms.used} limit={usage.platforms.limit} icon={<Share2 className="w-4 h-4 text-emerald-400" />} />
             </div>
           </div>
-          <div className="flex gap-3 mt-6 pt-6 border-t border-white/10">
+          <div className="flex gap-3 mt-6 pt-6" style={{ borderTop: "1px solid var(--surface-border)" }}>
             <Button variant="primary" icon={<ArrowUpRight className="w-4 h-4" />}>Upgrade Plan</Button>
             <Button variant="secondary">Manage Subscription</Button>
           </div>
@@ -209,14 +209,15 @@ export default function BillingPage() {
 
       {/* Pricing Toggle */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.5 }} className="flex items-center justify-center gap-4 mb-8">
-        <span className={cn("text-sm font-medium transition-colors", !annual ? "text-white" : "text-gray-400")}>Monthly</span>
+        <span className="text-sm font-medium transition-colors" style={{ color: !annual ? "var(--page-heading)" : "var(--page-text-secondary)" }}>Monthly</span>
         <button
           onClick={() => setAnnual(!annual)}
-          className={cn("relative w-14 h-7 rounded-full transition-colors duration-300", annual ? "bg-gradient-to-r from-purple-600 to-blue-600" : "bg-white/10")}
+          className={cn("relative w-14 h-7 rounded-full transition-colors duration-300 cursor-pointer", annual && "bg-gradient-to-r from-purple-600 to-blue-600")}
+          style={!annual ? { backgroundColor: "var(--sidebar-hover-bg)" } : undefined}
         >
           <div className={cn("absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-lg transition-transform duration-300", annual ? "translate-x-[30px]" : "translate-x-[2px]")} />
         </button>
-        <span className={cn("text-sm font-medium transition-colors", annual ? "text-white" : "text-gray-400")}>
+        <span className="text-sm font-medium transition-colors" style={{ color: annual ? "var(--page-heading)" : "var(--page-text-secondary)" }}>
           Annual
           <Badge variant="success" size="sm" className="ml-2">Save 20%</Badge>
         </span>
@@ -244,21 +245,21 @@ export default function BillingPage() {
                   <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600/20 to-blue-600/20 border border-purple-500/20 flex items-center justify-center mx-auto mb-3">
                     <Icon className="w-6 h-6 text-purple-400" />
                   </div>
-                  <h3 className="text-lg font-bold text-white">{plan.name}</h3>
-                  <p className="text-xs text-gray-400 mt-1">{plan.description}</p>
+                  <h3 className="text-lg font-bold" style={{ color: "var(--page-heading)" }}>{plan.name}</h3>
+                  <p className="text-xs mt-1" style={{ color: "var(--page-text-secondary)" }}>{plan.description}</p>
                   <div className="mt-4">
-                    <span className="text-3xl font-bold text-white">${price}</span>
-                    <span className="text-gray-400 text-sm">/mo</span>
+                    <span className="text-3xl font-bold tabular-nums" style={{ color: "var(--page-heading)" }}>${price}</span>
+                    <span className="text-sm" style={{ color: "var(--page-text-secondary)" }}>/mo</span>
                   </div>
                 </div>
 
                 <div className="space-y-3 mb-6">
                   {plan.features.map((feat, fIdx) => (
                     <div key={fIdx} className="flex items-center gap-2.5">
-                      <div className={cn("w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0", feat.included ? "bg-emerald-500/15" : "bg-white/5")}>
-                        {feat.included ? <Check className="w-3 h-3 text-emerald-400" /> : <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />}
+                      <div className={cn("w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0", feat.included && "bg-emerald-500/15")} style={!feat.included ? { backgroundColor: "var(--sidebar-hover-bg)" } : undefined}>
+                        {feat.included ? <Check className="w-3 h-3 text-emerald-400" /> : <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--page-text-muted)" }} />}
                       </div>
-                      <span className={cn("text-sm", feat.included ? "text-gray-300" : "text-gray-600")}>{feat.text}</span>
+                      <span className="text-sm" style={{ color: feat.included ? "var(--page-text)" : "var(--page-text-muted)" }}>{feat.text}</span>
                     </div>
                   ))}
                 </div>
@@ -282,10 +283,10 @@ export default function BillingPage() {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="text-white font-medium">Visa ending in 4242</p>
+                  <p className="font-medium" style={{ color: "var(--page-text)" }}>Visa ending in 4242</p>
                   <Badge variant="success" size="sm">Default</Badge>
                 </div>
-                <p className="text-sm text-gray-400">Expires 12/2027</p>
+                <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>Expires 12/2027</p>
               </div>
             </div>
             <Button variant="secondary" size="sm">Update Payment Method</Button>
@@ -296,33 +297,33 @@ export default function BillingPage() {
       {/* Billing History */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7, duration: 0.5 }}>
         <GlassCard>
-          <h3 className="text-lg font-semibold text-white mb-5">Billing History</h3>
+          <h3 className="text-lg font-semibold mb-5" style={{ color: "var(--page-heading)" }}>Billing History</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/10">
-                  <th className="text-left text-gray-400 font-medium py-3 pr-4">Invoice</th>
-                  <th className="text-left text-gray-400 font-medium py-3 pr-4">Date</th>
-                  <th className="text-left text-gray-400 font-medium py-3 pr-4">Description</th>
-                  <th className="text-right text-gray-400 font-medium py-3 pr-4">Amount</th>
-                  <th className="text-center text-gray-400 font-medium py-3 pr-4">Status</th>
-                  <th className="text-center text-gray-400 font-medium py-3" />
+                <tr style={{ borderBottom: "1px solid var(--surface-border)" }}>
+                  <th className="text-left font-medium py-3 pr-4" style={{ color: "var(--page-text-secondary)" }}>Invoice</th>
+                  <th className="text-left font-medium py-3 pr-4" style={{ color: "var(--page-text-secondary)" }}>Date</th>
+                  <th className="text-left font-medium py-3 pr-4" style={{ color: "var(--page-text-secondary)" }}>Description</th>
+                  <th className="text-right font-medium py-3 pr-4" style={{ color: "var(--page-text-secondary)" }}>Amount</th>
+                  <th className="text-center font-medium py-3 pr-4" style={{ color: "var(--page-text-secondary)" }}>Status</th>
+                  <th className="text-center font-medium py-3" />
                 </tr>
               </thead>
               <tbody>
                 {mockInvoices.map((inv) => (
-                  <tr key={inv.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3.5 pr-4 text-white font-mono text-xs">{inv.id}</td>
-                    <td className="py-3.5 pr-4 text-gray-300">{inv.date}</td>
-                    <td className="py-3.5 pr-4 text-gray-300">{inv.description}</td>
-                    <td className="py-3.5 pr-4 text-white text-right font-medium">${inv.amount.toFixed(2)}</td>
+                  <tr key={inv.id} className="hover:bg-[var(--sidebar-hover-bg)] transition-colors" style={{ borderBottom: "1px solid var(--surface-border)" }}>
+                    <td className="py-3.5 pr-4 font-mono text-xs" style={{ color: "var(--page-text)" }}>{inv.id}</td>
+                    <td className="py-3.5 pr-4" style={{ color: "var(--page-text)" }}>{inv.date}</td>
+                    <td className="py-3.5 pr-4" style={{ color: "var(--page-text)" }}>{inv.description}</td>
+                    <td className="py-3.5 pr-4 text-right font-medium tabular-nums" style={{ color: "var(--page-text)" }}>${inv.amount.toFixed(2)}</td>
                     <td className="py-3.5 pr-4 text-center">
                       <Badge variant={inv.status === "paid" ? "success" : inv.status === "pending" ? "warning" : "danger"} size="sm">
                         {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
                       </Badge>
                     </td>
                     <td className="py-3.5 text-center">
-                      <button className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
+                      <button className="p-1.5 rounded-lg hover:bg-[var(--sidebar-hover-bg)] transition-colors cursor-pointer" style={{ color: "var(--page-text-secondary)" }}>
                         <Download className="w-4 h-4" />
                       </button>
                     </td>

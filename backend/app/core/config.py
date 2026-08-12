@@ -80,7 +80,12 @@ class Settings(BaseSettings):
 
     # Frontend
     FRONTEND_URL: str = "http://localhost:5173"
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
     # Load .env from the repository root (three levels above this file: backend/app/core)
     env_path: ClassVar[Path] = Path(__file__).resolve().parents[3] / ".env"

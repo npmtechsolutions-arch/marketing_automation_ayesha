@@ -122,12 +122,12 @@ export default function NotificationsPage() {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="flex items-center justify-between mb-8">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-white">Notifications</h1>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl" style={{ color: "var(--page-heading)" }}>Notifications</h1>
             {unreadCount > 0 && (
               <Badge variant="info" dot>{unreadCount} unread</Badge>
             )}
           </div>
-          <p className="text-gray-400 mt-1">Stay up to date with your marketing activities</p>
+          <p className="mt-1 text-sm" style={{ color: "var(--page-text-secondary)" }}>Stay up to date with your marketing activities</p>
         </div>
         {unreadCount > 0 && (
           <Button variant="secondary" icon={<CheckCheck className="w-4 h-4" />} onClick={markAllRead}>
@@ -138,31 +138,35 @@ export default function NotificationsPage() {
 
       {/* Filter Tabs */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.5 }} className="mb-6">
-        <div className="flex items-center gap-1 p-1 rounded-xl bg-white/5 backdrop-blur-sm border border-white/10 overflow-x-auto">
+        <div
+          className="flex items-center gap-1 p-1 rounded-xl overflow-x-auto"
+          style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
+        >
           {filterTabs.map((tab) => {
             const count = tab.id === "all"
               ? notifications.length
               : tab.id === "unread"
                 ? unreadCount
                 : notifications.filter((n) => n.type === tab.type).length;
+            const active = activeFilter === tab.id;
 
             return (
               <button
                 key={tab.id}
                 onClick={() => { setActiveFilter(tab.id); setPage(1); }}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 whitespace-nowrap",
-                  activeFilter === tab.id
-                    ? "bg-gradient-to-r from-purple-600/20 to-blue-600/20 text-white border border-purple-500/20 shadow-lg shadow-purple-500/5"
-                    : "text-gray-400 hover:text-white"
-                )}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 whitespace-nowrap cursor-pointer"
+                style={active
+                  ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)", color: "var(--page-heading)" }
+                  : { border: "1px solid transparent", color: "var(--page-text-muted)" }}
               >
                 {tab.label}
                 {count > 0 && (
-                  <span className={cn(
-                    "px-1.5 py-0.5 rounded-full text-[10px] font-semibold",
-                    activeFilter === tab.id ? "bg-purple-500/30 text-purple-300" : "bg-white/10 text-gray-500"
-                  )}>
+                  <span
+                    className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold tabular-nums"
+                    style={active
+                      ? { background: "rgba(124,58,237,0.25)", color: "#a78bfa" }
+                      : { background: "var(--surface-border)", color: "var(--page-text-muted)" }}
+                  >
                     {count}
                   </span>
                 )}
@@ -202,16 +206,16 @@ export default function NotificationsPage() {
                   className="cursor-pointer"
                 >
                   <div
-                    className={cn(
-                      "relative flex items-start gap-4 p-4 rounded-2xl backdrop-blur-xl border transition-all duration-200",
-                      !notif.read
-                        ? "bg-purple-500/[0.03] border-l-2 border-l-purple-500 border-t-white/10 border-r-white/10 border-b-white/10"
-                        : "bg-white/[0.02] border-white/5 hover:border-white/10 hover:bg-white/[0.04]"
-                    )}
+                    className="relative flex items-start gap-4 p-4 rounded-2xl border transition-all duration-200 hover:shadow-[var(--surface-shadow-hover)]"
+                    style={{
+                      backgroundColor: notif.read ? "var(--surface-bg)" : "rgba(124,58,237,0.05)",
+                      borderColor: "var(--surface-border)",
+                      borderLeft: notif.read ? "1px solid var(--surface-border)" : "2px solid #7c3aed",
+                    }}
                   >
                     {/* Unread dot */}
                     {!notif.read && (
-                      <div className="absolute top-4 right-4 w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse" />
+                      <div className="absolute top-4 right-4 w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: "#7c3aed" }} />
                     )}
 
                     {/* Icon */}
@@ -223,14 +227,14 @@ export default function NotificationsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <p className={cn("text-sm font-medium", !notif.read ? "text-white" : "text-gray-300")}>
+                          <p className="text-sm font-medium" style={{ color: notif.read ? "var(--page-text)" : "var(--page-heading)" }}>
                             {notif.title}
                           </p>
-                          <p className="text-sm text-gray-400 mt-0.5 leading-relaxed">{notif.message}</p>
+                          <p className="text-sm mt-0.5 leading-relaxed" style={{ color: "var(--page-text-secondary)" }}>{notif.message}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 mt-2">
-                        <span className="text-xs text-gray-500">{notif.time}</span>
+                        <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>{notif.time}</span>
                         <Badge variant="default" size="sm" className="capitalize">{notif.type}</Badge>
                       </div>
                     </div>
@@ -244,7 +248,8 @@ export default function NotificationsPage() {
                           exit={{ opacity: 0, scale: 0.8 }}
                           transition={{ duration: 0.15 }}
                           onClick={(e) => { e.stopPropagation(); deleteNotification(notif.id); }}
-                          className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          className="absolute top-4 right-4 p-1.5 rounded-lg transition-colors cursor-pointer hover:text-red-400 hover:bg-red-500/10"
+                          style={{ color: "var(--page-text-muted)" }}
                         >
                           <Trash2 className="w-4 h-4" />
                         </motion.button>
@@ -275,12 +280,10 @@ export default function NotificationsPage() {
               <button
                 key={p}
                 onClick={() => setPage(p)}
-                className={cn(
-                  "w-8 h-8 rounded-lg text-sm font-medium transition-all duration-200",
-                  p === page
-                    ? "bg-gradient-to-r from-purple-600/20 to-blue-600/20 text-white border border-purple-500/20"
-                    : "text-gray-400 hover:text-white hover:bg-white/5"
-                )}
+                className="w-8 h-8 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer tabular-nums"
+                style={p === page
+                  ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)", color: "var(--page-heading)" }
+                  : { border: "1px solid transparent", color: "var(--page-text-muted)" }}
               >
                 {p}
               </button>

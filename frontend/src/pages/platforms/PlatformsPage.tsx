@@ -170,17 +170,17 @@ function PlatformCard({
           <PlatformIconCircle platform={platform} />
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-white text-lg">
+              <h3 className="font-semibold text-lg" style={{ color: "var(--page-heading)" }}>
                 {platform.name}
               </h3>
               <Badge variant={platform.isActive ? "success" : "default"}>
                 {platform.isActive ? "Active" : "Inactive"}
               </Badge>
             </div>
-            <p className="text-gray-400 text-sm mt-1 line-clamp-2">
+            <p className="text-sm mt-1 line-clamp-2" style={{ color: "var(--page-text-secondary)" }}>
               {platform.description || "No description provided."}
             </p>
-            <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+            <div className="flex items-center gap-4 mt-3 text-xs" style={{ color: "var(--page-text-muted)" }}>
               <span className="flex items-center gap-1">
                 <Users className="w-3.5 h-3.5" />
                 {platform.accountsCount} Account{platform.accountsCount !== 1 ? "s" : ""}
@@ -197,7 +197,7 @@ function PlatformCard({
             variant="ghost"
             size="sm"
             onClick={onEdit}
-            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-2 rounded-lg hover:text-white hover:bg-white/10 transition-colors"
           >
             <Pencil className="w-4 h-4" />
           </Button>
@@ -205,7 +205,7 @@ function PlatformCard({
             variant="ghost"
             size="sm"
             onClick={onDelete}
-            className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+            className="p-2 rounded-lg hover:text-red-400 hover:bg-red-500/10 transition-colors"
           >
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -387,12 +387,12 @@ export default function PlatformsPage() {
       >
         <div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold text-white">Social Platforms</h1>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl" style={{ color: "var(--page-heading)" }}>Social Platforms</h1>
             <Badge variant="info">
               {platforms.length} platform{platforms.length !== 1 ? "s" : ""} configured
             </Badge>
           </div>
-          <p className="text-gray-400 mt-1">
+          <p className="mt-1 text-sm" style={{ color: "var(--page-text-secondary)" }}>
             Define and manage the social media platforms your agency works with
           </p>
         </div>
@@ -407,7 +407,7 @@ export default function PlatformsPage() {
 
       {/* Main Grid */}
       {isLoading && platforms.length === 0 ? (
-        <div className="flex items-center justify-center py-20 text-gray-400">
+        <div className="flex items-center justify-center py-20" style={{ color: "var(--page-text-secondary)" }}>
           Loading platforms...
         </div>
       ) : platforms.length === 0 ? (
@@ -480,7 +480,7 @@ export default function PlatformsPage() {
                 }
               />
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--page-text-muted)" }}>
                   Default Icon
                 </label>
                 <Select
@@ -494,7 +494,7 @@ export default function PlatformsPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--page-text-muted)" }}>
                   Platform Color
                 </label>
                 <div className="flex flex-wrap gap-2 mb-2">
@@ -547,7 +547,7 @@ export default function PlatformsPage() {
             />
           </div>
 
-          <hr className="border-white/5" />
+          <hr style={{ borderColor: "var(--surface-border)" }} />
 
           {/* Config Template Fields */}
           <div className="space-y-4">
@@ -556,7 +556,7 @@ export default function PlatformsPage() {
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-purple-400">
                   API Account Config Template
                 </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs mt-0.5" style={{ color: "var(--page-text-muted)" }}>
                   Define the fields required when a user adds their account details
                 </p>
               </div>
@@ -578,9 +578,10 @@ export default function PlatformsPage() {
                     initial={{ opacity: 0, y: -5 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -5 }}
-                    className="flex gap-3 items-end bg-white/5 p-3 rounded-xl border border-white/5"
+                    className="flex gap-3 items-end p-3 rounded-xl"
+                    style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
                   >
-                    <div className="w-6 shrink-0 flex items-center justify-center cursor-grab text-gray-500 pb-2.5">
+                    <div className="w-6 shrink-0 flex items-center justify-center cursor-grab pb-2.5" style={{ color: "var(--page-text-muted)" }}>
                       <GripVertical className="w-4 h-4" />
                     </div>
                     <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -601,7 +602,7 @@ export default function PlatformsPage() {
                         }
                       />
                       <div>
-                        <label className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">
+                        <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: "var(--page-text-muted)" }}>
                           Type
                         </label>
                         <Select
@@ -626,7 +627,8 @@ export default function PlatformsPage() {
                       <button
                         onClick={() => removeTemplateField(i)}
                         disabled={form.apiConfigTemplate.length === 1}
-                        className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                        className="p-2 rounded-lg hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+                        style={{ color: "var(--page-text-muted)" }}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -672,9 +674,9 @@ export default function PlatformsPage() {
               <Trash2 className="w-5 h-5 text-red-400" />
             </div>
             <div>
-              <p className="text-sm text-gray-300">
+              <p className="text-sm" style={{ color: "var(--page-text)" }}>
                 Are you sure you want to delete{" "}
-                <span className="font-semibold text-white">
+                <span className="font-semibold" style={{ color: "var(--page-heading)" }}>
                   {deletingPlatform?.name}
                 </span>
                 ? This will remove all associated accounts and cannot be undone.

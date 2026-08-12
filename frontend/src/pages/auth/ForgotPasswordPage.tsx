@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <AuthLayout title="" subtitle="">
-      <GlassCard className="w-full !bg-white/[0.03] border-white/[0.06]" padding="lg">
+      <GlassCard className="w-full" padding="lg">
         <AnimatePresence mode="wait">
           {!isSent ? (
             <motion.div
@@ -73,8 +73,8 @@ export default function ForgotPasswordPage() {
 
                 {/* Heading */}
                 <motion.div variants={fadeUp} className="text-center">
-                  <h1 className="text-2xl font-bold text-white">Reset Password</h1>
-                  <p className="mt-2 text-sm text-slate-400">
+                  <h1 className="text-2xl font-bold" style={{ color: "var(--page-heading)" }}>Reset Password</h1>
+                  <p className="mt-2 text-sm" style={{ color: "var(--page-text-secondary)" }}>
                     Enter your email and we'll send you a reset link
                   </p>
                 </motion.div>
@@ -104,7 +104,8 @@ export default function ForgotPasswordPage() {
                 <motion.div variants={fadeUp} className="text-center">
                   <Link
                     to="/login"
-                    className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-purple-400 transition-colors"
+                    className="inline-flex items-center gap-1.5 text-sm hover:text-purple-400 transition-colors"
+                    style={{ color: "var(--page-text-secondary)" }}
                   >
                     <ArrowLeft className="w-4 h-4" />
                     Back to Login
@@ -133,10 +134,10 @@ export default function ForgotPasswordPage() {
               </div>
 
               <div>
-                <h2 className="text-2xl font-bold text-white">Check Your Email</h2>
-                <p className="mt-2 text-sm text-slate-400 max-w-xs mx-auto">
+                <h2 className="text-2xl font-bold" style={{ color: "var(--page-heading)" }}>Check Your Email</h2>
+                <p className="mt-2 text-sm max-w-xs mx-auto" style={{ color: "var(--page-text-secondary)" }}>
                   We've sent a password reset link to{" "}
-                  <span className="text-white font-medium">{email}</span>. Check your inbox and
+                  <span className="font-medium" style={{ color: "var(--page-heading)" }}>{email}</span>. Check your inbox and
                   follow the instructions.
                 </p>
               </div>
@@ -157,7 +158,8 @@ export default function ForgotPasswordPage() {
 
                 <Link
                   to="/login"
-                  className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-purple-400 transition-colors"
+                  className="inline-flex items-center gap-1.5 text-sm hover:text-purple-400 transition-colors"
+                  style={{ color: "var(--page-text-secondary)" }}
                 >
                   <ArrowLeft className="w-4 h-4" />
                   Back to Login

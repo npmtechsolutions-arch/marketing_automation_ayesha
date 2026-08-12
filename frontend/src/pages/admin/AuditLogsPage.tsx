@@ -54,7 +54,7 @@ const actionConfig: Record<string, { label: string; color: string; bg: string; b
   "platform.disconnect": { label: "Platform Disconnected", color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20", icon: Link2 },
   "billing.upgrade": { label: "Plan Upgraded", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20", icon: CreditCard },
   "billing.downgrade": { label: "Plan Downgraded", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20", icon: CreditCard },
-  "settings.update": { label: "Settings Updated", color: "text-gray-400", bg: "bg-white/5", border: "border-white/10", icon: Settings },
+  "settings.update": { label: "Settings Updated", color: "text-[var(--page-text-secondary)]", bg: "bg-[var(--sidebar-hover-bg)]", border: "border-[var(--surface-border)]", icon: Settings },
 };
 
 // ---------------------------------------------------------------------------
@@ -204,8 +204,8 @@ export default function AuditLogsPage() {
               <ScrollText className="w-6 h-6 text-cyan-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">Audit Logs</h1>
-              <p className="text-sm text-gray-400">Track all system activity</p>
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--page-heading)" }}>Audit Logs</h1>
+              <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>Track all system activity</p>
             </div>
           </div>
 
@@ -229,19 +229,20 @@ export default function AuditLogsPage() {
             <select
               value={actionFilter}
               onChange={(e) => setActionFilter(e.target.value)}
-              className="appearance-none bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 pr-10 text-sm text-white outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all cursor-pointer"
+              className="appearance-none backdrop-blur-sm rounded-xl px-4 py-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)] transition-all cursor-pointer"
+              style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
             >
-              <option value="all" className="bg-slate-900">All Actions</option>
+              <option value="all" style={{ backgroundColor: "var(--surface-bg)" }}>All Actions</option>
               {uniqueActions.map((a) => (
-                <option key={a} value={a} className="bg-slate-900">
+                <option key={a} value={a} style={{ backgroundColor: "var(--surface-bg)" }}>
                   {actionConfig[a]?.label ?? a}
                 </option>
               ))}
             </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--page-text-secondary)" }} />
           </div>
 
-          <div className="flex items-center gap-2 bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-400">
+          <div className="flex items-center gap-2 backdrop-blur-sm rounded-xl px-4 py-2.5 text-sm" style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--sidebar-hover-bg)", color: "var(--page-text-secondary)" }}>
             <Calendar className="w-4 h-4" />
             <span>Mar 30, 2026</span>
           </div>
@@ -251,7 +252,7 @@ export default function AuditLogsPage() {
         <motion.div variants={fadeUp} className="space-y-2">
           {filtered.map((log) => {
             const config = actionConfig[log.action] ?? {
-              label: log.action, color: "text-gray-400", bg: "bg-white/5", border: "border-white/10", icon: Settings,
+              label: log.action, color: "text-[var(--page-text-secondary)]", bg: "bg-[var(--sidebar-hover-bg)]", border: "border-[var(--surface-border)]", icon: Settings,
             };
             const Icon = config.icon;
             const isExpanded = expandedId === log.id;
@@ -260,11 +261,11 @@ export default function AuditLogsPage() {
               <GlassCard key={log.id} padding="sm" className="!p-0">
                 <button
                   onClick={() => setExpandedId(isExpanded ? null : log.id)}
-                  className="w-full flex items-center gap-4 p-4 text-left"
+                  className="w-full flex items-center gap-4 p-4 text-left cursor-pointer"
                 >
                   {/* Timestamp */}
                   <div className="hidden sm:flex flex-col items-center min-w-[70px]">
-                    <span className="text-xs font-mono text-gray-500">{formatTime(log.timestamp)}</span>
+                    <span className="text-xs font-mono tabular-nums" style={{ color: "var(--page-text-muted)" }}>{formatTime(log.timestamp)}</span>
                   </div>
 
                   {/* User avatar */}
@@ -275,23 +276,23 @@ export default function AuditLogsPage() {
                   {/* User + action */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-white">{log.user}</span>
+                      <span className="text-sm font-medium" style={{ color: "var(--page-heading)" }}>{log.user}</span>
                       <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium border", config.bg, config.color, config.border)}>
                         <Icon className="w-3 h-3" />
                         {config.label}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5 truncate">{log.resource}</p>
+                    <p className="text-xs mt-0.5 truncate" style={{ color: "var(--page-text-muted)" }}>{log.resource}</p>
                   </div>
 
                   {/* IP */}
-                  <div className="hidden md:flex items-center gap-1.5 text-xs text-gray-500 min-w-[120px]">
+                  <div className="hidden md:flex items-center gap-1.5 text-xs tabular-nums min-w-[120px]" style={{ color: "var(--page-text-muted)" }}>
                     <Globe className="w-3 h-3" />
                     {log.ip}
                   </div>
 
                   {/* Expand indicator */}
-                  <ChevronRight className={cn("w-4 h-4 text-gray-500 transition-transform duration-200 flex-shrink-0", isExpanded && "rotate-90")} />
+                  <ChevronRight className={cn("w-4 h-4 transition-transform duration-200 flex-shrink-0", isExpanded && "rotate-90")} style={{ color: "var(--page-text-muted)" }} />
                 </button>
 
                 {/* Expanded detail */}
@@ -322,7 +323,7 @@ export default function AuditLogsPage() {
                         </div>
 
                         {/* Metadata row */}
-                        <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-gray-500">
+                        <div className="flex flex-wrap items-center gap-4 mt-3 text-xs tabular-nums" style={{ color: "var(--page-text-muted)" }}>
                           <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(log.timestamp).toLocaleString()}</span>
                           <span className="flex items-center gap-1"><Globe className="w-3 h-3" /> {log.ip}</span>
                           <span className="flex items-center gap-1"><User className="w-3 h-3" /> {log.user}</span>
@@ -338,7 +339,7 @@ export default function AuditLogsPage() {
 
         {/* Results count */}
         <motion.div variants={fadeUp} className="text-center">
-          <p className="text-sm text-gray-500">
+          <p className="text-sm tabular-nums" style={{ color: "var(--page-text-muted)" }}>
             Showing {filtered.length} of {mockLogs.length} log entries
           </p>
         </motion.div>

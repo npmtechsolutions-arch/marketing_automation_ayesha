@@ -116,8 +116,8 @@ export default function AdminUsersPage() {
               <Users className="w-6 h-6 text-purple-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">User Management</h1>
-              <p className="text-sm text-gray-400">{formatNumber(mockUsers.length)} total users</p>
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--page-heading)" }}>User Management</h1>
+              <p className="text-sm tabular-nums" style={{ color: "var(--page-text-secondary)" }}>{formatNumber(mockUsers.length)} total users</p>
             </div>
           </div>
 
@@ -147,28 +147,30 @@ export default function AdminUsersPage() {
               <select
                 value={planFilter}
                 onChange={(e) => { setPlanFilter(e.target.value); setPage(1); }}
-                className="appearance-none bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 pr-10 text-sm text-white outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all cursor-pointer"
+                className="appearance-none backdrop-blur-sm rounded-xl px-4 py-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)] transition-all cursor-pointer"
+                style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
               >
-                <option value="all" className="bg-slate-900">All Plans</option>
-                <option value="Starter" className="bg-slate-900">Starter</option>
-                <option value="Professional" className="bg-slate-900">Professional</option>
-                <option value="Enterprise" className="bg-slate-900">Enterprise</option>
+                <option value="all" style={{ backgroundColor: "var(--surface-bg)" }}>All Plans</option>
+                <option value="Starter" style={{ backgroundColor: "var(--surface-bg)" }}>Starter</option>
+                <option value="Professional" style={{ backgroundColor: "var(--surface-bg)" }}>Professional</option>
+                <option value="Enterprise" style={{ backgroundColor: "var(--surface-bg)" }}>Enterprise</option>
               </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--page-text-secondary)" }} />
             </div>
 
             <div className="relative">
               <select
                 value={statusFilter}
                 onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-                className="appearance-none bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 pr-10 text-sm text-white outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all cursor-pointer"
+                className="appearance-none backdrop-blur-sm rounded-xl px-4 py-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)] transition-all cursor-pointer"
+                style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
               >
-                <option value="all" className="bg-slate-900">All Statuses</option>
-                <option value="active" className="bg-slate-900">Active</option>
-                <option value="trial" className="bg-slate-900">Trial</option>
-                <option value="suspended" className="bg-slate-900">Suspended</option>
+                <option value="all" style={{ backgroundColor: "var(--surface-bg)" }}>All Statuses</option>
+                <option value="active" style={{ backgroundColor: "var(--surface-bg)" }}>Active</option>
+                <option value="trial" style={{ backgroundColor: "var(--surface-bg)" }}>Trial</option>
+                <option value="suspended" style={{ backgroundColor: "var(--surface-bg)" }}>Suspended</option>
               </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--page-text-secondary)" }} />
             </div>
           </div>
         </motion.div>
@@ -179,15 +181,15 @@ export default function AdminUsersPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-white/5">
-                    <th className="text-left text-gray-400 font-medium py-3 px-4">User</th>
-                    <th className="text-left text-gray-400 font-medium py-3 px-3">Email</th>
-                    <th className="text-left text-gray-400 font-medium py-3 px-3">Plan</th>
-                    <th className="text-left text-gray-400 font-medium py-3 px-3">Status</th>
-                    <th className="text-center text-gray-400 font-medium py-3 px-3">Accounts</th>
-                    <th className="text-center text-gray-400 font-medium py-3 px-3">Posts</th>
-                    <th className="text-left text-gray-400 font-medium py-3 px-3">Joined</th>
-                    <th className="text-right text-gray-400 font-medium py-3 px-4">Actions</th>
+                  <tr style={{ borderBottom: "1px solid var(--surface-border)" }}>
+                    <th className="text-left font-medium py-3 px-4" style={{ color: "var(--page-text-muted)" }}>User</th>
+                    <th className="text-left font-medium py-3 px-3" style={{ color: "var(--page-text-muted)" }}>Email</th>
+                    <th className="text-left font-medium py-3 px-3" style={{ color: "var(--page-text-muted)" }}>Plan</th>
+                    <th className="text-left font-medium py-3 px-3" style={{ color: "var(--page-text-muted)" }}>Status</th>
+                    <th className="text-center font-medium py-3 px-3" style={{ color: "var(--page-text-muted)" }}>Accounts</th>
+                    <th className="text-center font-medium py-3 px-3" style={{ color: "var(--page-text-muted)" }}>Posts</th>
+                    <th className="text-left font-medium py-3 px-3" style={{ color: "var(--page-text-muted)" }}>Joined</th>
+                    <th className="text-right font-medium py-3 px-4" style={{ color: "var(--page-text-muted)" }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -196,9 +198,10 @@ export default function AdminUsersPage() {
                       key={user.id}
                       layout
                       className={cn(
-                        "border-b border-white/5 last:border-0 transition-colors cursor-pointer",
-                        expandedId === user.id ? "bg-white/[0.03]" : "hover:bg-white/[0.02]"
+                        "last:border-0 transition-colors cursor-pointer",
+                        expandedId === user.id ? "bg-[var(--sidebar-hover-bg)]" : "hover:bg-[var(--sidebar-hover-bg)]"
                       )}
+                      style={{ borderBottom: "1px solid var(--surface-border)" }}
                       onClick={() => setExpandedId(expandedId === user.id ? null : user.id)}
                     >
                       <td className="py-3 px-4">
@@ -206,10 +209,10 @@ export default function AdminUsersPage() {
                           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-600/30 to-blue-600/30 border border-purple-500/20 flex items-center justify-center text-xs font-semibold text-purple-300 flex-shrink-0">
                             {user.name.split(" ").map((n) => n[0]).join("")}
                           </div>
-                          <span className="text-white font-medium whitespace-nowrap">{user.name}</span>
+                          <span className="font-medium whitespace-nowrap" style={{ color: "var(--page-heading)" }}>{user.name}</span>
                         </div>
                       </td>
-                      <td className="py-3 px-3 text-gray-400 whitespace-nowrap">{user.email}</td>
+                      <td className="py-3 px-3 whitespace-nowrap" style={{ color: "var(--page-text-secondary)" }}>{user.email}</td>
                       <td className="py-3 px-3">
                         <Badge variant={planBadge(user.plan)} size="sm">{user.plan}</Badge>
                       </td>
@@ -218,14 +221,14 @@ export default function AdminUsersPage() {
                           {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
                         </Badge>
                       </td>
-                      <td className="py-3 px-3 text-center text-gray-300">{user.accounts}</td>
-                      <td className="py-3 px-3 text-center text-gray-300">{formatNumber(user.posts)}</td>
-                      <td className="py-3 px-3 text-gray-400 whitespace-nowrap">{formatDate(user.joined)}</td>
+                      <td className="py-3 px-3 text-center tabular-nums" style={{ color: "var(--page-text)" }}>{user.accounts}</td>
+                      <td className="py-3 px-3 text-center tabular-nums" style={{ color: "var(--page-text)" }}>{formatNumber(user.posts)}</td>
+                      <td className="py-3 px-3 whitespace-nowrap tabular-nums" style={{ color: "var(--page-text-secondary)" }}>{formatDate(user.joined)}</td>
                       <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="relative inline-block">
                           <button
                             onClick={() => setOpenDropdown(openDropdown === user.id ? null : user.id)}
-                            className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
+                            className="p-1.5 rounded-lg hover:bg-[var(--sidebar-hover-bg)] transition-colors text-[var(--page-text-secondary)] hover:text-[var(--page-heading)] cursor-pointer"
                           >
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
@@ -237,19 +240,20 @@ export default function AdminUsersPage() {
                                 animate={{ opacity: 1, scale: 1, y: 0 }}
                                 exit={{ opacity: 0, scale: 0.95, y: -4 }}
                                 transition={{ duration: 0.12 }}
-                                className="absolute right-0 top-full mt-1 z-50 w-48 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/10 p-1.5 shadow-xl shadow-black/40"
+                                className="absolute right-0 top-full mt-1 z-50 w-48 rounded-xl backdrop-blur-xl p-1.5 shadow-xl shadow-black/40"
+                                style={{ backgroundColor: "var(--surface-bg)", border: "1px solid var(--surface-border)" }}
                               >
-                                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10 hover:text-white rounded-lg transition-colors">
+                                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-colors hover:bg-[var(--sidebar-hover-bg)] cursor-pointer" style={{ color: "var(--page-text)" }}>
                                   <Eye className="w-4 h-4" /> View Details
                                 </button>
-                                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors">
+                                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors cursor-pointer">
                                   <UserCog className="w-4 h-4" /> Impersonate
                                 </button>
-                                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-orange-400 hover:bg-orange-500/10 rounded-lg transition-colors">
+                                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-orange-400 hover:bg-orange-500/10 rounded-lg transition-colors cursor-pointer">
                                   <Ban className="w-4 h-4" /> {user.status === "suspended" ? "Unsuspend" : "Suspend"}
                                 </button>
-                                <div className="my-1 border-t border-white/5" />
-                                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors">
+                                <div className="my-1" style={{ borderTop: "1px solid var(--surface-border)" }} />
+                                <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer">
                                   <Trash2 className="w-4 h-4" /> Delete User
                                 </button>
                               </motion.div>
@@ -275,35 +279,36 @@ export default function AdminUsersPage() {
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.25 }}
-                    className="overflow-hidden border-t border-white/5"
+                    className="overflow-hidden"
+                    style={{ borderTop: "1px solid var(--surface-border)" }}
                   >
                     <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="flex items-center gap-2.5">
-                        <Mail className="w-4 h-4 text-gray-500" />
+                        <Mail className="w-4 h-4" style={{ color: "var(--page-text-muted)" }} />
                         <div>
-                          <p className="text-[11px] text-gray-500 font-medium">Email</p>
-                          <p className="text-sm text-gray-300">{user.email}</p>
+                          <p className="text-[11px] font-medium" style={{ color: "var(--page-text-muted)" }}>Email</p>
+                          <p className="text-sm" style={{ color: "var(--page-text)" }}>{user.email}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2.5">
-                        <Calendar className="w-4 h-4 text-gray-500" />
+                        <Calendar className="w-4 h-4" style={{ color: "var(--page-text-muted)" }} />
                         <div>
-                          <p className="text-[11px] text-gray-500 font-medium">Joined</p>
-                          <p className="text-sm text-gray-300">{formatDate(user.joined)}</p>
+                          <p className="text-[11px] font-medium" style={{ color: "var(--page-text-muted)" }}>Joined</p>
+                          <p className="text-sm tabular-nums" style={{ color: "var(--page-text)" }}>{formatDate(user.joined)}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2.5">
-                        <Building2 className="w-4 h-4 text-gray-500" />
+                        <Building2 className="w-4 h-4" style={{ color: "var(--page-text-muted)" }} />
                         <div>
-                          <p className="text-[11px] text-gray-500 font-medium">Accounts</p>
-                          <p className="text-sm text-gray-300">{user.accounts} connected</p>
+                          <p className="text-[11px] font-medium" style={{ color: "var(--page-text-muted)" }}>Accounts</p>
+                          <p className="text-sm tabular-nums" style={{ color: "var(--page-text)" }}>{user.accounts} connected</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2.5">
-                        <FileText className="w-4 h-4 text-gray-500" />
+                        <FileText className="w-4 h-4" style={{ color: "var(--page-text-muted)" }} />
                         <div>
-                          <p className="text-[11px] text-gray-500 font-medium">Posts</p>
-                          <p className="text-sm text-gray-300">{formatNumber(user.posts)} published</p>
+                          <p className="text-[11px] font-medium" style={{ color: "var(--page-text-muted)" }}>Posts</p>
+                          <p className="text-sm tabular-nums" style={{ color: "var(--page-text)" }}>{formatNumber(user.posts)} published</p>
                         </div>
                       </div>
                     </div>
@@ -313,15 +318,15 @@ export default function AdminUsersPage() {
             </AnimatePresence>
 
             {/* Pagination */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-white/5">
-              <p className="text-sm text-gray-400">
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: "1px solid var(--surface-border)" }}>
+              <p className="text-sm tabular-nums" style={{ color: "var(--page-text-secondary)" }}>
                 Showing {((page - 1) * perPage) + 1}-{Math.min(page * perPage, filtered.length)} of {filtered.length} users
               </p>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setPage(Math.max(1, page - 1))}
                   disabled={page === 1}
-                  className="p-2 rounded-lg hover:bg-white/10 transition-colors text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="p-2 rounded-lg hover:bg-[var(--sidebar-hover-bg)] transition-colors text-[var(--page-text-secondary)] hover:text-[var(--page-heading)] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -330,11 +335,12 @@ export default function AdminUsersPage() {
                     key={p}
                     onClick={() => setPage(p)}
                     className={cn(
-                      "w-8 h-8 rounded-lg text-sm font-medium transition-colors",
+                      "w-8 h-8 rounded-lg text-sm font-medium transition-colors tabular-nums cursor-pointer",
                       p === page
-                        ? "bg-purple-600/20 text-purple-300 border border-purple-500/30"
-                        : "text-gray-400 hover:bg-white/10 hover:text-white"
+                        ? ""
+                        : "text-[var(--page-text-muted)] hover:bg-[var(--sidebar-hover-bg)] hover:text-[var(--page-heading)]"
                     )}
+                    style={p === page ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)", color: "var(--page-heading)" } : undefined}
                   >
                     {p}
                   </button>
@@ -342,7 +348,7 @@ export default function AdminUsersPage() {
                 <button
                   onClick={() => setPage(Math.min(totalPages, page + 1))}
                   disabled={page === totalPages}
-                  className="p-2 rounded-lg hover:bg-white/10 transition-colors text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="p-2 rounded-lg hover:bg-[var(--sidebar-hover-bg)] transition-colors text-[var(--page-text-secondary)] hover:text-[var(--page-heading)] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>

@@ -64,10 +64,16 @@ class SocialAccountResponse(BaseModel):
     @computed_field  # type: ignore[misc]
     @property
     def followers_count(self) -> int:
-        """Extract follower count from metadata dict."""
+        """Extract follower / subscriber / connection count from metadata dict."""
         meta = self.metadata
         if meta and isinstance(meta, dict):
-            return int(meta.get("followers", 0))
+            for key in ("followers", "followers_count", "subscriberCount", "subscribers", "subscriber_count", "connections", "fan_count"):
+                val = meta.get(key)
+                if val is not None:
+                    try:
+                        return int(val)
+                    except (ValueError, TypeError):
+                        pass
         return 0
 
 

@@ -28,3 +28,7 @@ Thumbs.db
 
 # Archives
 *.zip
+
+# Uploads
+backend/uploads/
+uploads/

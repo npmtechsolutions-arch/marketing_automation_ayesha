@@ -269,13 +269,14 @@ function EngagementMetric({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.3 }}
-      className="text-center p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/[0.08] transition-colors"
+      className="text-center p-3 rounded-xl transition-colors"
+      style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
     >
-      <div className="flex justify-center text-gray-400 mb-1.5">{icon}</div>
-      <div className="text-lg font-bold text-white">
+      <div className="flex justify-center mb-1.5" style={{ color: "var(--page-text-secondary)" }}>{icon}</div>
+      <div className="text-lg font-bold tabular-nums" style={{ color: "var(--page-text)" }}>
         {value.toLocaleString()}
       </div>
-      <div className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">
+      <div className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: "var(--page-text-muted)" }}>
         {label}
       </div>
     </motion.div>
@@ -561,10 +562,10 @@ export default function CalendarPage() {
               <CalendarDays className="w-6 h-6 text-purple-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--page-heading)" }}>
                 Content Calendar
               </h1>
-              <p className="text-sm text-gray-400">
+              <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>
                 Plan and schedule your content across platforms
               </p>
             </div>
@@ -572,7 +573,10 @@ export default function CalendarPage() {
 
           <div className="flex items-center gap-3 flex-wrap">
             {/* View toggle */}
-            <div className="flex items-center p-1 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
+            <div
+              className="flex items-center p-1 rounded-xl backdrop-blur-sm"
+              style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
+            >
               {(["week", "month"] as CalendarView[]).map((v) => (
                 <button
                   key={v}
@@ -581,11 +585,10 @@ export default function CalendarPage() {
                     localStorage.setItem("calendar_default_view", v);
                   }}
                   className={cn(
-                    "relative px-4 py-1.5 text-sm font-medium rounded-lg transition-all duration-200 capitalize",
-                    view === v
-                      ? "text-white font-semibold"
-                      : "text-gray-400 hover:text-white"
+                    "relative px-4 py-1.5 text-sm font-medium rounded-lg transition-all duration-200 capitalize cursor-pointer",
+                    view === v && "font-semibold"
                   )}
+                  style={{ color: view === v ? "var(--page-heading)" : "var(--page-text-muted)" }}
                 >
                   {view === v && (
                     <motion.div
@@ -654,18 +657,19 @@ export default function CalendarPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.05 + i * 0.05 }}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.06] backdrop-blur-sm"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl backdrop-blur-sm"
+              style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
             >
               <div className={cn("w-2 h-2 rounded-full", stat.dotColor)} />
               <div>
                 {isLoading ? (
-                  <span className="inline-block w-8 h-5 rounded bg-white/10 animate-pulse" />
+                  <span className="inline-block w-8 h-5 rounded animate-pulse" style={{ backgroundColor: "var(--sidebar-hover-bg)" }} />
                 ) : (
-                  <span className="text-lg font-bold text-white">
+                  <span className="text-lg font-bold tabular-nums" style={{ color: "var(--page-text)" }}>
                     {stat.count}
                   </span>
                 )}
-                <span className="text-xs text-gray-500 ml-2">
+                <span className="text-xs ml-2" style={{ color: "var(--page-text-muted)" }}>
                   {stat.label}
                 </span>
               </div>
@@ -691,11 +695,15 @@ export default function CalendarPage() {
                   setPlatformFilter(p.key as Platform | "all")
                 }
                 className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 whitespace-nowrap flex-shrink-0",
-                  platformFilter === p.key
-                    ? "bg-purple-500/20 border-purple-500/30 text-purple-300 shadow-sm shadow-purple-500/10"
-                    : "bg-white/5 border-white/10 text-gray-400 hover:text-white hover:border-white/20"
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 whitespace-nowrap flex-shrink-0 cursor-pointer",
+                  platformFilter === p.key &&
+                    "bg-purple-500/20 border-purple-500/30 text-purple-300 shadow-sm shadow-purple-500/10"
                 )}
+                style={
+                  platformFilter === p.key
+                    ? undefined
+                    : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-muted)" }
+                }
               >
                 {p.key !== "all" && (
                   <PlatformIcon
@@ -719,11 +727,15 @@ export default function CalendarPage() {
                   setStatusFilter(s.key as PostStatus | "all")
                 }
                 className={cn(
-                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200",
-                  statusFilter === s.key
-                    ? "bg-purple-500/20 border-purple-500/30 text-purple-300 shadow-sm shadow-purple-500/10"
-                    : "bg-white/5 border-white/10 text-gray-400 hover:text-white hover:border-white/20"
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 cursor-pointer",
+                  statusFilter === s.key &&
+                    "bg-purple-500/20 border-purple-500/30 text-purple-300 shadow-sm shadow-purple-500/10"
                 )}
+                style={
+                  statusFilter === s.key
+                    ? undefined
+                    : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-muted)" }
+                }
               >
                 {s.key !== "all" && (
                   <span
@@ -748,7 +760,8 @@ export default function CalendarPage() {
                 onClick={() =>
                   view === "month" ? navigateMonth(-1) : navigateWeek(-1)
                 }
-                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all duration-200"
+                className="p-2 rounded-lg hover:bg-[var(--sidebar-hover-bg)] transition-all duration-200 cursor-pointer"
+                style={{ color: "var(--page-text-secondary)" }}
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
@@ -756,13 +769,14 @@ export default function CalendarPage() {
                 onClick={() =>
                   view === "month" ? navigateMonth(1) : navigateWeek(1)
                 }
-                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all duration-200"
+                className="p-2 rounded-lg hover:bg-[var(--sidebar-hover-bg)] transition-all duration-200 cursor-pointer"
+                style={{ color: "var(--page-text-secondary)" }}
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
 
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold tabular-nums" style={{ color: "var(--page-heading)" }}>
               {view === "month"
                 ? monthName
                 : `${weekDays[0].toLocaleDateString("en-US", {
@@ -777,7 +791,7 @@ export default function CalendarPage() {
 
             <button
               onClick={goToToday}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-purple-300 bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 transition-all duration-200"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-purple-300 bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 transition-all duration-200 cursor-pointer"
             >
               Today
             </button>
@@ -799,7 +813,8 @@ export default function CalendarPage() {
                   {DAY_NAMES.map((d) => (
                     <div
                       key={d}
-                      className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider py-2"
+                      className="text-center text-[11px] font-semibold uppercase tracking-wider py-2"
+                      style={{ color: "var(--page-text-muted)" }}
                     >
                       {d}
                     </div>
@@ -833,30 +848,35 @@ export default function CalendarPage() {
                           }
                         }}
                         className={cn(
-                          "relative min-h-[120px] rounded-lg p-2 border transition-all duration-200 cursor-pointer group",
-                          cell.isCurrentMonth
-                            ? "bg-white/[0.03] border-white/[0.05] hover:bg-white/[0.08] hover:border-white/[0.12]"
-                            : "bg-transparent border-transparent opacity-40",
-                          isToday &&
-                            "ring-2 ring-purple-500 bg-purple-500/10 border-purple-500/20"
+                          "relative min-h-[120px] rounded-lg p-2 transition-all duration-200 cursor-pointer group",
+                          !cell.isCurrentMonth && "opacity-40",
+                          isToday && "ring-2 ring-purple-500"
                         )}
+                        style={
+                          isToday
+                            ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)", color: "var(--page-heading)" }
+                            : cell.isCurrentMonth
+                              ? { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }
+                              : { backgroundColor: "transparent", border: "1px solid transparent" }
+                        }
                       >
                         {/* Date number */}
                         <div className="flex items-center justify-between mb-1">
                           <span
                             className={cn(
-                              "text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full",
-                              isToday
-                                ? "bg-purple-500 text-white"
-                                : cell.isCurrentMonth
-                                  ? "text-gray-400 group-hover:text-gray-300"
-                                  : "text-gray-600"
+                              "text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full tabular-nums",
+                              isToday && "bg-purple-500 text-white"
                             )}
+                            style={
+                              isToday
+                                ? undefined
+                                : { color: cell.isCurrentMonth ? "var(--page-text-secondary)" : "var(--page-text-muted)" }
+                            }
                           >
                             {cell.date}
                           </span>
                           {dayPosts.length > 0 && (
-                            <span className="text-[9px] text-gray-600 font-medium">
+                            <span className="text-[9px] font-medium tabular-nums" style={{ color: "var(--page-text-muted)" }}>
                               {dayPosts.length}
                             </span>
                           )}
@@ -873,7 +893,7 @@ export default function CalendarPage() {
                             />
                           ))}
                           {dayPosts.length > 3 && (
-                            <span className="block text-[9px] text-gray-500 pl-1 font-medium">
+                            <span className="block text-[9px] pl-1 font-medium tabular-nums" style={{ color: "var(--page-text-muted)" }}>
                               +{dayPosts.length - 3} more
                             </span>
                           )}
@@ -882,7 +902,7 @@ export default function CalendarPage() {
                         {/* Hover overlay for empty cells */}
                         {dayPosts.length === 0 && cell.isCurrentMonth && (
                           <div className="absolute inset-0 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                            <Plus className="w-5 h-5 text-gray-600" />
+                            <Plus className="w-5 h-5" style={{ color: "var(--page-text-muted)" }} />
                           </div>
                         )}
                       </motion.div>
@@ -908,19 +928,22 @@ export default function CalendarPage() {
                     return (
                       <div
                         key={i}
-                        className={cn(
-                          "text-center py-2.5 rounded-lg transition-colors",
-                          isToday_ && "bg-purple-500/10 border border-purple-500/20"
-                        )}
+                        className="text-center py-2.5 rounded-lg transition-colors"
+                        style={
+                          isToday_
+                            ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)" }
+                            : undefined
+                        }
                       >
-                        <div className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+                        <div className="text-[10px] uppercase tracking-wider font-medium" style={{ color: "var(--page-text-muted)" }}>
                           {DAY_NAMES[d.getDay()]}
                         </div>
                         <div
                           className={cn(
-                            "text-lg font-bold mt-0.5",
-                            isToday_ ? "text-purple-300" : "text-white"
+                            "text-lg font-bold mt-0.5 tabular-nums",
+                            isToday_ && "text-purple-300"
                           )}
+                          style={isToday_ ? undefined : { color: "var(--page-heading)" }}
                         >
                           {d.getDate()}
                         </div>
@@ -963,7 +986,7 @@ export default function CalendarPage() {
                   <div className="grid grid-cols-[56px_repeat(7,1fr)] gap-1">
                     {HOURS.map((hour) => (
                       <div key={hour} className="contents">
-                        <div className="text-[10px] text-gray-500 text-right pr-2 py-4 font-medium">
+                        <div className="text-[10px] text-right pr-2 py-4 font-medium tabular-nums" style={{ color: "var(--page-text-muted)" }}>
                           {formatHour(hour)}
                         </div>
                         {weekDays.map((d, dayIdx) => {
@@ -973,10 +996,12 @@ export default function CalendarPage() {
                           return (
                             <div
                               key={dayIdx}
-                              className={cn(
-                                "border border-white/[0.04] rounded-lg min-h-[52px] p-0.5 hover:bg-white/[0.04] transition-colors relative",
-                                isSameDay(d, today) && "bg-purple-500/[0.02]"
-                              )}
+                              className="rounded-lg min-h-[52px] p-0.5 hover:bg-[var(--sidebar-hover-bg)] transition-colors relative"
+                              style={
+                                isSameDay(d, today)
+                                  ? { border: "1px solid var(--surface-border)", background: "rgba(124,58,237,0.06)" }
+                                  : { border: "1px solid var(--surface-border)" }
+                              }
                             >
                               {hourPosts.map((post) => {
                                 const spanHeight = (post.durationHours || 1) * 100;
@@ -1059,7 +1084,7 @@ export default function CalendarPage() {
                   {PLATFORM_LABELS[selectedPost.platform]}
                 </span>
               </Badge>
-              <span className="flex items-center gap-1.5 text-xs text-gray-400">
+              <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--page-text-secondary)" }}>
                 <Clock className="w-3.5 h-3.5" />
                 {formatDate(selectedPost.date)}
                 {selectedPost.hour !== undefined &&
@@ -1068,13 +1093,13 @@ export default function CalendarPage() {
             </div>
 
             {/* Title */}
-            <h3 className="text-lg font-semibold text-white">
+            <h3 className="text-lg font-semibold" style={{ color: "var(--page-heading)" }}>
               {selectedPost.title}
             </h3>
 
             {/* Media Preview */}
             {selectedPost.imageUrl && (
-              <div className="w-full h-48 rounded-xl overflow-hidden border border-white/10 bg-black/20 flex items-center justify-center">
+              <div className="w-full h-48 rounded-xl overflow-hidden bg-black/20 flex items-center justify-center" style={{ border: "1px solid var(--surface-border)" }}>
                 <img
                   src={selectedPost.imageUrl}
                   alt={selectedPost.title || "Post media preview"}
@@ -1092,7 +1117,7 @@ export default function CalendarPage() {
                     ♫ {selectedPost.instagramMusicTrack.split(" – ")[0]}
                   </p>
                   {selectedPost.instagramMusicTrack.split(" – ")[1] && (
-                    <p className="text-[10px] text-gray-400 truncate">
+                    <p className="text-[10px] truncate" style={{ color: "var(--page-text-secondary)" }}>
                       Artist: {selectedPost.instagramMusicTrack.split(" – ")[1]}
                     </p>
                   )}
@@ -1101,8 +1126,8 @@ export default function CalendarPage() {
             )}
 
             {/* Content */}
-            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-              <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+            <div className="p-4 rounded-xl" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--page-text)" }}>
                 {selectedPost.content}
               </p>
             </div>
@@ -1113,7 +1138,7 @@ export default function CalendarPage() {
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <TrendingUp className="w-4 h-4 text-purple-400" />
-                    <span className="text-sm font-medium text-white">
+                    <span className="text-sm font-medium" style={{ color: "var(--page-text)" }}>
                       Engagement
                     </span>
                   </div>
@@ -1152,13 +1177,13 @@ export default function CalendarPage() {
                 <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
                   <p className="font-semibold text-red-200">Publishing Details / Warning</p>
-                  <p className="text-gray-300 leading-normal">{selectedPost.errorMessage}</p>
+                  <p className="leading-normal" style={{ color: "var(--page-text)" }}>{selectedPost.errorMessage}</p>
                 </div>
               </div>
             )}
 
             {/* Action buttons */}
-            <div className="flex items-center gap-3 pt-3 border-t border-white/10 flex-wrap">
+            <div className="flex items-center gap-3 pt-3 flex-wrap" style={{ borderTop: "1px solid var(--surface-border)" }}>
               {selectedPost.status === "failed" && (
                 <Button
                   variant="primary"

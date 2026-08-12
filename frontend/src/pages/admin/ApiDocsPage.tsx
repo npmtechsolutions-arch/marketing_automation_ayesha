@@ -586,8 +586,8 @@ export default function ApiDocsPage() {
               <Code2 className="w-6 h-6 text-emerald-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">API Documentation</h1>
-              <p className="text-sm text-gray-400">
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--page-heading)" }}>API Documentation</h1>
+              <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>
                 Base URL: <code className="text-emerald-400 font-mono text-xs bg-emerald-500/10 px-2 py-0.5 rounded">https://api.visionaryspace.com</code>
               </p>
             </div>
@@ -605,8 +605,8 @@ export default function ApiDocsPage() {
             <div className="sticky top-6">
               <GlassCard padding="sm">
                 <div className="flex items-center gap-2 px-3 py-2 mb-2">
-                  <Key className="w-4 h-4 text-gray-400" />
-                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Endpoints</span>
+                  <Key className="w-4 h-4" style={{ color: "var(--page-text-secondary)" }} />
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--page-text-muted)" }}>Endpoints</span>
                 </div>
                 <nav className="space-y-0.5">
                   {apiCategories.map((cat) => {
@@ -617,15 +617,16 @@ export default function ApiDocsPage() {
                         key={cat.id}
                         onClick={() => setActiveCategory(cat.id)}
                         className={cn(
-                          "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all",
+                          "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all cursor-pointer",
                           isActive
-                            ? "bg-purple-500/10 text-purple-300 border border-purple-500/20"
-                            : "text-gray-400 hover:text-white hover:bg-white/5"
+                            ? ""
+                            : "text-[var(--page-text-muted)] hover:text-[var(--page-heading)] hover:bg-[var(--sidebar-hover-bg)]"
                         )}
+                        style={isActive ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)", color: "var(--page-heading)" } : undefined}
                       >
                         <Icon className="w-4 h-4 flex-shrink-0" />
                         <span className="font-medium">{cat.label}</span>
-                        <span className="ml-auto text-[11px] text-gray-600">{cat.endpoints.length}</span>
+                        <span className="ml-auto text-[11px] tabular-nums text-[var(--page-text-muted)]">{cat.endpoints.length}</span>
                       </button>
                     );
                   })}
@@ -642,14 +643,14 @@ export default function ApiDocsPage() {
                 <div className="flex items-start gap-3 mb-4">
                   <MethodBadge method={endpoint.method} />
                   <div className="flex-1 min-w-0">
-                    <code className="text-base text-white font-mono font-medium break-all">
+                    <code className="text-base font-mono font-medium break-all" style={{ color: "var(--page-heading)" }}>
                       {endpoint.path}
                     </code>
-                    <p className="text-sm text-gray-400 mt-1 leading-relaxed">
+                    <p className="text-sm mt-1 leading-relaxed" style={{ color: "var(--page-text-secondary)" }}>
                       {endpoint.description}
                     </p>
                   </div>
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-400 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0">
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--sidebar-hover-bg)] border border-[var(--surface-border)] text-xs text-[var(--page-text-secondary)] hover:text-[var(--page-heading)] hover:bg-[var(--sidebar-hover-bg)] transition-colors flex-shrink-0 cursor-pointer">
                     <Zap className="w-3 h-3" />
                     Try it
                     <Badge variant="default" size="sm" className="ml-1">Soon</Badge>
@@ -659,34 +660,34 @@ export default function ApiDocsPage() {
                 {/* Parameters */}
                 {endpoint.params && endpoint.params.length > 0 && (
                   <div className="mb-5">
-                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Parameters</h4>
-                    <div className="rounded-xl bg-white/[0.02] border border-white/5 overflow-hidden">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--page-text-muted)" }}>Parameters</h4>
+                    <div className="rounded-xl overflow-hidden" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b border-white/5">
-                            <th className="text-left text-gray-500 font-medium py-2.5 px-4 text-xs">Name</th>
-                            <th className="text-left text-gray-500 font-medium py-2.5 px-4 text-xs">Type</th>
-                            <th className="text-left text-gray-500 font-medium py-2.5 px-4 text-xs">Required</th>
-                            <th className="text-left text-gray-500 font-medium py-2.5 px-4 text-xs">Description</th>
+                          <tr style={{ borderBottom: "1px solid var(--surface-border)" }}>
+                            <th className="text-left font-medium py-2.5 px-4 text-xs" style={{ color: "var(--page-text-muted)" }}>Name</th>
+                            <th className="text-left font-medium py-2.5 px-4 text-xs" style={{ color: "var(--page-text-muted)" }}>Type</th>
+                            <th className="text-left font-medium py-2.5 px-4 text-xs" style={{ color: "var(--page-text-muted)" }}>Required</th>
+                            <th className="text-left font-medium py-2.5 px-4 text-xs" style={{ color: "var(--page-text-muted)" }}>Description</th>
                           </tr>
                         </thead>
                         <tbody>
                           {endpoint.params.map((param, pi) => (
-                            <tr key={pi} className="border-b border-white/5 last:border-0">
+                            <tr key={pi} className="last:border-0" style={{ borderBottom: "1px solid var(--surface-border)" }}>
                               <td className="py-2.5 px-4">
                                 <code className="text-purple-300 text-xs font-mono">{param.name}</code>
                               </td>
                               <td className="py-2.5 px-4">
-                                <code className="text-gray-400 text-xs font-mono">{param.type}</code>
+                                <code className="text-xs font-mono" style={{ color: "var(--page-text-secondary)" }}>{param.type}</code>
                               </td>
                               <td className="py-2.5 px-4">
                                 {param.required ? (
                                   <Badge variant="danger" size="sm">Required</Badge>
                                 ) : (
-                                  <span className="text-xs text-gray-500">Optional</span>
+                                  <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>Optional</span>
                                 )}
                               </td>
-                              <td className="py-2.5 px-4 text-gray-400 text-xs">{param.description}</td>
+                              <td className="py-2.5 px-4 text-xs" style={{ color: "var(--page-text-secondary)" }}>{param.description}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -698,14 +699,14 @@ export default function ApiDocsPage() {
                 {/* Request body */}
                 {endpoint.requestBody && (
                   <div className="mb-5">
-                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Request Body</h4>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--page-text-muted)" }}>Request Body</h4>
                     <CodeBlock code={endpoint.requestBody} label="JSON" />
                   </div>
                 )}
 
                 {/* Response */}
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Response</h4>
+                  <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--page-text-muted)" }}>Response</h4>
                   <CodeBlock code={endpoint.responseBody} label="200 OK" />
                 </div>
               </GlassCard>

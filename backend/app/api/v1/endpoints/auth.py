@@ -29,6 +29,8 @@ from app.services import totp_service
 from app.services.email_service import EmailService
 from app.schemas.common import MessageResponse
 from app.schemas.user import (
+    FirebaseGoogleAuthRequest,
+    GoogleAuthRequest,
     LoginResult,
     PasswordReset,
     PasswordResetConfirm,
@@ -39,6 +41,8 @@ from app.schemas.user import (
     UserResponse,
     UserWithToken,
 )
+import httpx
+from urllib.parse import urlencode
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -196,10 +200,16 @@ async def login(
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
 
-    if user is None or not await verify_password_async(payload.password, user.password_hash):
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="User ID / Email was not found. Please check your email or sign up.",
+        )
+
+    if not await verify_password_async(payload.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password. Please verify your password and try again.",
         )
 
     if not user.is_active:
@@ -417,4 +427,288 @@ async def reset_password(
     db.add(user)
 
     return MessageResponse(message="Password has been reset successfully")
+
+
+@router.get("/google/url")
+async def get_google_auth_url(redirect_uri: str | None = None):
+    """Return Google OAuth 2.0 authorization URL for user login and signup."""
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth is not configured. Please set GOOGLE_CLIENT_ID in settings.",
+        )
+
+    cb_uri = redirect_uri or f"{settings.FRONTEND_URL}/auth/callback/google"
+    params = {
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "redirect_uri": cb_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "prompt": "select_account",
+    }
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+    return {"auth_url": auth_url}
+
+
+@router.post("/google/callback", response_model=UserWithToken)
+async def google_auth_callback(
+    payload: GoogleAuthRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Exchange Google OAuth code for tokens, and log in or register user."""
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth is not configured on this server.",
+        )
+
+    cb_uri = payload.redirect_uri or f"{settings.FRONTEND_URL}/auth/callback/google"
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        token_resp = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": settings.GOOGLE_CLIENT_ID,
+                "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                "code": payload.code,
+                "grant_type": "authorization_code",
+                "redirect_uri": cb_uri,
+            },
+        )
+        if token_resp.status_code != 200:
+            error_data = token_resp.json() if token_resp.headers.get("content-type", "").startswith("application/json") else {}
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_data.get("error_description") or "Failed to exchange authorization code with Google.",
+            )
+
+        token_data = token_resp.json()
+        google_access_token = token_data.get("access_token")
+        if not google_access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No access token received from Google.",
+            )
+
+        userinfo_resp = await client.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {google_access_token}"},
+        )
+        if userinfo_resp.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to fetch profile information from Google.",
+            )
+        google_profile = userinfo_resp.json()
+
+    email = google_profile.get("email")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google account did not return an email address.",
+        )
+
+    full_name = google_profile.get("name") or email.split("@")[0]
+    picture = google_profile.get("picture")
+
+    # Find existing user by email
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if user is not None:
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is deactivated.",
+            )
+        # Update user avatar / email verification if needed
+        if not user.avatar_url and picture:
+            user.avatar_url = picture
+        user.email_verified = True
+        user.last_login_at = datetime.now(timezone.utc)
+        db.add(user)
+        await db.flush()
+
+        # Check if user has an account workspace; if not, create one
+        account_member = await db.execute(
+            select(TeamMember).where(TeamMember.user_id == user.id).limit(1)
+        )
+        if account_member.scalars().first() is None:
+            account = Account(
+                id=uuid.uuid4(),
+                name=f"{user.full_name}'s Workspace",
+                slug=_generate_slug(user.full_name),
+                owner_id=user.id,
+                subscription_tier=SubscriptionTier.FREE,
+                subscription_status=SubscriptionStatus.TRIALING,
+            )
+            db.add(account)
+            await db.flush()
+
+            team_member = TeamMember(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                account_id=account.id,
+                role=TeamRole.OWNER,
+                invitation_status=InvitationStatus.ACCEPTED,
+                accepted_at=datetime.now(timezone.utc),
+            )
+            db.add(team_member)
+            await db.flush()
+    else:
+        # Create brand new user via Google Sign-In
+        user = User(
+            id=uuid.uuid4(),
+            email=email,
+            full_name=full_name,
+            avatar_url=picture,
+            password_hash=await get_password_hash_async(uuid.uuid4().hex + uuid.uuid4().hex),
+            is_active=True,
+            email_verified=True,
+            last_login_at=datetime.now(timezone.utc),
+        )
+        db.add(user)
+        await db.flush()
+
+        # Create default workspace
+        account = Account(
+            id=uuid.uuid4(),
+            name=f"{full_name}'s Workspace",
+            slug=_generate_slug(full_name),
+            owner_id=user.id,
+            subscription_tier=SubscriptionTier.FREE,
+            subscription_status=SubscriptionStatus.TRIALING,
+        )
+        db.add(account)
+        await db.flush()
+
+        # Create owner team membership
+        team_member = TeamMember(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            account_id=account.id,
+            role=TeamRole.OWNER,
+            invitation_status=InvitationStatus.ACCEPTED,
+            accepted_at=datetime.now(timezone.utc),
+        )
+        db.add(team_member)
+        await db.flush()
+
+    return await _issue_session_tokens(db, user, request)
+
+
+@router.get("/google/callback")
+async def google_auth_callback_get(code: str | None = None, error: str | None = None, error_description: str | None = None):
+    """Fallback GET callback if Google redirects directly to backend."""
+    from fastapi.responses import RedirectResponse
+    from urllib.parse import urlencode
+
+    query_params = {}
+    if code:
+        query_params["code"] = code
+    if error:
+        query_params["error"] = error
+    if error_description:
+        query_params["error_description"] = error_description
+
+    target_url = f"{settings.FRONTEND_URL}/auth/callback/google?{urlencode(query_params)}"
+    return RedirectResponse(url=target_url)
+
+
+@router.post("/google/firebase", response_model=UserWithToken)
+async def google_firebase_auth(
+    payload: FirebaseGoogleAuthRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Authenticate or register user via Firebase Google OAuth Popup token."""
+    email = payload.email
+    full_name = payload.full_name or email.split("@")[0]
+    picture = payload.avatar_url
+
+    # Look up existing user by email
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if user is not None:
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is deactivated.",
+            )
+        if not user.avatar_url and picture:
+            user.avatar_url = picture
+        user.email_verified = True
+        user.last_login_at = datetime.now(timezone.utc)
+        db.add(user)
+        await db.flush()
+
+        # Check if user has an account workspace; if not, create one
+        account_member = await db.execute(
+            select(TeamMember).where(TeamMember.user_id == user.id).limit(1)
+        )
+        if account_member.scalars().first() is None:
+            account = Account(
+                id=uuid.uuid4(),
+                name=f"{user.full_name}'s Workspace",
+                slug=_generate_slug(user.full_name),
+                owner_id=user.id,
+                subscription_tier=SubscriptionTier.FREE,
+                subscription_status=SubscriptionStatus.TRIALING,
+            )
+            db.add(account)
+            await db.flush()
+
+            team_member = TeamMember(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                account_id=account.id,
+                role=TeamRole.OWNER,
+                invitation_status=InvitationStatus.ACCEPTED,
+                accepted_at=datetime.now(timezone.utc),
+            )
+            db.add(team_member)
+            await db.flush()
+    else:
+        # Create new user via Firebase Google Sign-In
+        user = User(
+            id=uuid.uuid4(),
+            email=email,
+            full_name=full_name,
+            avatar_url=picture,
+            password_hash=await get_password_hash_async(uuid.uuid4().hex + uuid.uuid4().hex),
+            is_active=True,
+            email_verified=True,
+            last_login_at=datetime.now(timezone.utc),
+        )
+        db.add(user)
+        await db.flush()
+
+        # Create default workspace
+        account = Account(
+            id=uuid.uuid4(),
+            name=f"{full_name}'s Workspace",
+            slug=_generate_slug(full_name),
+            owner_id=user.id,
+            subscription_tier=SubscriptionTier.FREE,
+            subscription_status=SubscriptionStatus.TRIALING,
+        )
+        db.add(account)
+        await db.flush()
+
+        # Create owner team membership
+        team_member = TeamMember(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            account_id=account.id,
+            role=TeamRole.OWNER,
+            invitation_status=InvitationStatus.ACCEPTED,
+            accepted_at=datetime.now(timezone.utc),
+        )
+        db.add(team_member)
+        await db.flush()
+
+    return await _issue_session_tokens(db, user, request)
 

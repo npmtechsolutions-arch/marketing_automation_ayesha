@@ -172,8 +172,8 @@ function ActivityStatCard({
 }) {
   return (
     <GlassCard padding="sm" className="flex-1 min-w-[140px]">
-      <p className="text-xs text-slate-400 mb-1">{label}</p>
-      <p className={cn("text-2xl font-bold", color)}>{value}</p>
+      <p className="text-xs mb-1" style={{ color: "var(--page-text-muted)" }}>{label}</p>
+      <p className="text-2xl font-bold tabular-nums" style={{ color }}>{value}</p>
     </GlassCard>
   );
 }
@@ -197,14 +197,15 @@ function TimelineEntry({ entry, isLast }: { entry: ActivityEntry; isLast: boolea
       <div className="flex flex-col items-center">
         <div
           className={cn(
-            "z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-slate-800",
+            "z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2",
             config.bgColor
           )}
+          style={{ borderColor: "var(--page-bg)" }}
         >
           <div className={cn("h-3 w-3 rounded-full", config.dotColor)} />
         </div>
         {!isLast && (
-          <div className="w-px flex-1 bg-gradient-to-b from-white/10 to-transparent" />
+          <div className="w-px flex-1 bg-gradient-to-b from-[var(--surface-border)] to-transparent" />
         )}
       </div>
 
@@ -213,7 +214,8 @@ function TimelineEntry({ entry, isLast }: { entry: ActivityEntry; isLast: boolea
         {/* Timestamp */}
         <div className="mb-1.5 flex items-center gap-2">
           <span
-            className="text-xs text-slate-500 cursor-default"
+            className="text-xs cursor-default"
+            style={{ color: "var(--page-text-muted)" }}
             title={formatDate(entry.created_at)}
           >
             {formatRelativeTime(entry.created_at)}
@@ -234,7 +236,7 @@ function TimelineEntry({ entry, isLast }: { entry: ActivityEntry; isLast: boolea
 
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2 mb-1">
-                <h4 className="text-sm font-semibold text-white">{entry.action}</h4>
+                <h4 className="text-sm font-semibold" style={{ color: "var(--page-heading)" }}>{entry.action}</h4>
                 <Badge
                   variant={statusBadgeVariant[entry.status]}
                   size="sm"
@@ -244,7 +246,7 @@ function TimelineEntry({ entry, isLast }: { entry: ActivityEntry; isLast: boolea
                 </Badge>
               </div>
 
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs leading-relaxed" style={{ color: "var(--page-text-secondary)" }}>
                 {entry.description}
               </p>
 
@@ -351,16 +353,16 @@ export default function ActivityPage() {
       <div className="space-y-6 pb-8">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-white">Activity Log</h1>
-          <p className="mt-1 text-sm text-slate-400">Your agency activity</p>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl" style={{ color: "var(--page-heading)" }}>Activity Log</h1>
+          <p className="mt-1 text-sm" style={{ color: "var(--page-text-secondary)" }}>Your agency activity</p>
         </div>
 
         {/* Stat Cards */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <ActivityStatCard label="Total Actions (Today)" value={stats.totalToday} color="text-white" />
-          <ActivityStatCard label="Posts Created" value={stats.postsCreated} color="text-purple-400" />
-          <ActivityStatCard label="AI Generations" value={stats.aiGenerations} color="text-pink-400" />
-          <ActivityStatCard label="Accounts Connected" value={stats.accountsConnected} color="text-green-400" />
+          <ActivityStatCard label="Total Actions (Today)" value={stats.totalToday} color="var(--page-heading)" />
+          <ActivityStatCard label="Posts Created" value={stats.postsCreated} color="#7c3aed" />
+          <ActivityStatCard label="AI Generations" value={stats.aiGenerations} color="#ec4899" />
+          <ActivityStatCard label="Accounts Connected" value={stats.accountsConnected} color="#10b981" />
         </div>
 
         {/* Filter Bar */}
@@ -368,25 +370,26 @@ export default function ActivityPage() {
           <div className="space-y-3">
             {/* Category pills */}
             <div className="flex flex-wrap gap-2">
-              {categoryFilters.map((cat) => (
-                <button
-                  key={cat.value}
-                  onClick={() => setCategoryFilter(cat.value)}
-                  className={cn(
-                    "rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200",
-                    categoryFilter === cat.value
-                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                      : "bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10 hover:text-white"
-                  )}
-                >
-                  {cat.label}
-                </button>
-              ))}
+              {categoryFilters.map((cat) => {
+                const active = categoryFilter === cat.value;
+                return (
+                  <button
+                    key={cat.value}
+                    onClick={() => setCategoryFilter(cat.value)}
+                    className="rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200 cursor-pointer"
+                    style={active
+                      ? { background: "rgba(124,58,237,0.16)", border: "1px solid rgba(124,58,237,0.30)", color: "#a78bfa" }
+                      : { background: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-muted)" }}
+                  >
+                    {cat.label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Date + Status filters */}
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 text-xs text-slate-400">
+              <div className="flex items-center gap-2 text-xs" style={{ color: "var(--page-text-muted)" }}>
                 <Filter className="h-3.5 w-3.5" />
                 <span>Filters:</span>
               </div>
@@ -398,7 +401,8 @@ export default function ActivityPage() {
                     setDateDropdownOpen(!dateDropdownOpen);
                     setStatusDropdownOpen(false);
                   }}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-white/10"
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors cursor-pointer hover:bg-[var(--sidebar-hover-bg)]"
+                  style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--sidebar-hover-bg)", color: "var(--page-text)" }}
                 >
                   {dateFilter}
                   <ChevronDown className={cn("h-3 w-3 transition-transform", dateDropdownOpen && "rotate-180")} />
@@ -409,18 +413,17 @@ export default function ActivityPage() {
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
-                      className="absolute left-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-xl border border-white/10 bg-slate-900/95 p-1 shadow-xl backdrop-blur-xl"
+                      className="absolute left-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-xl p-1 shadow-xl backdrop-blur-xl"
+                      style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--surface-bg)" }}
                     >
                       {dateFilters.map((d) => (
                         <button
                           key={d}
                           onClick={() => { setDateFilter(d); setDateDropdownOpen(false); }}
-                          className={cn(
-                            "w-full rounded-lg px-3 py-1.5 text-left text-xs transition-colors",
-                            dateFilter === d
-                              ? "bg-purple-500/15 text-purple-300"
-                              : "text-slate-300 hover:bg-white/10 hover:text-white"
-                          )}
+                          className="w-full rounded-lg px-3 py-1.5 text-left text-xs transition-colors cursor-pointer hover:bg-[var(--sidebar-hover-bg)]"
+                          style={dateFilter === d
+                            ? { background: "rgba(124,58,237,0.15)", color: "#a78bfa" }
+                            : { color: "var(--page-text)" }}
                         >
                           {d}
                         </button>
@@ -437,7 +440,8 @@ export default function ActivityPage() {
                     setStatusDropdownOpen(!statusDropdownOpen);
                     setDateDropdownOpen(false);
                   }}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-white/10"
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors cursor-pointer hover:bg-[var(--sidebar-hover-bg)]"
+                  style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--sidebar-hover-bg)", color: "var(--page-text)" }}
                 >
                   Status: {statusFilter}
                   <ChevronDown className={cn("h-3 w-3 transition-transform", statusDropdownOpen && "rotate-180")} />
@@ -448,18 +452,17 @@ export default function ActivityPage() {
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
-                      className="absolute left-0 top-full z-50 mt-1 w-32 overflow-hidden rounded-xl border border-white/10 bg-slate-900/95 p-1 shadow-xl backdrop-blur-xl"
+                      className="absolute left-0 top-full z-50 mt-1 w-32 overflow-hidden rounded-xl p-1 shadow-xl backdrop-blur-xl"
+                      style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--surface-bg)" }}
                     >
                       {statusFilters.map((s) => (
                         <button
                           key={s}
                           onClick={() => { setStatusFilter(s); setStatusDropdownOpen(false); }}
-                          className={cn(
-                            "w-full rounded-lg px-3 py-1.5 text-left text-xs transition-colors",
-                            statusFilter === s
-                              ? "bg-purple-500/15 text-purple-300"
-                              : "text-slate-300 hover:bg-white/10 hover:text-white"
-                          )}
+                          className="w-full rounded-lg px-3 py-1.5 text-left text-xs transition-colors cursor-pointer hover:bg-[var(--sidebar-hover-bg)]"
+                          style={statusFilter === s
+                            ? { background: "rgba(124,58,237,0.15)", color: "#a78bfa" }
+                            : { color: "var(--page-text)" }}
                         >
                           {s}
                         </button>
@@ -500,11 +503,11 @@ export default function ActivityPage() {
         ) : (
           /* Empty state */
           <GlassCard className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/5">
-              <FileText className="h-8 w-8 text-slate-500" />
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
+              <FileText className="h-8 w-8" style={{ color: "var(--page-text-muted)" }} />
             </div>
-            <h3 className="text-lg font-semibold text-white">No activities found</h3>
-            <p className="mt-1 text-sm text-slate-400">
+            <h3 className="text-lg font-semibold" style={{ color: "var(--page-heading)" }}>No activities found</h3>
+            <p className="mt-1 text-sm" style={{ color: "var(--page-text-secondary)" }}>
               Try adjusting your filters or check back later.
             </p>
           </GlassCard>

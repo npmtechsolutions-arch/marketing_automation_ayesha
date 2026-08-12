@@ -109,7 +109,7 @@ function CircularProgress({
         </defs>
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-lg font-bold text-white">{value}%</span>
+        <span className="text-lg font-bold tabular-nums" style={{ color: "var(--page-heading)" }}>{value}%</span>
       </div>
     </div>
   );
@@ -153,7 +153,7 @@ function PlatformBar({ platformMix }: { platformMix: Record<string, number> }) {
               className="w-2 h-2 rounded-full"
               style={{ backgroundColor: platformColors[platform] || "#6366F1" }}
             />
-            <span className="text-slate-400 capitalize">
+            <span className="capitalize tabular-nums" style={{ color: "var(--page-text-secondary)" }}>
               {platform} ({((weight / total) * 100).toFixed(0)}%)
             </span>
           </div>
@@ -315,8 +315,8 @@ export default function StrategyPage() {
           className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
         >
           <div>
-            <h1 className="text-2xl font-bold text-white sm:text-3xl">Marketing Strategy</h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <h1 className="text-2xl font-bold sm:text-3xl" style={{ color: "var(--page-heading)" }}>Marketing Strategy</h1>
+            <p className="mt-1 text-sm" style={{ color: "var(--page-text-secondary)" }}>
               AI-powered strategy recommendations for your brand
             </p>
           </div>
@@ -336,7 +336,7 @@ export default function StrategyPage() {
             {loading ? (
               <div className="flex items-center justify-center py-12 gap-3">
                 <RefreshCw className="w-5 h-5 text-purple-400 animate-spin" />
-                <span className="text-slate-400 text-sm">Loading strategies…</span>
+                <span className="text-sm" style={{ color: "var(--page-text-secondary)" }}>Loading strategies…</span>
               </div>
             ) : activeStrategy ? (
               <div className="space-y-5">
@@ -346,13 +346,13 @@ export default function StrategyPage() {
                     <div className="flex items-center gap-2 mb-1">
                       <Badge variant="success" size="sm" dot>Active</Badge>
                     </div>
-                    <h2 className="text-lg font-semibold text-white">{activeStrategy.name}</h2>
-                    <p className="text-sm text-slate-400 mt-0.5">{activeStrategy.goal}</p>
+                    <h2 className="text-lg font-semibold" style={{ color: "var(--page-heading)" }}>{activeStrategy.name}</h2>
+                    <p className="text-sm mt-0.5" style={{ color: "var(--page-text-secondary)" }}>{activeStrategy.goal}</p>
                   </div>
                   {confidencePct !== null && (
                     <div className="shrink-0 text-center">
                       <CircularProgress value={confidencePct} size={72} strokeWidth={5} />
-                      <p className="text-[11px] text-slate-500 mt-1">Confidence</p>
+                      <p className="text-[11px] mt-1" style={{ color: "var(--page-text-muted)" }}>Confidence</p>
                     </div>
                   )}
                 </div>
@@ -360,7 +360,7 @@ export default function StrategyPage() {
                 {/* Platform Mix */}
                 {activeStrategy.platform_mix && Object.keys(activeStrategy.platform_mix).length > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+                    <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "var(--page-text-secondary)" }}>
                       Platform Mix
                     </p>
                     <PlatformBar platformMix={activeStrategy.platform_mix} />
@@ -370,7 +370,7 @@ export default function StrategyPage() {
                 {/* Content Themes */}
                 {activeStrategy.content_themes && activeStrategy.content_themes.length > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+                    <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "var(--page-text-secondary)" }}>
                       Content Themes
                     </p>
                     <div className="flex flex-wrap gap-2">
@@ -389,25 +389,25 @@ export default function StrategyPage() {
                 {/* AI Reasoning */}
                 {activeStrategy.reasoning && (
                   <div>
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+                    <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "var(--page-text-secondary)" }}>
                       AI Reasoning
                     </p>
-                    <p className="text-sm text-slate-400 leading-relaxed p-4 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+                    <p className="text-sm leading-relaxed p-4 rounded-xl" style={{ color: "var(--page-text-secondary)", backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                       {activeStrategy.reasoning}
                     </p>
                   </div>
                 )}
 
-                <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                <p className="text-xs flex items-center gap-1.5" style={{ color: "var(--page-text-muted)" }}>
                   <Clock className="w-3 h-3" />
                   Created {formatDate(activeStrategy.created_at)}
                 </p>
               </div>
             ) : (
               <div className="text-center py-12">
-                <Brain className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                <p className="text-slate-400 mb-2">No active strategy yet</p>
-                <p className="text-sm text-slate-500 mb-5">
+                <Brain className="w-12 h-12 mx-auto mb-4" style={{ color: "var(--page-text-muted)" }} />
+                <p className="mb-2" style={{ color: "var(--page-text-secondary)" }}>No active strategy yet</p>
+                <p className="text-sm mb-5" style={{ color: "var(--page-text-muted)" }}>
                   Generate a new strategy to get AI-powered recommendations
                 </p>
                 <Button
@@ -427,8 +427,8 @@ export default function StrategyPage() {
         {!loading && historyStrategies.length > 0 && (
           <motion.div variants={fadeUp}>
             <div className="mb-4">
-              <h2 className="text-lg font-semibold text-white">Strategy History</h2>
-              <p className="text-sm text-slate-400 mt-0.5">Past strategies — click to activate</p>
+              <h2 className="text-lg font-semibold" style={{ color: "var(--page-heading)" }}>Strategy History</h2>
+              <p className="text-sm mt-0.5" style={{ color: "var(--page-text-secondary)" }}>Past strategies — click to activate</p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -463,17 +463,17 @@ export default function StrategyPage() {
                                   strokeDashoffset={2 * Math.PI * 12 - (pct / 100) * 2 * Math.PI * 12}
                                 />
                               </svg>
-                              <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white">
+                              <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold tabular-nums" style={{ color: "var(--page-heading)" }}>
                                 {pct}
                               </span>
                             </div>
                           )}
                         </div>
 
-                        <h3 className="text-sm font-semibold text-white mb-1 line-clamp-1">
+                        <h3 className="text-sm font-semibold mb-1 line-clamp-1" style={{ color: "var(--page-heading)" }}>
                           {strategy.name}
                         </h3>
-                        <p className="text-xs text-slate-500 mb-3 line-clamp-2">{strategy.goal}</p>
+                        <p className="text-xs mb-3 line-clamp-2" style={{ color: "var(--page-text-muted)" }}>{strategy.goal}</p>
 
                         {strategy.platform_mix && Object.keys(strategy.platform_mix).length > 0 && (
                           <div className="h-1.5 rounded-full overflow-hidden flex mb-3">
@@ -494,13 +494,13 @@ export default function StrategyPage() {
                         )}
 
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                          <div className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--page-text-muted)" }}>
                             <Clock className="w-3 h-3" />
                             <span>{formatDate(strategy.created_at)}</span>
                           </div>
                           <button
                             onClick={(e) => handleActivate(strategy.id, e)}
-                            className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+                            className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors cursor-pointer"
                           >
                             Activate <ChevronRight className="w-3 h-3" />
                           </button>
@@ -517,7 +517,7 @@ export default function StrategyPage() {
         {/* Empty history state */}
         {!loading && strategies.length === 0 && (
           <motion.div variants={fadeUp}>
-            <div className="text-center py-8 text-slate-500 text-sm">
+            <div className="text-center py-8 text-sm" style={{ color: "var(--page-text-muted)" }}>
               No strategies yet — generate your first one above!
             </div>
           </motion.div>
@@ -536,21 +536,22 @@ export default function StrategyPage() {
         <div className="space-y-5">
           {/* Business selector */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: "var(--page-text-secondary)" }}>
               Business
             </label>
             {businesses.length === 0 ? (
-              <p className="text-sm text-slate-500 italic">
+              <p className="text-sm italic" style={{ color: "var(--page-text-muted)" }}>
                 No businesses found. Add a business first.
               </p>
             ) : (
               <select
                 value={selectedBusinessId}
                 onChange={(e) => setSelectedBusinessId(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20"
+                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)]"
+                style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
               >
                 {businesses.map((b) => (
-                  <option key={b.id} value={b.id} className="bg-slate-900">
+                  <option key={b.id} value={b.id} style={{ backgroundColor: "var(--surface-bg)", color: "var(--page-text)" }}>
                     {b.name}{b.industry ? ` · ${b.industry}` : ""}
                   </option>
                 ))}
@@ -560,7 +561,7 @@ export default function StrategyPage() {
 
           {/* Goal */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: "var(--page-text-secondary)" }}>
               Marketing Goal
             </label>
             <Input
@@ -572,7 +573,7 @@ export default function StrategyPage() {
 
           {/* Budget */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-medium uppercase tracking-wider mb-1.5" style={{ color: "var(--page-text-secondary)" }}>
               Monthly Budget (USD) — optional
             </label>
             <Input
@@ -585,7 +586,7 @@ export default function StrategyPage() {
 
           {/* Platforms */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "var(--page-text-secondary)" }}>
               Target Platforms
             </label>
             <div className="flex flex-wrap gap-2">
@@ -595,11 +596,12 @@ export default function StrategyPage() {
                   <button
                     key={p}
                     onClick={() => togglePlatform(p)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all border ${
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all cursor-pointer"
+                    style={
                       selected
-                        ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
-                        : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10"
-                    }`}
+                        ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)", color: "var(--page-heading)" }
+                        : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-muted)" }
+                    }
                   >
                     {selected && <CheckCircle2 className="w-3 h-3 inline mr-1" />}
                     {p}
@@ -645,20 +647,20 @@ export default function StrategyPage() {
           <div className="space-y-5">
             <div className="flex items-center gap-3">
               <Badge variant="default">Inactive</Badge>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>
                 {formatDate(selectedStrategy.created_at)}
               </span>
             </div>
 
             <div>
-              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Goal</p>
-              <p className="text-sm text-slate-300">{selectedStrategy.goal}</p>
+              <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "var(--page-text-secondary)" }}>Goal</p>
+              <p className="text-sm" style={{ color: "var(--page-text)" }}>{selectedStrategy.goal}</p>
             </div>
 
             {selectedStrategy.confidence_score != null && (
               <div className="flex items-center gap-4">
                 <div>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">
+                  <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "var(--page-text-secondary)" }}>
                     Confidence Score
                   </p>
                   <CircularProgress
@@ -672,7 +674,7 @@ export default function StrategyPage() {
 
             {selectedStrategy.platform_mix && Object.keys(selectedStrategy.platform_mix).length > 0 && (
               <div>
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+                <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "var(--page-text-secondary)" }}>
                   Platform Mix
                 </p>
                 <PlatformBar platformMix={selectedStrategy.platform_mix} />
@@ -681,7 +683,7 @@ export default function StrategyPage() {
 
             {selectedStrategy.content_themes && selectedStrategy.content_themes.length > 0 && (
               <div>
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+                <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "var(--page-text-secondary)" }}>
                   Content Themes
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -699,10 +701,10 @@ export default function StrategyPage() {
 
             {selectedStrategy.reasoning && (
               <div>
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+                <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "var(--page-text-secondary)" }}>
                   AI Reasoning
                 </p>
-                <p className="text-sm text-slate-400 leading-relaxed p-4 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+                <p className="text-sm leading-relaxed p-4 rounded-xl" style={{ color: "var(--page-text-secondary)", backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                   {selectedStrategy.reasoning}
                 </p>
               </div>

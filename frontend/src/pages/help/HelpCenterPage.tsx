@@ -109,19 +109,20 @@ export default function HelpCenterPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600/20 to-blue-600/20 border border-purple-500/20 mb-5">
             <HelpCircle className="w-8 h-8 text-purple-400" />
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Help Center</h1>
-          <p className="text-gray-400 mb-8 max-w-md mx-auto">
+          <h1 className="text-3xl font-bold tracking-tight mb-2" style={{ color: "var(--page-heading)" }}>Help Center</h1>
+          <p className="mb-8 max-w-md mx-auto" style={{ color: "var(--page-text-secondary)" }}>
             Find answers, explore guides, and get the help you need.
           </p>
 
           <div className="max-w-xl mx-auto relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 z-10" style={{ color: "var(--page-text-secondary)" }} />
             <input
               type="text"
               placeholder="Search articles, guides, and FAQs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl pl-12 pr-5 py-4 text-white text-base outline-none placeholder-gray-500 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
+              className="w-full backdrop-blur-xl rounded-2xl pl-12 pr-5 py-4 text-base outline-none placeholder-gray-500 focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)] transition-all"
+              style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
             />
           </div>
         </motion.div>
@@ -140,15 +141,15 @@ export default function HelpCenterPage() {
                       <Icon className={cn("w-6 h-6", cat.iconColor)} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-base font-semibold text-white mb-1 group-hover:text-purple-300 transition-colors">
+                      <h3 className="text-base font-semibold mb-1 group-hover:text-purple-300 transition-colors" style={{ color: "var(--page-heading)" }}>
                         {cat.title}
                       </h3>
-                      <p className="text-sm text-gray-400 leading-relaxed mb-2">
+                      <p className="text-sm leading-relaxed mb-2" style={{ color: "var(--page-text-secondary)" }}>
                         {cat.description}
                       </p>
-                      <span className="text-xs text-gray-500">{cat.articles} articles</span>
+                      <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>{cat.articles} articles</span>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-purple-400 transition-colors mt-1 flex-shrink-0" />
+                    <ChevronRight className="w-4 h-4 group-hover:text-purple-400 transition-colors mt-1 flex-shrink-0" style={{ color: "var(--page-text-muted)" }} />
                   </div>
                 </GlassCard>
               );
@@ -162,7 +163,7 @@ export default function HelpCenterPage() {
         <motion.div variants={fadeUp}>
           <div className="flex items-center gap-2 mb-5">
             <Sparkles className="w-5 h-5 text-purple-400" />
-            <h2 className="text-xl font-bold text-white">Popular Articles</h2>
+            <h2 className="text-xl font-bold" style={{ color: "var(--page-heading)" }}>Popular Articles</h2>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -172,12 +173,12 @@ export default function HelpCenterPage() {
                   <Badge variant={article.categoryColor} size="sm">
                     {article.category}
                   </Badge>
-                  <span className="flex items-center gap-1 text-xs text-gray-500">
+                  <span className="flex items-center gap-1 text-xs" style={{ color: "var(--page-text-muted)" }}>
                     <Clock className="w-3 h-3" />
                     {article.readTime}
                   </span>
                 </div>
-                <h3 className="text-sm font-semibold text-white leading-snug group-hover:text-purple-300 transition-colors">
+                <h3 className="text-sm font-semibold leading-snug group-hover:text-purple-300 transition-colors" style={{ color: "var(--page-heading)" }}>
                   {article.title}
                 </h3>
                 <div className="mt-3 flex items-center gap-1 text-xs text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -194,7 +195,7 @@ export default function HelpCenterPage() {
         <motion.div variants={fadeUp}>
           <div className="flex items-center gap-2 mb-5">
             <BookOpen className="w-5 h-5 text-purple-400" />
-            <h2 className="text-xl font-bold text-white">Frequently Asked Questions</h2>
+            <h2 className="text-xl font-bold" style={{ color: "var(--page-heading)" }}>Frequently Asked Questions</h2>
           </div>
 
           <div className="space-y-2">
@@ -204,10 +205,10 @@ export default function HelpCenterPage() {
                 <GlassCard key={i} padding="sm" className="!p-0">
                   <button
                     onClick={() => setOpenFaq(isOpen ? null : i)}
-                    className="w-full flex items-center justify-between p-4 text-left"
+                    className="w-full flex items-center justify-between p-4 text-left cursor-pointer"
                   >
-                    <span className="text-sm font-medium text-white pr-4">{faq.q}</span>
-                    <ChevronDown className={cn("w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200", isOpen && "rotate-180")} />
+                    <span className="text-sm font-medium pr-4" style={{ color: "var(--page-text)" }}>{faq.q}</span>
+                    <ChevronDown className={cn("w-4 h-4 flex-shrink-0 transition-transform duration-200", isOpen && "rotate-180")} style={{ color: "var(--page-text-secondary)" }} />
                   </button>
 
                   <AnimatePresence>
@@ -220,7 +221,7 @@ export default function HelpCenterPage() {
                         className="overflow-hidden"
                       >
                         <div className="px-4 pb-4 pt-0">
-                          <p className="text-sm text-gray-400 leading-relaxed">{faq.a}</p>
+                          <p className="text-sm leading-relaxed" style={{ color: "var(--page-text-secondary)" }}>{faq.a}</p>
                         </div>
                       </motion.div>
                     )}
@@ -237,7 +238,7 @@ export default function HelpCenterPage() {
         <motion.div variants={fadeUp}>
           <div className="flex items-center gap-2 mb-5">
             <Mail className="w-5 h-5 text-purple-400" />
-            <h2 className="text-xl font-bold text-white">Contact Support</h2>
+            <h2 className="text-xl font-bold" style={{ color: "var(--page-heading)" }}>Contact Support</h2>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -249,11 +250,11 @@ export default function HelpCenterPage() {
                     <Mail className="w-5 h-5 text-blue-400" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-semibold text-white">Email Support</h4>
-                    <p className="text-xs text-gray-400">support@visionaryspace.com</p>
+                    <h4 className="text-sm font-semibold" style={{ color: "var(--page-heading)" }}>Email Support</h4>
+                    <p className="text-xs" style={{ color: "var(--page-text-secondary)" }}>support@visionaryspace.com</p>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Typical response time: 2-4 hours</p>
+                <p className="text-xs mt-2" style={{ color: "var(--page-text-muted)" }}>Typical response time: 2-4 hours</p>
               </GlassCard>
 
               <GlassCard padding="md">
@@ -262,11 +263,11 @@ export default function HelpCenterPage() {
                     <MessageCircle className="w-5 h-5 text-purple-400" />
                   </div>
                   <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-semibold text-white">Live Chat</h4>
+                    <h4 className="text-sm font-semibold" style={{ color: "var(--page-heading)" }}>Live Chat</h4>
                     <Badge variant="default" size="sm">Coming Soon</Badge>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Real-time support with our team</p>
+                <p className="text-xs mt-2" style={{ color: "var(--page-text-muted)" }}>Real-time support with our team</p>
               </GlassCard>
 
               <GlassCard padding="md">
@@ -275,19 +276,19 @@ export default function HelpCenterPage() {
                     <Globe className="w-5 h-5 text-emerald-400" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-semibold text-white">Community Forum</h4>
-                    <p className="text-xs text-gray-400">community.visionaryspace.com</p>
+                    <h4 className="text-sm font-semibold" style={{ color: "var(--page-heading)" }}>Community Forum</h4>
+                    <p className="text-xs" style={{ color: "var(--page-text-secondary)" }}>community.visionaryspace.com</p>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Connect with other users and share tips</p>
+                <p className="text-xs mt-2" style={{ color: "var(--page-text-muted)" }}>Connect with other users and share tips</p>
               </GlassCard>
             </div>
 
             {/* Ticket form */}
             <div className="lg:col-span-2">
               <GlassCard>
-                <h3 className="text-lg font-semibold text-white mb-1">Submit a Ticket</h3>
-                <p className="text-sm text-gray-400 mb-6">Describe your issue and we'll get back to you.</p>
+                <h3 className="text-lg font-semibold mb-1" style={{ color: "var(--page-heading)" }}>Submit a Ticket</h3>
+                <p className="text-sm mb-6" style={{ color: "var(--page-text-secondary)" }}>Describe your issue and we'll get back to you.</p>
 
                 <div className="space-y-4">
                   <Input
@@ -298,26 +299,27 @@ export default function HelpCenterPage() {
                   />
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">
+                    <label className="block text-xs font-medium mb-1.5 pl-1" style={{ color: "var(--page-text-secondary)" }}>
                       Category
                     </label>
                     <div className="relative">
                       <select
                         value={ticketCategory}
                         onChange={(e) => setTicketCategory(e.target.value)}
-                        className="w-full appearance-none bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 pr-10 text-sm text-white outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all cursor-pointer"
+                        className="w-full appearance-none backdrop-blur-sm rounded-xl px-4 py-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)] transition-all cursor-pointer"
+                        style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                       >
-                        <option value="" className="bg-slate-900" disabled>Select a category</option>
+                        <option value="" style={{ backgroundColor: "var(--surface-bg)" }} disabled>Select a category</option>
                         {ticketCategories.map((cat) => (
-                          <option key={cat.value} value={cat.value} className="bg-slate-900">{cat.label}</option>
+                          <option key={cat.value} value={cat.value} style={{ backgroundColor: "var(--surface-bg)" }}>{cat.label}</option>
                         ))}
                       </select>
-                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--page-text-secondary)" }} />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">
+                    <label className="block text-xs font-medium mb-1.5 pl-1" style={{ color: "var(--page-text-secondary)" }}>
                       Description
                     </label>
                     <textarea
@@ -325,12 +327,13 @@ export default function HelpCenterPage() {
                       onChange={(e) => setTicketDescription(e.target.value)}
                       placeholder="Describe your issue in detail..."
                       rows={5}
-                      className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none placeholder-gray-500 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all resize-none"
+                      className="w-full backdrop-blur-sm rounded-xl px-4 py-3 text-sm outline-none placeholder-gray-500 focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)] transition-all resize-none"
+                      style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                     />
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <button className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
+                    <button className="flex items-center gap-2 text-sm hover:text-white transition-colors cursor-pointer" style={{ color: "var(--page-text-secondary)" }}>
                       <Paperclip className="w-4 h-4" />
                       Attach file
                     </button>

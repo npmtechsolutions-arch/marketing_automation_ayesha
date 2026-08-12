@@ -28,3 +28,12 @@ class TeamMemberResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class InviteInfoResponse(BaseModel):
+    account_id: UUID
+    workspace_name: str
+    invitation_email: str | None = None
+    role: str
+    invitation_status: str
+    inviter_name: str | None = None

@@ -231,7 +231,7 @@ export default function OnboardingPage() {
   const progress = (step / TOTAL_STEPS) * 100;
 
   return (
-    <div className="relative min-h-screen bg-slate-950 overflow-hidden">
+    <div className="relative min-h-screen overflow-hidden" style={{ background: "var(--page-bg)" }}>
       {/* Background gradients */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full bg-purple-600/10 blur-[120px]" />
@@ -244,7 +244,7 @@ export default function OnboardingPage() {
 
       {/* Top progress bar */}
       <div className="fixed top-0 left-0 right-0 z-50">
-        <div className="h-1 w-full bg-white/5">
+        <div className="h-1 w-full" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
           <motion.div
             className="h-full bg-gradient-to-r from-purple-500 to-blue-500"
             initial={{ width: 0 }}
@@ -264,7 +264,7 @@ export default function OnboardingPage() {
                     ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white"
                     : s === step
                       ? "bg-purple-500/20 border-2 border-purple-500 text-purple-400"
-                      : "bg-white/5 border border-white/10 text-slate-500"
+                      : "bg-[var(--sidebar-hover-bg)] border border-[var(--surface-border)] text-[var(--page-text-muted)]"
                 )}
               >
                 {s < step ? (
@@ -277,7 +277,7 @@ export default function OnboardingPage() {
                 <div
                   className={cn(
                     "w-8 h-0.5 rounded-full transition-colors duration-300",
-                    s < step ? "bg-gradient-to-r from-purple-600 to-blue-600" : "bg-white/10"
+                    s < step ? "bg-gradient-to-r from-purple-600 to-blue-600" : "bg-[var(--surface-border)]"
                   )}
                 />
               )}
@@ -429,7 +429,7 @@ function StepWelcome({ direction, onNext }: { direction: number; onNext: () => v
             Welcome to MarketEngine!
           </span>
         </h1>
-        <p className="text-lg text-slate-400 max-w-md mx-auto">
+        <p className="text-lg max-w-md mx-auto" style={{ color: "var(--page-text-secondary)" }}>
           Let's set up your AI marketing engine in under 5 minutes
         </p>
       </div>
@@ -487,14 +487,14 @@ function StepBusinessProfile({
       exit="exit"
       transition={{ duration: 0.4, ease: "easeInOut" }}
     >
-      <GlassCard className="!bg-white/[0.03] border-white/[0.06]" padding="lg">
+      <GlassCard padding="lg">
         <div className="space-y-6">
           <div className="text-center space-y-2">
             <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-purple-500/15 border border-purple-500/20 mb-2">
               <Building2 className="w-6 h-6 text-purple-400" />
             </div>
-            <h2 className="text-2xl font-bold text-white">Tell Us About Your Business</h2>
-            <p className="text-sm text-slate-400">This helps our AI create the perfect strategy</p>
+            <h2 className="text-2xl font-bold" style={{ color: "var(--page-heading)" }}>Tell Us About Your Business</h2>
+            <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>This helps our AI create the perfect strategy</p>
           </div>
 
           <div className="space-y-4">
@@ -515,7 +515,7 @@ function StepBusinessProfile({
             />
 
             <div className="relative">
-              <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">
+              <label className="block text-xs font-medium mb-1.5 pl-1" style={{ color: "var(--page-text-secondary)" }}>
                 Business description
               </label>
               <textarea
@@ -523,7 +523,8 @@ function StepBusinessProfile({
                 onChange={(e) => setBusinessDescription(e.target.value)}
                 placeholder="Briefly describe what your business does..."
                 rows={3}
-                className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 placeholder-gray-500 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 resize-none"
+                className="w-full backdrop-blur-sm rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200 placeholder-gray-500 resize-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)]"
+              style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
               />
             </div>
 
@@ -536,7 +537,7 @@ function StepBusinessProfile({
             />
 
             <div className="relative">
-              <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">
+              <label className="block text-xs font-medium mb-1.5 pl-1" style={{ color: "var(--page-text-secondary)" }}>
                 Target audience
               </label>
               <textarea
@@ -544,7 +545,8 @@ function StepBusinessProfile({
                 onChange={(e) => setTargetAudience(e.target.value)}
                 placeholder="Describe your ideal customer (e.g. age, interests, profession)..."
                 rows={2}
-                className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 placeholder-gray-500 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 resize-none"
+                className="w-full backdrop-blur-sm rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200 placeholder-gray-500 resize-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)]"
+              style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
               />
             </div>
           </div>
@@ -578,14 +580,14 @@ function StepPlatforms({ direction, onNext, onBack, connectedPlatforms, togglePl
       exit="exit"
       transition={{ duration: 0.4, ease: "easeInOut" }}
     >
-      <GlassCard className="!bg-white/[0.03] border-white/[0.06]" padding="lg">
+      <GlassCard padding="lg">
         <div className="space-y-6">
           <div className="text-center space-y-2">
             <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/20 mb-2">
               <Globe className="w-6 h-6 text-blue-400" />
             </div>
-            <h2 className="text-2xl font-bold text-white">Connect Your Social Media</h2>
-            <p className="text-sm text-slate-400">
+            <h2 className="text-2xl font-bold" style={{ color: "var(--page-heading)" }}>Connect Your Social Media</h2>
+            <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>
               Connect at least 1 platform to get started
             </p>
           </div>
@@ -604,7 +606,7 @@ function StepPlatforms({ direction, onNext, onBack, connectedPlatforms, togglePl
                     "relative flex flex-col items-center gap-2.5 p-4 rounded-xl border transition-all duration-200",
                     isConnected
                       ? "bg-emerald-500/10 border-emerald-500/30"
-                      : "bg-white/5 border-white/10 hover:bg-white/[0.08] hover:border-white/20"
+                      : "bg-[var(--sidebar-hover-bg)] border-[var(--surface-border)] hover:border-[var(--surface-border-hover)]"
                   )}
                 >
                   <div
@@ -613,14 +615,14 @@ function StepPlatforms({ direction, onNext, onBack, connectedPlatforms, togglePl
                   >
                     {platform.icon}
                   </div>
-                  <span className="text-sm font-medium text-white">{platform.name}</span>
+                  <span className="text-sm font-medium" style={{ color: "var(--page-text)" }}>{platform.name}</span>
 
                   {isConnected ? (
                     <Badge variant="success" size="sm">
                       <Check className="w-3 h-3" /> Connected
                     </Badge>
                   ) : (
-                    <span className="text-xs text-slate-500">Click to connect</span>
+                    <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>Click to connect</span>
                   )}
 
                   {isConnected && (
@@ -639,7 +641,8 @@ function StepPlatforms({ direction, onNext, onBack, connectedPlatforms, togglePl
             <button
               type="button"
               onClick={onNext}
-              className="text-xs text-slate-500 hover:text-slate-300 transition-colors underline underline-offset-2"
+              className="text-xs transition-colors underline underline-offset-2 cursor-pointer hover:text-[var(--page-text)]"
+              style={{ color: "var(--page-text-muted)" }}
             >
               Skip for now
             </button>
@@ -672,14 +675,14 @@ function StepGoals({ direction, onNext, onBack, selectedGoals, toggleGoal }: Ste
       exit="exit"
       transition={{ duration: 0.4, ease: "easeInOut" }}
     >
-      <GlassCard className="!bg-white/[0.03] border-white/[0.06]" padding="lg">
+      <GlassCard padding="lg">
         <div className="space-y-6">
           <div className="text-center space-y-2">
             <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-violet-500/15 border border-violet-500/20 mb-2">
               <Target className="w-6 h-6 text-violet-400" />
             </div>
-            <h2 className="text-2xl font-bold text-white">What Are Your Marketing Goals?</h2>
-            <p className="text-sm text-slate-400">Select all that apply</p>
+            <h2 className="text-2xl font-bold" style={{ color: "var(--page-heading)" }}>What Are Your Marketing Goals?</h2>
+            <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>Select all that apply</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -696,7 +699,7 @@ function StepGoals({ direction, onNext, onBack, selectedGoals, toggleGoal }: Ste
                     "relative flex flex-col items-center gap-3 p-5 rounded-xl border transition-all duration-200 text-center",
                     isSelected
                       ? "bg-purple-500/10 border-purple-500/40 shadow-lg shadow-purple-500/10"
-                      : "bg-white/5 border-white/10 hover:bg-white/[0.08] hover:border-white/20"
+                      : "bg-[var(--sidebar-hover-bg)] border-[var(--surface-border)] hover:border-[var(--surface-border-hover)]"
                   )}
                 >
                   <div
@@ -704,14 +707,14 @@ function StepGoals({ direction, onNext, onBack, selectedGoals, toggleGoal }: Ste
                       "w-12 h-12 rounded-xl flex items-center justify-center transition-colors",
                       isSelected
                         ? "bg-purple-500/20 text-purple-400"
-                        : "bg-white/10 text-slate-400"
+                        : "bg-[var(--sidebar-hover-bg)] text-[var(--page-text-secondary)]"
                     )}
                   >
                     {goal.icon}
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-white">{goal.label}</p>
-                    <p className="text-[11px] text-slate-500 mt-1">{goal.description}</p>
+                    <p className="text-sm font-medium" style={{ color: "var(--page-text)" }}>{goal.label}</p>
+                    <p className="text-[11px] mt-1" style={{ color: "var(--page-text-muted)" }}>{goal.description}</p>
                   </div>
 
                   {isSelected && (
@@ -767,19 +770,19 @@ function StepBrandVoice({
       exit="exit"
       transition={{ duration: 0.4, ease: "easeInOut" }}
     >
-      <GlassCard className="!bg-white/[0.03] border-white/[0.06]" padding="lg">
+      <GlassCard padding="lg">
         <div className="space-y-6">
           <div className="text-center space-y-2">
             <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-pink-500/15 border border-pink-500/20 mb-2">
               <FileText className="w-6 h-6 text-pink-400" />
             </div>
-            <h2 className="text-2xl font-bold text-white">Define Your Brand Voice</h2>
-            <p className="text-sm text-slate-400">How should your content sound?</p>
+            <h2 className="text-2xl font-bold" style={{ color: "var(--page-heading)" }}>Define Your Brand Voice</h2>
+            <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>How should your content sound?</p>
           </div>
 
           {/* Tone pills */}
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-3 pl-1">
+            <label className="block text-xs font-medium mb-3 pl-1" style={{ color: "var(--page-text-secondary)" }}>
               Select your brand tones
             </label>
             <div className="flex flex-wrap gap-2">
@@ -792,12 +795,12 @@ function StepBrandVoice({
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => toggleTone(tone)}
-                    className={cn(
-                      "px-4 py-2 rounded-full text-sm font-medium border transition-all duration-200",
+                    className="px-4 py-2 rounded-full text-sm font-medium border transition-all duration-200 cursor-pointer"
+                    style={
                       isSelected
-                        ? "bg-gradient-to-r from-purple-600/20 to-blue-600/20 border-purple-500/40 text-purple-300"
-                        : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white"
-                    )}
+                        ? { background: "rgba(124,58,237,0.14)", borderColor: "rgba(124,58,237,0.30)", color: "var(--page-heading)" }
+                        : { backgroundColor: "var(--sidebar-hover-bg)", borderColor: "var(--surface-border)", color: "var(--page-text-secondary)" }
+                    }
                   >
                     {isSelected && <Check className="w-3.5 h-3.5 inline mr-1.5" />}
                     {tone}
@@ -809,7 +812,7 @@ function StepBrandVoice({
 
           {/* Brand description */}
           <div className="relative">
-            <label className="block text-xs font-medium text-gray-400 mb-1.5 pl-1">
+            <label className="block text-xs font-medium mb-1.5 pl-1" style={{ color: "var(--page-text-secondary)" }}>
               Brand description
             </label>
             <textarea
@@ -817,7 +820,8 @@ function StepBrandVoice({
               onChange={(e) => setBrandDescription(e.target.value)}
               placeholder="Describe your brand's personality and values..."
               rows={3}
-              className="w-full bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none transition-all duration-200 placeholder-gray-500 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 resize-none"
+              className="w-full backdrop-blur-sm rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200 placeholder-gray-500 resize-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)]"
+              style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
             />
           </div>
 
@@ -826,7 +830,8 @@ function StepBrandVoice({
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4 space-y-2"
+              className="rounded-xl p-4 space-y-2"
+              style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
             >
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-400" />
@@ -834,7 +839,7 @@ function StepBrandVoice({
                   Example post - {previewTone} tone
                 </span>
               </div>
-              <p className="text-sm text-slate-300 leading-relaxed italic">
+              <p className="text-sm leading-relaxed italic" style={{ color: "var(--page-text)" }}>
                 "{TONE_EXAMPLES[previewTone]}"
               </p>
             </motion.div>
@@ -910,14 +915,14 @@ function StepStrategy({
       exit="exit"
       transition={{ duration: 0.4, ease: "easeInOut" }}
     >
-      <GlassCard className="!bg-white/[0.03] border-white/[0.06]" padding="lg">
+      <GlassCard padding="lg">
         <div className="space-y-6">
           <div className="text-center space-y-2">
             <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/20 mb-2">
               <Brain className="w-6 h-6 text-cyan-400" />
             </div>
-            <h2 className="text-2xl font-bold text-white">Your AI Marketing Strategy</h2>
-            <p className="text-sm text-slate-400">Powered by advanced AI analysis</p>
+            <h2 className="text-2xl font-bold" style={{ color: "var(--page-heading)" }}>Your AI Marketing Strategy</h2>
+            <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>Powered by advanced AI analysis</p>
           </div>
 
           <AnimatePresence mode="wait">
@@ -936,8 +941,8 @@ function StepStrategy({
                   <Brain className="w-12 h-12 text-purple-400" />
                 </motion.div>
                 <div className="text-center">
-                  <p className="text-white font-medium">Analyzing your business...</p>
-                  <p className="text-sm text-slate-500 mt-1">This will only take a moment</p>
+                  <p className="font-medium" style={{ color: "var(--page-text)" }}>Analyzing your business...</p>
+                  <p className="text-sm mt-1" style={{ color: "var(--page-text-muted)" }}>This will only take a moment</p>
                 </div>
                 <div className="flex gap-1">
                   {[0, 1, 2].map((i) => (
@@ -959,7 +964,7 @@ function StepStrategy({
               >
                 {/* Platform mix */}
                 <div className="space-y-3">
-                  <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
+                  <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--page-text)" }}>
                     <BarChart3 className="w-4 h-4 text-purple-400" />
                     Platform Allocation
                   </h3>
@@ -967,10 +972,10 @@ function StepStrategy({
                     {normalized.map((p) => (
                       <div key={p.name} className="space-y-1">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-400">{p.name}</span>
-                          <span className="text-white font-medium">{p.percentage}%</span>
+                          <span style={{ color: "var(--page-text-secondary)" }}>{p.name}</span>
+                          <span className="font-medium tabular-nums" style={{ color: "var(--page-text)" }}>{p.percentage}%</span>
                         </div>
-                        <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                        <div className="h-2 w-full rounded-full overflow-hidden" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
                           <motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `${p.percentage}%` }}
@@ -985,16 +990,16 @@ function StepStrategy({
                 </div>
 
                 {/* Posting frequency */}
-                <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
-                  <h3 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
+                <div className="rounded-xl p-4" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
+                  <h3 className="text-sm font-medium mb-3 flex items-center gap-2" style={{ color: "var(--page-text)" }}>
                     <Calendar className="w-4 h-4 text-blue-400" />
                     Recommended Posting Frequency
                   </h3>
                   <div className="grid grid-cols-2 gap-2">
                     {normalized.slice(0, 4).map((p) => (
-                      <div key={p.name} className="flex items-center justify-between text-xs bg-white/5 rounded-lg px-3 py-2">
-                        <span className="text-slate-400">{p.name}</span>
-                        <span className="text-white font-medium">
+                      <div key={p.name} className="flex items-center justify-between text-xs rounded-lg px-3 py-2" style={{ backgroundColor: "var(--surface-bg)", border: "1px solid var(--surface-border)" }}>
+                        <span style={{ color: "var(--page-text-secondary)" }}>{p.name}</span>
+                        <span className="font-medium tabular-nums" style={{ color: "var(--page-text)" }}>
                           {p.percentage > 25 ? "5x/week" : p.percentage > 15 ? "3x/week" : "2x/week"}
                         </span>
                       </div>
@@ -1004,18 +1009,19 @@ function StepStrategy({
 
                 {/* Content themes */}
                 <div className="space-y-3">
-                  <h3 className="text-sm font-medium text-slate-300">Top Content Themes</h3>
+                  <h3 className="text-sm font-medium" style={{ color: "var(--page-text)" }}>Top Content Themes</h3>
                   <div className="grid grid-cols-3 gap-2">
                     {themes.map((theme) => (
                       <div
                         key={theme.title}
-                        className="flex flex-col items-center text-center gap-2 p-3 rounded-xl bg-white/5 border border-white/[0.06]"
+                        className="flex flex-col items-center text-center gap-2 p-3 rounded-xl"
+                        style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
                       >
                         <div className="w-9 h-9 rounded-lg bg-purple-500/15 flex items-center justify-center text-purple-400">
                           {theme.icon}
                         </div>
-                        <p className="text-xs font-medium text-white leading-tight">{theme.title}</p>
-                        <p className="text-[10px] text-slate-500 leading-tight">{theme.description}</p>
+                        <p className="text-xs font-medium leading-tight" style={{ color: "var(--page-text)" }}>{theme.title}</p>
+                        <p className="text-[10px] leading-tight" style={{ color: "var(--page-text-muted)" }}>{theme.description}</p>
                       </div>
                     ))}
                   </div>
@@ -1027,7 +1033,7 @@ function StepStrategy({
                     <Zap className="w-4 h-4 text-emerald-400" />
                     <span className="text-sm text-emerald-300 font-medium">AI Confidence Score</span>
                   </div>
-                  <span className="text-lg font-bold text-emerald-400">94%</span>
+                  <span className="text-lg font-bold text-emerald-400 tabular-nums">94%</span>
                 </div>
 
                 {/* AI reasoning */}
@@ -1035,7 +1041,8 @@ function StepStrategy({
                   <button
                     type="button"
                     onClick={() => setShowReasoning(!showReasoning)}
-                    className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors"
+                    className="flex items-center gap-2 text-sm transition-colors cursor-pointer hover:text-[var(--page-text)]"
+                    style={{ color: "var(--page-text-secondary)" }}
                   >
                     {showReasoning ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     AI Reasoning
@@ -1049,7 +1056,7 @@ function StepStrategy({
                         transition={{ duration: 0.3 }}
                         className="overflow-hidden"
                       >
-                        <p className="mt-3 text-xs text-slate-500 leading-relaxed bg-white/[0.02] border border-white/5 rounded-xl p-4">
+                        <p className="mt-3 text-xs leading-relaxed rounded-xl p-4" style={{ color: "var(--page-text-muted)", backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                           Based on your industry profile and target audience, I recommend a
                           content-heavy approach focused on visual platforms. Your audience
                           engagement patterns suggest peak activity during weekday mornings and
@@ -1125,27 +1132,27 @@ function StepCompletion({ direction, connectedPlatforms, selectedGoals, navigate
             You're All Set!
           </span>
         </h1>
-        <p className="text-slate-400 max-w-sm mx-auto">
+        <p className="max-w-sm mx-auto" style={{ color: "var(--page-text-secondary)" }}>
           Your AI marketing engine is configured and ready to create amazing content.
         </p>
       </div>
 
       {/* Summary card */}
-      <GlassCard className="!bg-white/[0.03] border-white/[0.06] text-left" padding="md">
+      <GlassCard className="text-left" padding="md">
         <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-white">Setup Summary</h3>
+          <h3 className="text-sm font-semibold" style={{ color: "var(--page-heading)" }}>Setup Summary</h3>
           <div className="grid grid-cols-3 gap-4">
-            <div className="text-center p-3 rounded-xl bg-white/5">
-              <p className="text-2xl font-bold text-purple-400">{connectedPlatforms.length}</p>
-              <p className="text-[11px] text-slate-500 mt-1">Platforms Connected</p>
+            <div className="text-center p-3 rounded-xl" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
+              <p className="text-2xl font-bold text-purple-400 tabular-nums">{connectedPlatforms.length}</p>
+              <p className="text-[11px] mt-1" style={{ color: "var(--page-text-muted)" }}>Platforms Connected</p>
             </div>
-            <div className="text-center p-3 rounded-xl bg-white/5">
-              <p className="text-2xl font-bold text-blue-400">{selectedGoals.length}</p>
-              <p className="text-[11px] text-slate-500 mt-1">Goals Set</p>
+            <div className="text-center p-3 rounded-xl" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
+              <p className="text-2xl font-bold text-blue-400 tabular-nums">{selectedGoals.length}</p>
+              <p className="text-[11px] mt-1" style={{ color: "var(--page-text-muted)" }}>Goals Set</p>
             </div>
-            <div className="text-center p-3 rounded-xl bg-white/5">
-              <p className="text-2xl font-bold text-emerald-400">1</p>
-              <p className="text-[11px] text-slate-500 mt-1">Strategy Generated</p>
+            <div className="text-center p-3 rounded-xl" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
+              <p className="text-2xl font-bold text-emerald-400 tabular-nums">1</p>
+              <p className="text-[11px] mt-1" style={{ color: "var(--page-text-muted)" }}>Strategy Generated</p>
             </div>
           </div>
         </div>

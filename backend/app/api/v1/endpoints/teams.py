@@ -16,7 +16,7 @@ from app.models.account import Account
 from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
-from app.schemas.team import TeamInvite, TeamMemberResponse, TeamMemberUpdate
+from app.schemas.team import InviteInfoResponse, TeamInvite, TeamMemberResponse, TeamMemberUpdate
 
 router = APIRouter(
     prefix="/accounts/{account_id}/team",
@@ -318,3 +318,34 @@ async def accept_invitation(
     await db.refresh(member)
 
     return TeamMemberResponse.model_validate(member)
+
+
+@router.get("/invite-info", response_model=InviteInfoResponse)
+async def get_invite_info(
+    account_id: uuid.UUID,
+    token: str = Query(..., description="Invitation token"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve invitation details to display on the accept invite preview screen."""
+    result = await db.execute(
+        select(TeamMember, Account)
+        .join(Account, TeamMember.account_id == Account.id)
+        .where(
+            TeamMember.account_id == account_id,
+            TeamMember.invitation_token == token,
+        )
+    )
+    row = result.first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invalid or expired invitation link",
+        )
+    member, account = row
+    return InviteInfoResponse(
+        account_id=account.id,
+        workspace_name=account.name,
+        invitation_email=member.invitation_email,
+        role=member.role.value if hasattr(member.role, "value") else str(member.role),
+        invitation_status=member.invitation_status.value if hasattr(member.invitation_status, "value") else str(member.invitation_status),
+    )

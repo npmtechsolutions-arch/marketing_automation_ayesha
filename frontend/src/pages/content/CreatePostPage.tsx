@@ -32,6 +32,7 @@ import {
   ChevronDown,
   Play,
   Send,
+  Megaphone,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -144,7 +145,7 @@ const stepVariants = {
 // ────────────────────────────────────────────────────────
 function ShimmerBlock({ className }: { className?: string }) {
   return (
-    <div className={cn("relative overflow-hidden rounded-lg bg-white/5", className)}>
+    <div className={cn("relative overflow-hidden rounded-lg", className)} style={{ backgroundColor: "var(--shimmer-bg)" }}>
       <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
     </div>
   );
@@ -178,6 +179,9 @@ export default function CreatePostPage() {
       if (Array.isArray(p.media_urls) && p.media_urls.length > 0) {
         setUploadedImages(p.media_urls);
       }
+
+      // Preselect the campaign this post belongs to
+      if (p.campaign_id) setSelectedCampaignId(p.campaign_id);
       
       // Load other platform post types
       if (p.instagram_post_type) setIgPostType(p.instagram_post_type);
@@ -249,6 +253,8 @@ export default function CreatePostPage() {
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [businesses, setBusinesses] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
 
   useEffect(() => {
     const load = async () => {
@@ -290,6 +296,16 @@ export default function CreatePostPage() {
         setBusinesses(items);
       } catch (err) {
         console.error("Failed to load businesses:", err);
+      }
+
+      try {
+        const res: any = await api.get(`/accounts/${activeAccountId}/campaigns/`);
+        const payload = res.data || res;
+        const items = payload.items || payload.data?.items || [];
+        // Only campaigns you can still add posts to (draft/active/paused).
+        setCampaigns(items.filter((c: any) => ["draft", "active", "paused"].includes(c.status)));
+      } catch (err) {
+        console.error("Failed to load campaigns:", err);
       }
     };
     load();
@@ -704,6 +720,7 @@ export default function CreatePostPage() {
       const payload: any = {
         title: title || undefined,
         content: content,
+        campaign_id: selectedCampaignId || undefined,
         hashtags: hashtags.length > 0 ? hashtags : undefined,
         target_account_ids: selectedAccounts,
         media_urls: allImages.length > 0 ? allImages : undefined,
@@ -776,6 +793,7 @@ export default function CreatePostPage() {
     musicEndOffset,
     videoPreviewUrl,
     editingPostId,
+    selectedCampaignId,
   ]);
 
   const handleQuickPublish = useCallback(async () => {
@@ -794,6 +812,7 @@ export default function CreatePostPage() {
       const payload: any = {
         title: title || undefined,
         content: content,
+        campaign_id: selectedCampaignId || undefined,
         hashtags: hashtags.length > 0 ? hashtags : undefined,
         target_account_ids: selectedAccounts,
         media_urls: allImages.length > 0 ? allImages : undefined,
@@ -847,6 +866,7 @@ export default function CreatePostPage() {
     musicEndOffset,
     videoPreviewUrl,
     editingPostId,
+    selectedCampaignId,
   ]);
 
   // Group accounts by platform
@@ -897,15 +917,15 @@ export default function CreatePostPage() {
         {/* ── Page Header ── */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">Create Post</h1>
-            <p className="text-sm text-gray-400 mt-1">
+            <h1 className="text-2xl font-bold" style={{ color: "var(--page-heading)" }}>Create Post</h1>
+            <p className="text-sm mt-1" style={{ color: "var(--page-text-secondary)" }}>
               Craft, preview, and publish content across all your accounts
             </p>
           </div>
         </div>
 
         {/* ── Progress Bar ── */}
-        <GlassCard padding="sm" className="!bg-white/[0.03]">
+        <GlassCard padding="sm" className="!bg-[var(--sidebar-hover-bg)]">
           <div className="flex items-center justify-between px-2">
             {STEPS.map((s, i) => {
               const isActive = currentStep === s.step;
@@ -991,18 +1011,19 @@ export default function CreatePostPage() {
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="Post title - optional"
-                    className="w-full bg-transparent text-white text-lg font-medium placeholder-gray-500 outline-none"
+                    className="w-full bg-transparent text-lg font-medium placeholder-gray-500 outline-none"
+                    style={{ color: "var(--page-text)" }}
                   />
                 </GlassCard>
 
                 {/* AI Content Generator */}
                 <div className="relative rounded-2xl p-[1px] bg-gradient-to-r from-purple-600/60 via-blue-500/40 to-purple-600/60">
-                  <div className="rounded-2xl bg-slate-950/90 backdrop-blur-xl p-5 space-y-4">
+                  <div className="rounded-2xl backdrop-blur-xl p-5 space-y-4" style={{ backgroundColor: "var(--surface-bg)" }}>
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
                         <Sparkles className="w-4 h-4 text-white" />
                       </div>
-                      <h3 className="text-sm font-semibold text-white">
+                      <h3 className="text-sm font-semibold" style={{ color: "var(--page-heading)" }}>
                         Generate with AI
                       </h3>
                       <Badge variant="info" size="sm">Beta</Badge>
@@ -1013,23 +1034,24 @@ export default function CreatePostPage() {
                       onChange={(e) => setAiPrompt(e.target.value)}
                       placeholder="Describe what you want to post about..."
                       rows={3}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 outline-none resize-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                      className="w-full rounded-xl px-4 py-3 text-sm placeholder-gray-500 outline-none resize-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)] transition-all"
+                      style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                     />
 
                     {/* Tone pills */}
                     <div>
-                      <p className="text-xs text-gray-400 mb-2">Tone</p>
+                      <p className="text-xs mb-2" style={{ color: "var(--page-text-secondary)" }}>Tone</p>
                       <div className="flex flex-wrap gap-2">
                         {TONES.map((tone) => (
                           <button
                             key={tone.key}
                             onClick={() => setSelectedTone(tone.key)}
-                            className={cn(
-                              "px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border",
+                            className="px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 cursor-pointer"
+                            style={
                               selectedTone === tone.key
-                                ? "bg-purple-500/20 border-purple-500/40 text-purple-300 shadow-sm shadow-purple-500/10"
-                                : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:text-gray-300"
-                            )}
+                                ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)", color: "var(--page-heading)" }
+                                : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-secondary)" }
+                            }
                           >
                             {tone.label}
                           </button>
@@ -1062,14 +1084,15 @@ export default function CreatePostPage() {
                 <GlassCard>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-gray-300">
+                      <label className="text-sm font-medium" style={{ color: "var(--page-text)" }}>
                         Content
                       </label>
                       <span
                         className={cn(
-                          "text-xs",
-                          content.length > 2200 ? "text-red-400" : "text-gray-500"
+                          "text-xs tabular-nums",
+                          content.length > 2200 && "text-red-400"
                         )}
+                        style={content.length > 2200 ? undefined : { color: "var(--page-text-muted)" }}
                       >
                         {content.length} / 2,200
                       </span>
@@ -1078,7 +1101,8 @@ export default function CreatePostPage() {
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
                       placeholder="Write your post content here..."
-                      className="w-full min-h-[250px] bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 outline-none resize-y focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                      className="w-full min-h-[250px] rounded-xl px-4 py-3 text-sm placeholder-gray-500 outline-none resize-y focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)] transition-all"
+                      style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                     />
                   </div>
                 </GlassCard>
@@ -1088,7 +1112,7 @@ export default function CreatePostPage() {
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Hash className="w-4 h-4 text-purple-400" />
-                      <h3 className="text-sm font-medium text-gray-300">
+                      <h3 className="text-sm font-medium" style={{ color: "var(--page-text)" }}>
                         Hashtags
                       </h3>
                     </div>
@@ -1100,7 +1124,8 @@ export default function CreatePostPage() {
                         onChange={(e) => setHashtagInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && addHashtag()}
                         placeholder="Add a hashtag..."
-                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 outline-none focus:border-purple-500/50 transition-all"
+                        className="flex-1 rounded-xl px-4 py-2.5 text-sm placeholder-gray-500 outline-none focus:border-[rgba(124,58,237,0.50)] transition-all"
+                        style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                       />
                       <Button size="md" variant="secondary" onClick={addHashtag}>
                         <Plus className="w-4 h-4" />
@@ -1144,12 +1169,12 @@ export default function CreatePostPage() {
               <div className="lg:col-span-2 space-y-5">
                 {/* ── Instagram Post Type Selector ── */}
                 {hasSelectedInstagram && (
-                  <div className="rounded-2xl p-4 border border-white/10 bg-white/[0.03]">
+                  <div className="rounded-2xl p-4" style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--sidebar-hover-bg)" }}>
                     <div className="flex items-center gap-2 mb-3">
                       <PlatformIcon platform="instagram" size="sm" showLabel />
-                      <span className="text-xs text-gray-500">• Format</span>
+                      <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>• Format</span>
                     </div>
-                    <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
+                    <div className="flex gap-1.5 p-1 rounded-xl" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                       <button
                         onClick={() => setIgPostType("post")}
                         className={cn(
@@ -1184,12 +1209,12 @@ export default function CreatePostPage() {
                 )}
 
                 {hasSelectedFacebook && (
-                  <div className="rounded-2xl p-4 border border-white/10 bg-white/[0.03]">
+                  <div className="rounded-2xl p-4" style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--sidebar-hover-bg)" }}>
                     <div className="flex items-center gap-2 mb-3">
                       <PlatformIcon platform="facebook" size="sm" showLabel />
-                      <span className="text-xs text-gray-500">• Format</span>
+                      <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>• Format</span>
                     </div>
-                    <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
+                    <div className="flex gap-1.5 p-1 rounded-xl" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                       <button
                         onClick={() => setFbPostType("post")}
                         className={cn(
@@ -1224,12 +1249,12 @@ export default function CreatePostPage() {
                 )}
 
                 {hasSelectedYouTube && (
-                  <div className="rounded-2xl p-4 border border-white/10 bg-white/[0.03]">
+                  <div className="rounded-2xl p-4" style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--sidebar-hover-bg)" }}>
                     <div className="flex items-center gap-2 mb-3">
                       <PlatformIcon platform="youtube" size="sm" showLabel />
-                      <span className="text-xs text-gray-500">• Format</span>
+                      <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>• Format</span>
                     </div>
-                    <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
+                    <div className="flex gap-1.5 p-1 rounded-xl" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                       <button
                         onClick={() => setYtPostType("video")}
                         className={cn(
@@ -1267,12 +1292,12 @@ export default function CreatePostPage() {
                 )}
 
                 {hasSelectedLinkedIn && (
-                  <div className="rounded-2xl p-4 border border-white/10 bg-white/[0.03]">
+                  <div className="rounded-2xl p-4" style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--sidebar-hover-bg)" }}>
                     <div className="flex items-center gap-2 mb-3">
                       <PlatformIcon platform="linkedin" size="sm" showLabel />
-                      <span className="text-xs text-gray-500">• Format</span>
+                      <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>• Format</span>
                     </div>
-                    <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
+                    <div className="flex gap-1.5 p-1 rounded-xl" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                       <button
                         onClick={() => setLiPostType("post")}
                         className={cn(
@@ -1304,12 +1329,12 @@ export default function CreatePostPage() {
                 )}
 
                 {hasSelectedTwitter && (
-                  <div className="rounded-2xl p-4 border border-white/10 bg-white/[0.03]">
+                  <div className="rounded-2xl p-4" style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--sidebar-hover-bg)" }}>
                     <div className="flex items-center gap-2 mb-3">
                       <PlatformIcon platform="twitter" size="sm" showLabel />
-                      <span className="text-xs text-gray-500">• Format</span>
+                      <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>• Format</span>
                     </div>
-                    <div className="flex gap-1.5 p-1 rounded-xl bg-black/20 border border-white/10">
+                    <div className="flex gap-1.5 p-1 rounded-xl" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                       <button
                         onClick={() => setTwPostType("post")}
                         className={cn(
@@ -1343,7 +1368,7 @@ export default function CreatePostPage() {
                 {/* Image & Media Section */}
                 <GlassCard className="!p-0 overflow-hidden">
                   {/* Tab bar */}
-                  <div className="flex border-b border-white/10">
+                  <div className="flex" style={{ borderBottom: "1px solid var(--surface-border)" }}>
                     {(
                       [
                         { key: "upload" as MediaTab, label: "Upload", icon: <Upload className="w-3.5 h-3.5" /> },
@@ -1379,12 +1404,12 @@ export default function CreatePostPage() {
                               className="w-full border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center gap-3 hover:border-pink-500/30 hover:bg-pink-500/5 transition-all duration-200 group"
                               type="button"
                             >
-                              <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-pink-500/10 transition-colors">
+                              <div className="w-12 h-12 rounded-xl flex items-center justify-center group-hover:bg-pink-500/10 transition-colors" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
                                 <Video className="w-5 h-5 text-gray-400 group-hover:text-pink-400 transition-colors" />
                               </div>
                               <div className="text-center">
-                                <p className="text-sm text-gray-300">Upload Reel video</p>
-                                <p className="text-xs text-gray-500 mt-1">MP4, MOV up to 500 MB · 9:16 recommended</p>
+                                <p className="text-sm" style={{ color: "var(--page-text)" }}>Upload Reel video</p>
+                                <p className="text-xs mt-1" style={{ color: "var(--page-text-muted)" }}>MP4, MOV up to 500 MB · 9:16 recommended</p>
                               </div>
                             </button>
                             <input
@@ -1422,14 +1447,14 @@ export default function CreatePostPage() {
                               className="w-full border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center gap-3 hover:border-purple-500/30 hover:bg-purple-500/5 transition-all duration-200 group"
                               type="button"
                             >
-                              <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-purple-500/10 transition-colors">
+                              <div className="w-12 h-12 rounded-xl flex items-center justify-center group-hover:bg-purple-500/10 transition-colors" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
                                 <Upload className="w-5 h-5 text-gray-400 group-hover:text-purple-400 transition-colors" />
                               </div>
                               <div className="text-center">
-                                <p className="text-sm text-gray-300">
+                                <p className="text-sm" style={{ color: "var(--page-text)" }}>
                                   Drag & drop or click to upload
                                 </p>
-                                <p className="text-xs text-gray-500 mt-1">
+                                <p className="text-xs mt-1" style={{ color: "var(--page-text-muted)" }}>
                                   PNG, JPG, GIF up to 10MB
                                 </p>
                               </div>
@@ -1484,23 +1509,24 @@ export default function CreatePostPage() {
                           onChange={(e) => setAiImagePrompt(e.target.value)}
                           placeholder="Describe the image you want to generate..."
                           rows={3}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 outline-none resize-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                          className="w-full rounded-xl px-4 py-3 text-sm placeholder-gray-500 outline-none resize-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)] transition-all"
+                          style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                         />
 
                         {/* Style selector */}
                         <div>
-                          <p className="text-xs text-gray-400 mb-2">Style</p>
+                          <p className="text-xs mb-2" style={{ color: "var(--page-text-secondary)" }}>Style</p>
                           <div className="flex flex-wrap gap-1.5">
                             {IMAGE_STYLES.map((s) => (
                               <button
                                 key={s.key}
                                 onClick={() => setImageStyle(s.key)}
-                                className={cn(
-                                  "px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border",
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer"
+                                style={
                                   imageStyle === s.key
-                                    ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
-                                    : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"
-                                )}
+                                    ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)", color: "var(--page-heading)" }
+                                    : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-secondary)" }
+                                }
                               >
                                 {s.label}
                               </button>
@@ -1510,18 +1536,18 @@ export default function CreatePostPage() {
 
                         {/* Size selector */}
                         <div>
-                          <p className="text-xs text-gray-400 mb-2">Size</p>
+                          <p className="text-xs mb-2" style={{ color: "var(--page-text-secondary)" }}>Size</p>
                           <div className="flex gap-2">
                             {IMAGE_SIZES.map((s) => (
                               <button
                                 key={s.key}
                                 onClick={() => setImageSize(s.key)}
-                                className={cn(
-                                  "flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-all border text-center",
+                                className="flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-all text-center cursor-pointer"
+                                style={
                                   imageSize === s.key
-                                    ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
-                                    : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"
-                                )}
+                                    ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)", color: "var(--page-heading)" }
+                                    : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-secondary)" }
+                                }
                               >
                                 {s.label}
                               </button>
@@ -1563,10 +1589,10 @@ export default function CreatePostPage() {
                                   />
                                 ) : (
                                   <>
-                                    <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center mb-2">
+                                    <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-2" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
                                       <ImageIcon className="w-5 h-5 text-gray-500" />
                                     </div>
-                                    <span className="text-[10px] text-gray-500">
+                                    <span className="text-[10px]" style={{ color: "var(--page-text-muted)" }}>
                                       Generated {i + 1}
                                     </span>
                                   </>
@@ -1597,24 +1623,24 @@ export default function CreatePostPage() {
                     {/* Digital Photography Tab */}
                     {mediaTab === "photography" && (
                       <div className="space-y-4">
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs" style={{ color: "var(--page-text-secondary)" }}>
                           Create digital photography from your content
                         </p>
 
                         {/* Template selector */}
                         <div>
-                          <p className="text-xs text-gray-400 mb-2">Template</p>
+                          <p className="text-xs mb-2" style={{ color: "var(--page-text-secondary)" }}>Template</p>
                           <div className="grid grid-cols-2 gap-1.5">
                             {PHOTO_TEMPLATES.map((t) => (
                               <button
                                 key={t.key}
                                 onClick={() => setPhotoTemplate(t.key)}
-                                className={cn(
-                                  "px-2.5 py-2 rounded-lg text-[11px] font-medium transition-all border text-center",
+                                className="px-2.5 py-2 rounded-lg text-[11px] font-medium transition-all text-center cursor-pointer"
+                                style={
                                   photoTemplate === t.key
-                                    ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
-                                    : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"
-                                )}
+                                    ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)", color: "var(--page-heading)" }
+                                    : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-secondary)" }
+                                }
                               >
                                 {t.label}
                               </button>
@@ -1626,10 +1652,10 @@ export default function CreatePostPage() {
                         <div className="space-y-3">
                           <div>
                             <div className="flex items-center justify-between mb-1">
-                              <span className="flex items-center gap-1.5 text-xs text-gray-400">
+                              <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--page-text-secondary)" }}>
                                 <SunMedium className="w-3 h-3" /> Brightness
                               </span>
-                              <span className="text-[10px] text-gray-500">{brightness}%</span>
+                              <span className="text-[10px] tabular-nums" style={{ color: "var(--page-text-muted)" }}>{brightness}%</span>
                             </div>
                             <input
                               type="range"
@@ -1642,10 +1668,10 @@ export default function CreatePostPage() {
                           </div>
                           <div>
                             <div className="flex items-center justify-between mb-1">
-                              <span className="flex items-center gap-1.5 text-xs text-gray-400">
+                              <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--page-text-secondary)" }}>
                                 <Contrast className="w-3 h-3" /> Contrast
                               </span>
-                              <span className="text-[10px] text-gray-500">{contrast}%</span>
+                              <span className="text-[10px] tabular-nums" style={{ color: "var(--page-text-muted)" }}>{contrast}%</span>
                             </div>
                             <input
                               type="range"
@@ -1658,10 +1684,10 @@ export default function CreatePostPage() {
                           </div>
                           <div>
                             <div className="flex items-center justify-between mb-1">
-                              <span className="flex items-center gap-1.5 text-xs text-gray-400">
+                              <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--page-text-secondary)" }}>
                                 <Palette className="w-3 h-3" /> Saturation
                               </span>
-                              <span className="text-[10px] text-gray-500">{saturation}%</span>
+                              <span className="text-[10px] tabular-nums" style={{ color: "var(--page-text-muted)" }}>{saturation}%</span>
                             </div>
                             <input
                               type="range"
@@ -1676,7 +1702,7 @@ export default function CreatePostPage() {
 
                         {/* Color overlay */}
                         <div>
-                          <p className="text-xs text-gray-400 mb-2">Color Overlay</p>
+                          <p className="text-xs mb-2" style={{ color: "var(--page-text-secondary)" }}>Color Overlay</p>
                           <div className="flex gap-2">
                             {[
                               "bg-transparent border border-white/20",
@@ -1706,7 +1732,7 @@ export default function CreatePostPage() {
                         >
                           <div className="text-center">
                             <Camera className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs" style={{ color: "var(--page-text-muted)" }}>
                               Photography Preview
                             </p>
                           </div>
@@ -1732,7 +1758,7 @@ export default function CreatePostPage() {
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#7c3aed40,#ec489940)" }}>
                           <Music2 className="w-3.5 h-3.5 text-purple-300" />
                         </div>
-                        <span className="text-sm font-semibold text-gray-300">Add Music</span>
+                        <span className="text-sm font-semibold" style={{ color: "var(--page-text)" }}>Add Music</span>
                         {igMusicTrack && (
                           <span className="px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/25 text-purple-300 text-[11px] font-medium truncate max-w-[130px]">
                             ♫ {igMusicTrack.split(" – ")[0]}
@@ -1757,7 +1783,7 @@ export default function CreatePostPage() {
                               <div className="rounded-xl bg-purple-500/10 border border-purple-500/20 p-3.5 space-y-3">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-3">
-                                    <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-white/5 flex-shrink-0 group">
+                                    <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 group" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
                                       {selectedTrack.artworkUrl100 ? (
                                         <img src={selectedTrack.artworkUrl100} alt="Cover" className="w-full h-full object-cover" />
                                       ) : (
@@ -1937,7 +1963,8 @@ export default function CreatePostPage() {
                                 value={igMusicSearch}
                                 onChange={(e) => setIgMusicSearch(e.target.value)}
                                 placeholder="Search real songs on Instagram..."
-                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-sm text-white placeholder-gray-500 outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                                className="w-full rounded-xl pl-4 pr-10 py-2.5 text-sm placeholder-gray-500 outline-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)] transition-all"
+                                style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                               />
                               {searchLoading && (
                                 <RefreshCw className="absolute right-3.5 top-3.5 w-3.5 h-3.5 text-purple-400 animate-spin" />
@@ -1948,7 +1975,8 @@ export default function CreatePostPage() {
                             <button
                               onClick={() => audioInputRef.current?.click()}
                               type="button"
-                              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-white/15 text-xs font-medium text-gray-300 hover:border-purple-500/40 hover:bg-purple-500/5 transition-all"
+                              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed text-xs font-medium hover:border-purple-500/40 hover:bg-purple-500/5 transition-all cursor-pointer"
+                              style={{ borderColor: "var(--surface-border)", color: "var(--page-text)" }}
                             >
                               <Upload className="w-3.5 h-3.5" />
                               Upload audio from device
@@ -1970,16 +1998,16 @@ export default function CreatePostPage() {
                                 return (
                                   <div
                                     key={trackId}
-                                    className={cn(
-                                      "w-full flex items-center justify-between p-2 rounded-xl transition-all duration-150 border text-left",
+                                    className="w-full flex items-center justify-between p-2 rounded-xl transition-all duration-150 text-left"
+                                    style={
                                       isSelected
-                                        ? "bg-purple-500/15 border-purple-500/30"
-                                        : "bg-white/[0.02] border-white/5 hover:bg-white/5 hover:border-white/10"
-                                    )}
+                                        ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)" }
+                                        : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }
+                                    }
                                   >
                                     <div className="flex items-center gap-3 min-w-0 flex-1">
                                       {/* Cover art with Play/Pause overlay */}
-                                      <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-white/5 flex-shrink-0 group">
+                                      <div className="relative w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 group" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
                                         {track.artworkUrl100 ? (
                                           <img src={track.artworkUrl100} alt="Art" className="w-full h-full object-cover" />
                                         ) : (
@@ -2002,8 +2030,8 @@ export default function CreatePostPage() {
                                       </div>
 
                                       <div className="min-w-0 flex-1">
-                                        <p className="text-xs font-semibold truncate text-white">{track.trackName}</p>
-                                        <p className="text-[10px] text-gray-500 truncate">{track.artistName}</p>
+                                        <p className="text-xs font-semibold truncate" style={{ color: "var(--page-text)" }}>{track.trackName}</p>
+                                        <p className="text-[10px] truncate" style={{ color: "var(--page-text-muted)" }}>{track.artistName}</p>
                                       </div>
                                     </div>
 
@@ -2032,12 +2060,12 @@ export default function CreatePostPage() {
                               })}
 
                               {!searchLoading && searchResults.length === 0 && (
-                                <p className="text-[11px] text-gray-500 text-center py-4">
+                                <p className="text-[11px] text-center py-4" style={{ color: "var(--page-text-muted)" }}>
                                   No songs found. Type above to search.
                                 </p>
                               )}
                             </div>
-                            <p className="text-[10px] text-gray-600 text-center pt-1">
+                            <p className="text-[10px] text-center pt-1" style={{ color: "var(--page-text-muted)" }}>
                               Streamed songs preview 30s &middot; Upload a file to play the full song &middot; Scrub to pick your position, then Set start/end
                             </p>
                           </div>
@@ -2092,10 +2120,10 @@ export default function CreatePostPage() {
               className="space-y-5"
             >
               <div className="text-center mb-2">
-                <h2 className="text-xl font-bold text-white">
+                <h2 className="text-xl font-bold" style={{ color: "var(--page-heading)" }}>
                   Where should this post go?
                 </h2>
-                <p className="text-sm text-gray-400 mt-1">
+                <p className="text-sm mt-1" style={{ color: "var(--page-text-secondary)" }}>
                   Select the accounts you want to publish to
                 </p>
               </div>
@@ -2103,13 +2131,13 @@ export default function CreatePostPage() {
               {accountsLoading ? (
                 <div className="flex items-center justify-center py-12 gap-3">
                   <RefreshCw className="w-5 h-5 text-purple-400 animate-spin" />
-                  <span className="text-slate-400 text-sm">Loading your connected accounts…</span>
+                  <span className="text-sm" style={{ color: "var(--page-text-secondary)" }}>Loading your connected accounts…</span>
                 </div>
               ) : accounts.length === 0 ? (
                 <div className="text-center py-12">
                   <Users className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                  <p className="text-slate-400 text-sm mb-1">No social accounts connected yet</p>
-                  <p className="text-xs text-slate-500">Go to <strong className="text-purple-400">Social Accounts</strong> to connect your profiles first.</p>
+                  <p className="text-sm mb-1" style={{ color: "var(--page-text-secondary)" }}>No social accounts connected yet</p>
+                  <p className="text-xs" style={{ color: "var(--page-text-muted)" }}>Go to <strong className="text-purple-400">Social Accounts</strong> to connect your profiles first.</p>
                 </div>
               ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -2135,12 +2163,12 @@ export default function CreatePostPage() {
                               <button
                                 key={account.id}
                                 onClick={() => toggleAccount(account.id)}
-                                className={cn(
-                                  "w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 border text-left",
+                                className="w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 text-left cursor-pointer"
+                                style={
                                   isSelected
-                                    ? "bg-purple-500/10 border-purple-500/30 shadow-sm shadow-purple-500/5"
-                                    : "bg-white/[0.02] border-white/5 hover:bg-white/5 hover:border-white/10"
-                                )}
+                                    ? { background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.30)" }
+                                    : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }
+                                }
                               >
                                 {/* Avatar */}
                                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500/30 to-blue-500/30 flex items-center justify-center flex-shrink-0 text-xs font-bold text-white/60">
@@ -2149,7 +2177,7 @@ export default function CreatePostPage() {
 
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-sm font-medium text-white truncate">
+                                    <span className="text-sm font-medium truncate" style={{ color: "var(--page-text)" }}>
                                       {account.name}
                                     </span>
                                     {account.verified && (
@@ -2157,10 +2185,10 @@ export default function CreatePostPage() {
                                     )}
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-500 truncate">
+                                    <span className="text-xs truncate" style={{ color: "var(--page-text-muted)" }}>
                                       {account.handle}
                                     </span>
-                                    <span className="text-[10px] text-gray-600">
+                                    <span className="text-[10px] tabular-nums" style={{ color: "var(--page-text-muted)" }}>
                                       {formatFollowers(account.followers)} followers
                                     </span>
                                   </div>
@@ -2192,20 +2220,20 @@ export default function CreatePostPage() {
               <GlassCard
                 padding="sm"
                 glow={selectedAccounts.length > 0}
-                className="!bg-white/[0.03]"
+                className="!bg-[var(--sidebar-hover-bg)]"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-purple-400" />
-                    <span className="text-sm text-gray-300">
+                    <span className="text-sm" style={{ color: "var(--page-text)" }}>
                       {selectedAccounts.length > 0 ? (
                         <>
-                          <span className="font-semibold text-white">
+                          <span className="font-semibold tabular-nums" style={{ color: "var(--page-heading)" }}>
                             {selectedAccounts.length}
                           </span>{" "}
                           account{selectedAccounts.length !== 1 && "s"} selected
                           across{" "}
-                          <span className="font-semibold text-white">
+                          <span className="font-semibold tabular-nums" style={{ color: "var(--page-heading)" }}>
                             {selectedPlatformCount}
                           </span>{" "}
                           platform{selectedPlatformCount !== 1 && "s"}
@@ -2249,8 +2277,8 @@ export default function CreatePostPage() {
               className="space-y-5"
             >
               {/* Device tab bar */}
-              <GlassCard padding="sm" className="!bg-white/[0.03]">
-                <div className="flex items-center gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
+              <GlassCard padding="sm" className="!bg-[var(--sidebar-hover-bg)]">
+                <div className="flex items-center gap-1 p-1 rounded-xl" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                   {(
                     [
                       { key: "mobile" as DeviceType, label: "Mobile", icon: <Smartphone className="w-4 h-4" /> },
@@ -2311,10 +2339,10 @@ export default function CreatePostPage() {
               {/* Satisfied section */}
               <GlassCard>
                 <div className="text-center space-y-4">
-                  <h3 className="text-lg font-semibold text-white">
+                  <h3 className="text-lg font-semibold" style={{ color: "var(--page-heading)" }}>
                     Satisfied with the preview?
                   </h3>
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>
                     You can go back to edit or regenerate content, or proceed to publish.
                   </p>
                   <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -2361,16 +2389,16 @@ export default function CreatePostPage() {
             >
               {/* Summary card */}
               <GlassCard>
-                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+                <h3 className="text-sm font-semibold uppercase tracking-wider mb-4" style={{ color: "var(--page-text-secondary)" }}>
                   Summary
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Content preview */}
                   <div className="md:col-span-2 space-y-3">
                     {title && (
-                      <p className="text-base font-semibold text-white">{title}</p>
+                      <p className="text-base font-semibold" style={{ color: "var(--page-heading)" }}>{title}</p>
                     )}
-                    <p className="text-sm text-gray-300 whitespace-pre-wrap line-clamp-4">
+                    <p className="text-sm whitespace-pre-wrap line-clamp-4" style={{ color: "var(--page-text)" }}>
                       {content}
                     </p>
                     {hashtags.length > 0 && (
@@ -2400,7 +2428,7 @@ export default function CreatePostPage() {
                           </div>
                         ))}
                         {allImages.length > 4 && (
-                          <div className="w-14 h-14 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-xs text-gray-400 font-medium">
+                          <div className="w-14 h-14 rounded-lg flex items-center justify-center text-xs font-medium tabular-nums" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-secondary)" }}>
                             +{allImages.length - 4}
                           </div>
                         )}
@@ -2429,7 +2457,7 @@ export default function CreatePostPage() {
 
                   {/* Target accounts */}
                   <div>
-                    <p className="text-xs text-gray-400 mb-2">Publishing to</p>
+                    <p className="text-xs mb-2" style={{ color: "var(--page-text-secondary)" }}>Publishing to</p>
                     <div className="space-y-1.5">
                       {accounts.filter((a) =>
                         selectedAccounts.includes(a.id)
@@ -2439,7 +2467,7 @@ export default function CreatePostPage() {
                           className="flex items-center gap-2 text-xs"
                         >
                           <PlatformIcon platform={account.platform} size="sm" />
-                          <span className="text-gray-300 truncate">
+                          <span className="truncate" style={{ color: "var(--page-text)" }}>
                             {account.name}
                           </span>
                         </div>
@@ -2449,17 +2477,44 @@ export default function CreatePostPage() {
                 </div>
               </GlassCard>
 
+              {/* Campaign (optional) */}
+              {campaigns.length > 0 && (
+                <div>
+                  <label className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider" style={{ color: "var(--page-text-muted)" }}>
+                    <Megaphone className="h-3.5 w-3.5" /> Campaign (optional)
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedCampaignId}
+                      onChange={(e) => setSelectedCampaignId(e.target.value)}
+                      className="w-full appearance-none rounded-xl px-4 py-2.5 pr-10 text-sm outline-none cursor-pointer focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)]"
+                      style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
+                    >
+                      <option value="">No campaign</option>
+                      {campaigns.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--page-text-muted)" }} />
+                  </div>
+                  <p className="mt-1.5 text-xs" style={{ color: "var(--page-text-muted)" }}>
+                    Add this post to a campaign to track its combined performance.
+                  </p>
+                </div>
+              )}
+
               {/* Post options */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Post Now */}
                 <button
                   onClick={() => setPostMode("now")}
                   className={cn(
-                    "text-left rounded-2xl p-6 transition-all duration-300 border-2 group",
+                    "text-left rounded-2xl p-6 transition-all duration-300 border-2 group cursor-pointer",
                     postMode === "now"
                       ? "bg-gradient-to-br from-purple-600/10 to-blue-600/10 border-purple-500/40 shadow-lg shadow-purple-500/10"
-                      : "bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
+                      : "hover:border-white/20"
                   )}
+                  style={postMode === "now" ? undefined : { backgroundColor: "var(--sidebar-hover-bg)", borderColor: "var(--surface-border)" }}
                 >
                   <div className="flex items-start gap-4">
                     <div
@@ -2486,7 +2541,7 @@ export default function CreatePostPage() {
                       >
                         Post Now
                       </h3>
-                      <p className="text-sm text-gray-400 mt-1">
+                      <p className="text-sm mt-1" style={{ color: "var(--page-text-secondary)" }}>
                         Publish to {selectedAccounts.length} account
                         {selectedAccounts.length !== 1 && "s"} immediately
                       </p>
@@ -2509,11 +2564,12 @@ export default function CreatePostPage() {
                 <button
                   onClick={() => setPostMode("schedule")}
                   className={cn(
-                    "text-left rounded-2xl p-6 transition-all duration-300 border-2 group",
+                    "text-left rounded-2xl p-6 transition-all duration-300 border-2 group cursor-pointer",
                     postMode === "schedule"
                       ? "bg-gradient-to-br from-purple-600/10 to-blue-600/10 border-purple-500/40 shadow-lg shadow-purple-500/10"
-                      : "bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
+                      : "hover:border-white/20"
                   )}
+                  style={postMode === "schedule" ? undefined : { backgroundColor: "var(--sidebar-hover-bg)", borderColor: "var(--surface-border)" }}
                 >
                   <div className="flex items-start gap-4">
                     <div
@@ -2540,7 +2596,7 @@ export default function CreatePostPage() {
                       >
                         Schedule
                       </h3>
-                      <p className="text-sm text-gray-400 mt-1">
+                      <p className="text-sm mt-1" style={{ color: "var(--page-text-secondary)" }}>
                         Schedule for later
                       </p>
                     </div>
@@ -2554,25 +2610,27 @@ export default function CreatePostPage() {
                     >
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[10px] text-gray-400 mb-1">
+                          <label className="block text-[10px] mb-1" style={{ color: "var(--page-text-secondary)" }}>
                             Date
                           </label>
                           <input
                             type="date"
                             value={scheduleDate}
                             onChange={(e) => setScheduleDate(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500/50 transition-all [color-scheme:dark]"
+                            className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgba(124,58,237,0.50)] transition-all"
+                            style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] text-gray-400 mb-1">
+                          <label className="block text-[10px] mb-1" style={{ color: "var(--page-text-secondary)" }}>
                             Time
                           </label>
                           <input
                             type="time"
                             value={scheduleTime}
                             onChange={(e) => setScheduleTime(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500/50 transition-all [color-scheme:dark]"
+                            className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgba(124,58,237,0.50)] transition-all"
+                            style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                           />
                         </div>
                       </div>

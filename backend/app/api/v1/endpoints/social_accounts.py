@@ -97,7 +97,22 @@ async def proxy_image(
         if parsed.scheme not in ["http", "https"]:
             return Response(content=placeholder_svg.encode("utf-8"), media_type="image/svg+xml")
             
-        allowed_domains = ["fbcdn.net", "cdninstagram.com", "instagram.com", "licdn.com", "twimg.com", "googleusercontent.com"]
+        allowed_domains = [
+            "fbcdn.net",
+            "cdninstagram.com",
+            "instagram.com",
+            "facebook.com",
+            "licdn.com",
+            "linkedin.com",
+            "twimg.com",
+            "twitter.com",
+            "x.com",
+            "googleusercontent.com",
+            "ggpht.com",
+            "ytimg.com",
+            "youtube.com",
+            "images.unsplash.com",
+        ]
         is_allowed = any(hostname == domain or hostname.endswith("." + domain) for domain in allowed_domains)
         if not is_allowed:
             # Domain not allowed, return placeholder rather than throwing error
@@ -492,12 +507,103 @@ async def verify_social_account(
             except Exception as e:
                 logger.warning("Could not fetch Facebook page details: %s", e)
 
+    elif "youtube" in platform_slug or "youtube" in platform_name:
+        try:
+            token = access_token
+            if social_account.refresh_token:
+                async with httpx.AsyncClient() as client:
+                    r = await client.post(
+                        "https://oauth2.googleapis.com/token",
+                        data={
+                            "client_id": settings.GOOGLE_CLIENT_ID,
+                            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                            "refresh_token": social_account.refresh_token,
+                            "grant_type": "refresh_token",
+                        },
+                        timeout=15.0,
+                    )
+                    if r.status_code == 200:
+                        token = r.json().get("access_token", token)
+                        social_account.access_token = token
+            async with httpx.AsyncClient() as client:
+                ch_res = await client.get(
+                    "https://www.googleapis.com/youtube/v3/channels",
+                    params={"part": "snippet,statistics", "mine": "true"},
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=15.0,
+                )
+                if ch_res.status_code == 200:
+                    items = ch_res.json().get("items", [])
+                    if items:
+                        ch = items[0]
+                        st = ch.get("statistics", {})
+                        sn = ch.get("snippet", {})
+                        stats = {
+                            "followers": int(st.get("subscriberCount", 0) or 0),
+                            "following": 0,
+                            "posts_count": int(st.get("videoCount", 0) or 0),
+                            "views_count": int(st.get("viewCount", 0) or 0),
+                            "profile_image_url": sn.get("thumbnails", {}).get("high", {}).get("url")
+                            or sn.get("thumbnails", {}).get("default", {}).get("url"),
+                        }
+                        if sn.get("title") and (not social_account.account_name or social_account.account_name == "YouTube"):
+                            social_account.account_name = sn["title"]
+                        if sn.get("customUrl"):
+                            social_account.account_handle = sn["customUrl"]
+        except Exception as e:
+            logger.warning("YouTube metrics sync failed: %s", e)
+
+    elif "twitter" in platform_slug or "x" in platform_slug or "twitter" in platform_name:
+        try:
+            async with httpx.AsyncClient() as client:
+                tw_res = await client.get(
+                    "https://api.twitter.com/2/users/me?user.fields=profile_image_url,username,public_metrics",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=15.0,
+                )
+                if tw_res.status_code == 200:
+                    tw_data = tw_res.json().get("data", {})
+                    tw_metrics = tw_data.get("public_metrics", {})
+                    stats = {
+                        "followers": int(tw_metrics.get("followers_count", 0)),
+                        "following": int(tw_metrics.get("following_count", 0)),
+                        "posts_count": int(tw_metrics.get("tweet_count", 0)),
+                        "profile_image_url": tw_data.get("profile_image_url"),
+                    }
+                    if tw_data.get("username"):
+                        social_account.account_handle = f"@{tw_data['username']}"
+                    if tw_data.get("name") and (not social_account.account_name or social_account.account_name == "Twitter"):
+                        social_account.account_name = tw_data["name"]
+        except Exception as e:
+            logger.warning("Twitter metrics sync failed: %s", e)
+
+    elif "linkedin" in platform_slug or "linkedin" in platform_name:
+        try:
+            async with httpx.AsyncClient() as client:
+                li_res = await client.get(
+                    "https://api.linkedin.com/v2/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=15.0,
+                )
+                if li_res.status_code == 200:
+                    li_data = li_res.json()
+                    stats = {
+                        "followers": (social_account.metadata_ or {}).get("followers", 0),
+                        "following": (social_account.metadata_ or {}).get("following", 0),
+                        "posts_count": (social_account.metadata_ or {}).get("posts_count", 0),
+                        "profile_image_url": li_data.get("picture"),
+                    }
+                    if li_data.get("name"):
+                        social_account.account_name = li_data["name"]
+        except Exception as e:
+            logger.warning("LinkedIn metrics sync failed: %s", e)
+
     if not stats:
         stats = {
-            "followers": 100,
-            "following": 50,
-            "posts_count": 12,
-            "profile_image_url": None
+            "followers": (social_account.metadata_ or {}).get("followers", 0),
+            "following": (social_account.metadata_ or {}).get("following", 0),
+            "posts_count": (social_account.metadata_ or {}).get("posts_count", 0),
+            "profile_image_url": None,
         }
     
     social_account.metadata_ = {
@@ -506,6 +612,8 @@ async def verify_social_account(
         "following": stats["following"],
         "posts_count": stats.get("posts_count", 0),
     }
+    if "views_count" in stats:
+        social_account.metadata_["views_count"] = stats["views_count"]
     
     if stats.get("profile_image_url"):
         social_account.profile_image_url = stats["profile_image_url"]
@@ -514,6 +622,29 @@ async def verify_social_account(
     await db.refresh(social_account)
 
     return MessageResponse(message="Social account connection verified successfully")
+
+
+@router.post("/sync-all", response_model=MessageResponse)
+async def sync_all_social_accounts(
+    account_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Synchronize live metrics, follower counts, and verification status for all social accounts."""
+    await _verify_membership(db, current_user.id, account_id)
+    accounts = (
+        await db.execute(
+            select(SocialAccount).where(SocialAccount.account_id == account_id)
+        )
+    ).scalars().all()
+
+    for sa in accounts:
+        try:
+            await verify_social_account(account_id, sa.id, db, current_user)
+        except Exception as e:
+            logger.warning("Failed to sync account %s: %s", sa.id, e)
+
+    return MessageResponse(message=f"Successfully synced {len(accounts)} social accounts")
 
 
 @router.post("/{social_account_id}/refresh-token", response_model=MessageResponse)

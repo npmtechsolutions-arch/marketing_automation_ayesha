@@ -58,6 +58,18 @@ class LoginResult(BaseModel):
     token_type: str = "bearer"
 
 
+class GoogleAuthRequest(BaseModel):
+    code: str
+    redirect_uri: str | None = None
+
+
+class FirebaseGoogleAuthRequest(BaseModel):
+    id_token: str
+    email: EmailStr
+    full_name: str | None = None
+    avatar_url: str | None = None
+
+
 class TwoFactorLogin(BaseModel):
     challenge_token: str
     code: str

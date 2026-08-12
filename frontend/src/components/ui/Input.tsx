@@ -6,6 +6,7 @@ interface InputProps
   label?: string;
   error?: string;
   icon?: ReactNode;
+  rightElement?: ReactNode;
   className?: string;
 }
 
@@ -13,6 +14,7 @@ export function Input({
   label,
   error,
   icon,
+  rightElement,
   className,
   type = "text",
   value,
@@ -78,10 +80,16 @@ export function Input({
             "w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all duration-200",
             "placeholder:text-gray-400",
             icon && "pl-11",
+            rightElement && "pr-11",
             disabled && "cursor-not-allowed opacity-50"
           )}
           {...rest}
         />
+        {rightElement && (
+          <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center">
+            {rightElement}
+          </div>
+        )}
       </div>
       {error && (
         <p id={errorId} role="alert" className="mt-1.5 pl-1 text-xs" style={{ color: "var(--accent-red)" }}>

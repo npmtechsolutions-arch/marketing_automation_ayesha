@@ -1,12 +1,17 @@
+import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import init_db
+
+logger = logging.getLogger("app")
 
 
 import asyncio
@@ -59,6 +64,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# A registered Exception handler runs on Starlette's outermost error middleware,
+# so its response bypasses CORSMiddleware and would otherwise ship WITHOUT the
+# Access-Control-Allow-Origin header — making every 500 look like a CORS failure
+# in the browser. Echo the CORS headers here so the frontend sees the real error.
+_ONRENDER_ORIGIN_RE = re.compile(r"https://.*\.onrender\.com")
+
+
+def _cors_headers_for(request: Request) -> dict[str, str]:
+    origin = request.headers.get("origin")
+    if origin and (origin in settings.CORS_ORIGINS or _ONRENDER_ORIGIN_RE.fullmatch(origin)):
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    return {}
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Return a JSON 500 (with CORS headers) instead of a header-less error."""
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    detail = f"{type(exc).__name__}: {exc}" if settings.DEBUG else "Internal server error"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": detail},
+        headers=_cors_headers_for(request),
+    )
 
 # ---------------------------------------------------------------------------
 # API v1 routers

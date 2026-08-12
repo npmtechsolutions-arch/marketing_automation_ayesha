@@ -78,10 +78,10 @@ export default function ArticlePage() {
       >
         {/* Breadcrumb */}
         <motion.div variants={fadeUp} className="flex items-center gap-2 text-sm">
-          <button className="text-gray-400 hover:text-white transition-colors">Help Center</button>
-          <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
-          <button className="text-gray-400 hover:text-white transition-colors">{article.category}</button>
-          <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
+          <button className="hover:text-white transition-colors cursor-pointer" style={{ color: "var(--page-text-secondary)" }}>Help Center</button>
+          <ChevronRight className="w-3.5 h-3.5" style={{ color: "var(--page-text-muted)" }} />
+          <button className="hover:text-white transition-colors cursor-pointer" style={{ color: "var(--page-text-secondary)" }}>{article.category}</button>
+          <ChevronRight className="w-3.5 h-3.5" style={{ color: "var(--page-text-muted)" }} />
           <span className="text-purple-400 truncate max-w-[250px]">{article.title}</span>
         </motion.div>
 
@@ -93,7 +93,7 @@ export default function ArticlePage() {
               <GlassCard padding="md">
                 <div className="flex items-center gap-2 mb-4">
                   <BookOpen className="w-4 h-4 text-purple-400" />
-                  <h3 className="text-sm font-semibold text-white">On this page</h3>
+                  <h3 className="text-sm font-semibold" style={{ color: "var(--page-heading)" }}>On this page</h3>
                 </div>
                 <nav className="space-y-1">
                   {article.tableOfContents.map((item) => (
@@ -101,7 +101,7 @@ export default function ArticlePage() {
                       key={item.id}
                       onClick={() => setActiveTocId(item.id)}
                       className={cn(
-                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer",
                         activeTocId === item.id
                           ? "bg-purple-500/10 text-purple-300 border-l-2 border-purple-500"
                           : "text-gray-400 hover:text-white hover:bg-white/5"
@@ -121,10 +121,10 @@ export default function ArticlePage() {
               {/* Article header */}
               <div className="mb-8">
                 <Badge variant="info" size="sm" className="mb-4">{article.category}</Badge>
-                <h1 className="text-2xl lg:text-3xl font-bold text-white tracking-tight mb-4">
+                <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mb-4" style={{ color: "var(--page-heading)" }}>
                   {article.title}
                 </h1>
-                <div className="flex flex-wrap items-center gap-4 text-sm text-gray-400">
+                <div className="flex flex-wrap items-center gap-4 text-sm" style={{ color: "var(--page-text-secondary)" }}>
                   <span className="flex items-center gap-1.5">
                     <User className="w-4 h-4" />
                     {article.author}
@@ -143,7 +143,7 @@ export default function ArticlePage() {
               {/* Article body */}
               <div className="prose-dark space-y-6">
                 {/* Introduction */}
-                <p className="text-gray-300 leading-relaxed">
+                <p className="leading-relaxed" style={{ color: "var(--page-text)" }}>
                   Connecting your social media accounts is the first step to unlocking the full power of
                   VisionarySpace. This guide walks you through the process for each supported platform,
                   including the permissions needed and common troubleshooting steps.
@@ -151,24 +151,24 @@ export default function ArticlePage() {
 
                 {/* Section: Prerequisites */}
                 <div id="prerequisites">
-                  <h2 className="flex items-center gap-2 text-lg font-semibold text-white mb-3">
+                  <h2 className="flex items-center gap-2 text-lg font-semibold mb-3" style={{ color: "var(--page-heading)" }}>
                     <Hash className="w-4 h-4 text-purple-400" />
                     Prerequisites
                   </h2>
-                  <p className="text-gray-300 leading-relaxed mb-3">
+                  <p className="leading-relaxed mb-3" style={{ color: "var(--page-text)" }}>
                     Before connecting your accounts, make sure you have the following:
                   </p>
                   <ul className="space-y-2 pl-5">
-                    <li className="text-gray-300 text-sm leading-relaxed list-disc">
+                    <li className="text-sm leading-relaxed list-disc" style={{ color: "var(--page-text)" }}>
                       An active VisionarySpace account (any plan)
                     </li>
-                    <li className="text-gray-300 text-sm leading-relaxed list-disc">
+                    <li className="text-sm leading-relaxed list-disc" style={{ color: "var(--page-text)" }}>
                       Admin or owner access to the social media accounts you want to connect
                     </li>
-                    <li className="text-gray-300 text-sm leading-relaxed list-disc">
+                    <li className="text-sm leading-relaxed list-disc" style={{ color: "var(--page-text)" }}>
                       For Instagram: a Business or Creator account linked to a Facebook Page
                     </li>
-                    <li className="text-gray-300 text-sm leading-relaxed list-disc">
+                    <li className="text-sm leading-relaxed list-disc" style={{ color: "var(--page-text)" }}>
                       For LinkedIn: admin access to the Company Page (for company page posting)
                     </li>
                   </ul>
@@ -176,36 +176,36 @@ export default function ArticlePage() {
 
                 {/* Section: Connecting */}
                 <div id="connect-account">
-                  <h2 className="flex items-center gap-2 text-lg font-semibold text-white mb-3">
+                  <h2 className="flex items-center gap-2 text-lg font-semibold mb-3" style={{ color: "var(--page-heading)" }}>
                     <Hash className="w-4 h-4 text-purple-400" />
                     Connecting Your Account
                   </h2>
-                  <p className="text-gray-300 leading-relaxed mb-3">
+                  <p className="leading-relaxed mb-3" style={{ color: "var(--page-text)" }}>
                     Follow these steps to connect your first social media account:
                   </p>
                   <ol className="space-y-3 pl-5">
-                    <li className="text-gray-300 text-sm leading-relaxed list-decimal">
+                    <li className="text-sm leading-relaxed list-decimal" style={{ color: "var(--page-text)" }}>
                       Navigate to <span className="text-purple-300 font-medium">Platform Connections</span> in the sidebar
                     </li>
-                    <li className="text-gray-300 text-sm leading-relaxed list-decimal">
+                    <li className="text-sm leading-relaxed list-decimal" style={{ color: "var(--page-text)" }}>
                       Click the <span className="text-purple-300 font-medium">"Add Platform"</span> button
                     </li>
-                    <li className="text-gray-300 text-sm leading-relaxed list-decimal">
+                    <li className="text-sm leading-relaxed list-decimal" style={{ color: "var(--page-text)" }}>
                       Select the platform you want to connect (Instagram, Facebook, Twitter, etc.)
                     </li>
-                    <li className="text-gray-300 text-sm leading-relaxed list-decimal">
+                    <li className="text-sm leading-relaxed list-decimal" style={{ color: "var(--page-text)" }}>
                       You will be redirected to the platform's authorization page
                     </li>
-                    <li className="text-gray-300 text-sm leading-relaxed list-decimal">
+                    <li className="text-sm leading-relaxed list-decimal" style={{ color: "var(--page-text)" }}>
                       Grant the requested permissions and you will be redirected back
                     </li>
                   </ol>
 
                   {/* Code block */}
-                  <div className="mt-4 rounded-xl bg-black/40 border border-white/5 overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-2 bg-white/[0.02] border-b border-white/5">
-                      <span className="text-xs text-gray-500 font-mono">API Example</span>
-                      <button className="text-xs text-gray-500 hover:text-white transition-colors">Copy</button>
+                  <div className="mt-4 rounded-xl bg-black/40 overflow-hidden" style={{ border: "1px solid var(--surface-border)" }}>
+                    <div className="flex items-center justify-between px-4 py-2" style={{ backgroundColor: "var(--sidebar-hover-bg)", borderBottom: "1px solid var(--surface-border)" }}>
+                      <span className="text-xs font-mono" style={{ color: "var(--page-text-muted)" }}>API Example</span>
+                      <button className="text-xs hover:text-white transition-colors cursor-pointer" style={{ color: "var(--page-text-muted)" }}>Copy</button>
                     </div>
                     <pre className="p-4 text-sm text-gray-300 font-mono overflow-x-auto">
 {`POST /api/v1/platforms/connect
@@ -223,43 +223,43 @@ Authorization: Bearer <your-api-token>
 
                 {/* Section: Platform setup */}
                 <div id="platform-setup">
-                  <h2 className="flex items-center gap-2 text-lg font-semibold text-white mb-3">
+                  <h2 className="flex items-center gap-2 text-lg font-semibold mb-3" style={{ color: "var(--page-heading)" }}>
                     <Hash className="w-4 h-4 text-purple-400" />
                     Platform-Specific Setup
                   </h2>
-                  <p className="text-gray-300 leading-relaxed mb-3">
+                  <p className="leading-relaxed mb-3" style={{ color: "var(--page-text)" }}>
                     Each platform has slightly different requirements. Here is a quick reference:
                   </p>
 
-                  <div className="rounded-xl bg-white/[0.02] border border-white/5 overflow-hidden">
+                  <div className="rounded-xl overflow-hidden" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-white/5">
-                          <th className="text-left text-gray-400 font-medium py-3 px-4">Platform</th>
-                          <th className="text-left text-gray-400 font-medium py-3 px-4">Account Type</th>
-                          <th className="text-left text-gray-400 font-medium py-3 px-4">Requirements</th>
+                        <tr style={{ borderBottom: "1px solid var(--surface-border)" }}>
+                          <th className="text-left font-medium py-3 px-4" style={{ color: "var(--page-text-secondary)" }}>Platform</th>
+                          <th className="text-left font-medium py-3 px-4" style={{ color: "var(--page-text-secondary)" }}>Account Type</th>
+                          <th className="text-left font-medium py-3 px-4" style={{ color: "var(--page-text-secondary)" }}>Requirements</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="border-b border-white/5">
-                          <td className="py-3 px-4 text-white font-medium">Instagram</td>
-                          <td className="py-3 px-4 text-gray-300">Business / Creator</td>
-                          <td className="py-3 px-4 text-gray-400">Linked Facebook Page</td>
+                        <tr style={{ borderBottom: "1px solid var(--surface-border)" }}>
+                          <td className="py-3 px-4 font-medium" style={{ color: "var(--page-heading)" }}>Instagram</td>
+                          <td className="py-3 px-4" style={{ color: "var(--page-text)" }}>Business / Creator</td>
+                          <td className="py-3 px-4" style={{ color: "var(--page-text-secondary)" }}>Linked Facebook Page</td>
                         </tr>
-                        <tr className="border-b border-white/5">
-                          <td className="py-3 px-4 text-white font-medium">Facebook</td>
-                          <td className="py-3 px-4 text-gray-300">Page</td>
-                          <td className="py-3 px-4 text-gray-400">Page admin access</td>
+                        <tr style={{ borderBottom: "1px solid var(--surface-border)" }}>
+                          <td className="py-3 px-4 font-medium" style={{ color: "var(--page-heading)" }}>Facebook</td>
+                          <td className="py-3 px-4" style={{ color: "var(--page-text)" }}>Page</td>
+                          <td className="py-3 px-4" style={{ color: "var(--page-text-secondary)" }}>Page admin access</td>
                         </tr>
-                        <tr className="border-b border-white/5">
-                          <td className="py-3 px-4 text-white font-medium">LinkedIn</td>
-                          <td className="py-3 px-4 text-gray-300">Personal / Company</td>
-                          <td className="py-3 px-4 text-gray-400">Company page admin (for org posts)</td>
+                        <tr style={{ borderBottom: "1px solid var(--surface-border)" }}>
+                          <td className="py-3 px-4 font-medium" style={{ color: "var(--page-heading)" }}>LinkedIn</td>
+                          <td className="py-3 px-4" style={{ color: "var(--page-text)" }}>Personal / Company</td>
+                          <td className="py-3 px-4" style={{ color: "var(--page-text-secondary)" }}>Company page admin (for org posts)</td>
                         </tr>
                         <tr>
-                          <td className="py-3 px-4 text-white font-medium">Twitter / X</td>
-                          <td className="py-3 px-4 text-gray-300">Standard</td>
-                          <td className="py-3 px-4 text-gray-400">OAuth 2.0 enabled</td>
+                          <td className="py-3 px-4 font-medium" style={{ color: "var(--page-heading)" }}>Twitter / X</td>
+                          <td className="py-3 px-4" style={{ color: "var(--page-text)" }}>Standard</td>
+                          <td className="py-3 px-4" style={{ color: "var(--page-text-secondary)" }}>OAuth 2.0 enabled</td>
                         </tr>
                       </tbody>
                     </table>
@@ -268,11 +268,11 @@ Authorization: Bearer <your-api-token>
 
                 {/* Section: Permissions */}
                 <div id="permissions">
-                  <h2 className="flex items-center gap-2 text-lg font-semibold text-white mb-3">
+                  <h2 className="flex items-center gap-2 text-lg font-semibold mb-3" style={{ color: "var(--page-heading)" }}>
                     <Hash className="w-4 h-4 text-purple-400" />
                     Required Permissions
                   </h2>
-                  <p className="text-gray-300 leading-relaxed">
+                  <p className="leading-relaxed" style={{ color: "var(--page-text)" }}>
                     VisionarySpace requests only the minimum permissions needed to publish content and
                     read analytics on your behalf. We never post without your explicit action, and you
                     can revoke access at any time from the Platform Connections page or from the
@@ -282,39 +282,39 @@ Authorization: Bearer <your-api-token>
 
                 {/* Section: Troubleshooting */}
                 <div id="troubleshooting">
-                  <h2 className="flex items-center gap-2 text-lg font-semibold text-white mb-3">
+                  <h2 className="flex items-center gap-2 text-lg font-semibold mb-3" style={{ color: "var(--page-heading)" }}>
                     <Hash className="w-4 h-4 text-purple-400" />
                     Troubleshooting
                   </h2>
-                  <p className="text-gray-300 leading-relaxed mb-3">
+                  <p className="leading-relaxed mb-3" style={{ color: "var(--page-text)" }}>
                     If you encounter issues during the connection process, try the following:
                   </p>
                   <ul className="space-y-2 pl-5">
-                    <li className="text-gray-300 text-sm leading-relaxed list-disc">
-                      <span className="font-medium text-white">Clear browser cookies</span> -- Some OAuth flows can conflict with cached sessions
+                    <li className="text-sm leading-relaxed list-disc" style={{ color: "var(--page-text)" }}>
+                      <span className="font-medium" style={{ color: "var(--page-heading)" }}>Clear browser cookies</span> -- Some OAuth flows can conflict with cached sessions
                     </li>
-                    <li className="text-gray-300 text-sm leading-relaxed list-disc">
-                      <span className="font-medium text-white">Check account type</span> -- Instagram personal accounts cannot be connected; switch to Business or Creator
+                    <li className="text-sm leading-relaxed list-disc" style={{ color: "var(--page-text)" }}>
+                      <span className="font-medium" style={{ color: "var(--page-heading)" }}>Check account type</span> -- Instagram personal accounts cannot be connected; switch to Business or Creator
                     </li>
-                    <li className="text-gray-300 text-sm leading-relaxed list-disc">
-                      <span className="font-medium text-white">Verify admin access</span> -- You must have admin permissions on the social account
+                    <li className="text-sm leading-relaxed list-disc" style={{ color: "var(--page-text)" }}>
+                      <span className="font-medium" style={{ color: "var(--page-heading)" }}>Verify admin access</span> -- You must have admin permissions on the social account
                     </li>
-                    <li className="text-gray-300 text-sm leading-relaxed list-disc">
-                      <span className="font-medium text-white">Try a different browser</span> -- Browser extensions can sometimes block OAuth popups
+                    <li className="text-sm leading-relaxed list-disc" style={{ color: "var(--page-text)" }}>
+                      <span className="font-medium" style={{ color: "var(--page-heading)" }}>Try a different browser</span> -- Browser extensions can sometimes block OAuth popups
                     </li>
                   </ul>
                 </div>
               </div>
 
               {/* Helpful vote */}
-              <div className="mt-10 pt-6 border-t border-white/5">
+              <div className="mt-10 pt-6" style={{ borderTop: "1px solid var(--surface-border)" }}>
                 <div className="flex items-center justify-center gap-4">
-                  <span className="text-sm text-gray-400">Was this article helpful?</span>
+                  <span className="text-sm" style={{ color: "var(--page-text-secondary)" }}>Was this article helpful?</span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setHelpfulVote("yes")}
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all cursor-pointer",
                         helpfulVote === "yes"
                           ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                           : "bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10 hover:text-white"
@@ -325,7 +325,7 @@ Authorization: Bearer <your-api-token>
                     <button
                       onClick={() => setHelpfulVote("no")}
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all cursor-pointer",
                         helpfulVote === "no"
                           ? "bg-red-500/15 text-red-400 border border-red-500/30"
                           : "bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10 hover:text-white"
@@ -339,7 +339,7 @@ Authorization: Bearer <your-api-token>
                   <motion.p
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="text-center text-sm text-gray-500 mt-3"
+                    className="text-center text-sm mt-3" style={{ color: "var(--page-text-muted)" }}
                   >
                     {helpfulVote === "yes"
                       ? "Thanks for your feedback!"
@@ -351,15 +351,15 @@ Authorization: Bearer <your-api-token>
 
             {/* Related Articles */}
             <div className="mt-6">
-              <h3 className="text-base font-semibold text-white mb-4">Related Articles</h3>
+              <h3 className="text-base font-semibold mb-4" style={{ color: "var(--page-heading)" }}>Related Articles</h3>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {relatedArticles.map((ra) => (
                   <GlassCard key={ra.id} hover padding="md" className="group cursor-pointer">
                     <Badge variant="info" size="sm" className="mb-2">{ra.category}</Badge>
-                    <h4 className="text-sm font-medium text-white group-hover:text-purple-300 transition-colors leading-snug">
+                    <h4 className="text-sm font-medium group-hover:text-purple-300 transition-colors leading-snug" style={{ color: "var(--page-heading)" }}>
                       {ra.title}
                     </h4>
-                    <span className="flex items-center gap-1 text-xs text-gray-500 mt-2">
+                    <span className="flex items-center gap-1 text-xs mt-2" style={{ color: "var(--page-text-muted)" }}>
                       <Clock className="w-3 h-3" /> {ra.readTime}
                     </span>
                   </GlassCard>
@@ -370,19 +370,19 @@ Authorization: Bearer <your-api-token>
             {/* Previous / Next navigation */}
             <div className="mt-6 grid grid-cols-2 gap-4">
               <GlassCard hover padding="md" className="group cursor-pointer">
-                <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                <div className="flex items-center gap-2 text-xs mb-1" style={{ color: "var(--page-text-muted)" }}>
                   <ArrowLeft className="w-3 h-3" /> Previous
                 </div>
-                <p className="text-sm font-medium text-white group-hover:text-purple-300 transition-colors">
+                <p className="text-sm font-medium group-hover:text-purple-300 transition-colors" style={{ color: "var(--page-heading)" }}>
                   {prevArticle.title}
                 </p>
               </GlassCard>
 
               <GlassCard hover padding="md" className="group cursor-pointer text-right">
-                <div className="flex items-center justify-end gap-2 text-xs text-gray-500 mb-1">
+                <div className="flex items-center justify-end gap-2 text-xs mb-1" style={{ color: "var(--page-text-muted)" }}>
                   Next <ArrowRight className="w-3 h-3" />
                 </div>
-                <p className="text-sm font-medium text-white group-hover:text-purple-300 transition-colors">
+                <p className="text-sm font-medium group-hover:text-purple-300 transition-colors" style={{ color: "var(--page-heading)" }}>
                   {nextArticle.title}
                 </p>
               </GlassCard>

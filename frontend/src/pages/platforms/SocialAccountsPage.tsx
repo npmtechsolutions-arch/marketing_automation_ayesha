@@ -42,6 +42,8 @@ interface SocialAccount {
   lastPostedAt: string | null;
   followers: number;
   following: number;
+  postsCount?: number;
+  viewsCount?: number;
   createdAt: string;
   configFields: { key: string; label: string; value: string; type: string }[];
   platformId: string;
@@ -115,29 +117,52 @@ export default function SocialAccountsPage() {
       const accountsRes: any = await api.get(`/accounts/${activeAccountId}/social-accounts/`);
       const fetchedAccounts = accountsRes.items || accountsRes.data?.items || [];
       
-      const mappedAccounts = fetchedAccounts.map((item: any) => ({
-        id: item.id,
-        platformName: item.platform?.name || "Unknown",
-        platformColor: item.platform?.color || "#6366F1",
-        platformSlug: item.platform?.slug || "unknown",
-        accountName: item.account_name,
-        handle: item.account_handle || "",
-        profileUrl: item.profile_url || "",
-        profileImageUrl: item.profile_image_url || "",
-        isVerified: item.is_verified,
-        isActive: item.is_active,
-        lastVerifiedAt: item.last_verified_at,
-        lastPostedAt: item.last_posted_at,
-        followers: item.metadata?.followers || 0,
-        following: item.metadata?.following || 0,
-        createdAt: item.created_at,
-        configFields: [],
-        platformId: item.platform_id || "",
-      }));
+      const mappedAccounts = fetchedAccounts.map((item: any) => {
+        const meta = item.metadata || item.metadata_ || {};
+        return {
+          id: item.id,
+          platformName: item.platform?.name || "Unknown",
+          platformColor: item.platform?.color || "#6366F1",
+          platformSlug: item.platform?.slug || "unknown",
+          accountName: item.account_name,
+          handle: item.account_handle || "",
+          profileUrl: item.profile_url || "",
+          profileImageUrl: item.profile_image_url || "",
+          isVerified: item.is_verified,
+          isActive: item.is_active,
+          lastVerifiedAt: item.last_verified_at,
+          lastPostedAt: item.last_posted_at,
+          followers: item.followers_count ?? meta.followers ?? meta.subscriberCount ?? meta.subscribers ?? meta.connections ?? 0,
+          following: meta.following ?? meta.following_count ?? 0,
+          postsCount: meta.posts_count ?? meta.videoCount ?? meta.tweet_count ?? 0,
+          viewsCount: meta.views_count ?? meta.viewCount ?? 0,
+          createdAt: item.created_at,
+          configFields: [],
+          platformId: item.platform_id || "",
+        };
+      });
       
       setAccounts(mappedAccounts);
     } catch (err) {
       console.error("Failed to fetch accounts/platforms:", err);
+    }
+  };
+
+  const [syncingAll, setSyncingAll] = useState(false);
+
+  const handleSyncAll = async () => {
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
+    setSyncingAll(true);
+    try {
+      await api.post(`/accounts/${activeAccountId}/social-accounts/sync-all`);
+      showSuccess("All social metrics synchronized successfully!");
+      await fetchAccountsAndPlatforms();
+    } catch (err) {
+      console.error("Error syncing metrics:", err);
+      showError("Failed to sync platform metrics.");
+    } finally {
+      setSyncingAll(false);
     }
   };
 
@@ -506,61 +531,74 @@ export default function SocialAccountsPage() {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Social Accounts</h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl" style={{ color: "var(--page-heading)" }}>Social Accounts</h1>
+            <p className="mt-1 text-sm" style={{ color: "var(--page-text-secondary)" }}>
               {accounts.length} accounts across {platforms.length} platforms
               <span className="mx-2">·</span>
-              <span className="text-green-400">{verifiedCount} verified</span>
+              <span style={{ color: "#10b981" }}>{verifiedCount} verified</span>
             </p>
           </div>
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => { setIsEdit(false); setEditId(null); setShowAdd(true); }}>
-            Add Account
-          </Button>
+          <div className="flex items-center gap-2.5">
+            <Button
+              variant="secondary"
+              icon={<RefreshCw className={cn("h-4 w-4", syncingAll && "animate-spin")} />}
+              loading={syncingAll}
+              onClick={handleSyncAll}
+            >
+              Sync All Metrics
+            </Button>
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => { setIsEdit(false); setEditId(null); setShowAdd(true); }}>
+              Add Account
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px] max-w-xs">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--page-text-muted)" }} />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search accounts..."
-              className="w-full rounded-xl border border-white/10 bg-white/5 py-2 pl-10 pr-4 text-sm text-white outline-none backdrop-blur-sm placeholder:text-slate-500 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20"
+              className="w-full rounded-xl py-2 pl-10 pr-4 text-sm outline-none backdrop-blur-sm focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)]"
+              style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
             />
           </div>
           <div className="flex gap-2 overflow-x-auto">
-            {["All", ...platforms].map((p) => (
-              <button
-                key={p}
-                onClick={() => setPlatformFilter(p)}
-                className={cn(
-                  "whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
-                  platformFilter === p
-                    ? "bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/30"
-                    : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
-                )}
-              >
-                {p}
-              </button>
-            ))}
+            {["All", ...platforms].map((p) => {
+              const active = platformFilter === p;
+              return (
+                <button
+                  key={p}
+                  onClick={() => setPlatformFilter(p)}
+                  className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer"
+                  style={active
+                    ? { background: "rgba(124,58,237,0.18)", color: "#a78bfa", boxShadow: "inset 0 0 0 1px rgba(124,58,237,0.30)" }
+                    : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-muted)" }}
+                >
+                  {p}
+                </button>
+              );
+            })}
           </div>
           <div className="flex gap-2">
-            {["All", "Verified", "Unverified", "Inactive"].map((s) => (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={cn(
-                  "whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
-                  statusFilter === s
-                    ? "bg-blue-500/20 text-blue-300 ring-1 ring-blue-500/30"
-                    : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
-                )}
-              >
-                {s}
-              </button>
-            ))}
+            {["All", "Verified", "Unverified", "Inactive"].map((s) => {
+              const active = statusFilter === s;
+              return (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer"
+                  style={active
+                    ? { background: "rgba(56,189,248,0.18)", color: "#38bdf8", boxShadow: "inset 0 0 0 1px rgba(56,189,248,0.30)" }
+                    : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-muted)" }}
+                >
+                  {s}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -583,6 +621,7 @@ export default function SocialAccountsPage() {
                         <img
                           src={getProxiedImageUrl(account.profileImageUrl)}
                           alt={account.accountName}
+                          referrerPolicy="no-referrer"
                           className="h-11 w-11 rounded-xl object-cover ring-2 ring-white/10"
                           onError={(e) => {
                             e.currentTarget.src = "";
@@ -606,29 +645,45 @@ export default function SocialAccountsPage() {
                     {/* Account info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-white truncate">{account.accountName}</h3>
+                        <h3 className="text-sm font-semibold truncate" style={{ color: "var(--page-heading)" }}>{account.accountName}</h3>
                         {account.isVerified ? (
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-green-400" />
+                          <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "#10b981" }} />
                         ) : (
                           <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-slate-400">{account.handle}</span>
-                        <span className="text-xs text-slate-600">·</span>
+                        <span className="text-xs" style={{ color: "var(--page-text-secondary)" }}>{account.handle}</span>
+                        <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>·</span>
                         <Badge size="sm" variant="default">{account.platformName}</Badge>
                       </div>
                     </div>
 
                     {/* Stats */}
-                    <div className="hidden sm:flex items-center gap-6 text-xs text-slate-400">
-                      <div className="text-center">
-                        <div className="font-semibold text-white">{formatNumber(account.followers)}</div>
-                        <div>followers</div>
+                    <div className="hidden sm:flex items-center gap-6 text-xs" style={{ color: "var(--page-text-muted)" }}>
+                      <div className="text-center min-w-[55px]">
+                        <div className="font-semibold tabular-nums text-sm" style={{ color: "var(--page-heading)" }}>
+                          {formatNumber(account.followers)}
+                        </div>
+                        <div>
+                          {account.platformSlug.includes("youtube")
+                            ? "subscribers"
+                            : account.platformSlug.includes("linkedin")
+                            ? "connections"
+                            : "followers"}
+                        </div>
                       </div>
-                      <div className="text-center">
-                        <div className="font-semibold text-white">{formatNumber(account.following)}</div>
-                        <div>following</div>
+                      <div className="text-center min-w-[55px]">
+                        <div className="font-semibold tabular-nums text-sm" style={{ color: "var(--page-heading)" }}>
+                          {formatNumber(
+                            account.platformSlug.includes("youtube")
+                              ? (account.postsCount || 0)
+                              : account.following
+                          )}
+                        </div>
+                        <div>
+                          {account.platformSlug.includes("youtube") ? "videos" : "following"}
+                        </div>
                       </div>
                     </div>
 
@@ -647,14 +702,16 @@ export default function SocialAccountsPage() {
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => setSelectedAccount(account)}
-                        className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
+                        className="rounded-lg p-2 transition-colors cursor-pointer hover:bg-[var(--sidebar-hover-bg)] hover:text-white"
+                        style={{ color: "var(--page-text-muted)" }}
                         title="View Details"
                       >
                         <Key className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => handleVerifyAccount(account.id)}
-                        className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-green-500/10 hover:text-green-400"
+                        className="rounded-lg p-2 transition-colors cursor-pointer hover:bg-green-500/10 hover:text-green-400"
+                        style={{ color: "var(--page-text-muted)" }}
                         title="Test Connection"
                       >
                         <Shield className="h-4 w-4" />
@@ -662,7 +719,8 @@ export default function SocialAccountsPage() {
                       <div className="relative">
                         <button
                           onClick={() => setMenuOpen(menuOpen === account.id ? null : account.id)}
-                          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
+                          className="rounded-lg p-2 transition-colors cursor-pointer hover:bg-[var(--sidebar-hover-bg)] hover:text-white"
+                          style={{ color: "var(--page-text-muted)" }}
                         >
                           <MoreHorizontal className="h-4 w-4" />
                         </button>
@@ -672,7 +730,8 @@ export default function SocialAccountsPage() {
                               initial={{ opacity: 0, y: 5, scale: 0.95 }}
                               animate={{ opacity: 1, y: 0, scale: 1 }}
                               exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                              className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-xl border border-white/10 bg-slate-900/95 py-1 shadow-2xl backdrop-blur-xl"
+                              className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-xl py-1 shadow-2xl backdrop-blur-xl"
+                              style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--surface-bg)" }}
                             >
                               <button 
                                 type="button"
@@ -680,7 +739,8 @@ export default function SocialAccountsPage() {
                                   e.stopPropagation();
                                   handleEditClick(account);
                                 }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-white/5"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-[var(--sidebar-hover-bg)]"
+                                style={{ color: "var(--page-text)" }}
                               >
                                 <Pencil className="h-3.5 w-3.5" /> Edit
                               </button>
@@ -690,7 +750,8 @@ export default function SocialAccountsPage() {
                                   e.stopPropagation();
                                   handleRefreshToken(account.id);
                                 }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-white/5"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-[var(--sidebar-hover-bg)]"
+                                style={{ color: "var(--page-text)" }}
                               >
                                 <RefreshCw className="h-3.5 w-3.5" /> Refresh Token
                               </button>
@@ -705,7 +766,8 @@ export default function SocialAccountsPage() {
                                   }
                                   setMenuOpen(null);
                                 }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-white/5"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-[var(--sidebar-hover-bg)]"
+                                style={{ color: "var(--page-text)" }}
                               >
                                 <Globe className="h-3.5 w-3.5" /> View Profile
                               </button>
@@ -715,7 +777,7 @@ export default function SocialAccountsPage() {
                                   e.stopPropagation();
                                   handleDeleteAccount(account.id);
                                 }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-400 cursor-pointer hover:bg-red-500/10"
                               >
                                 <Trash2 className="h-3.5 w-3.5" /> Delete
                               </button>
@@ -727,7 +789,7 @@ export default function SocialAccountsPage() {
                   </div>
 
                   {/* Last activity row */}
-                  <div className="mt-3 flex items-center gap-4 border-t border-white/5 pt-3 text-[11px] text-slate-500">
+                  <div className="mt-3 flex items-center gap-4 pt-3 text-[11px]" style={{ borderTop: "1px solid var(--surface-border)", color: "var(--page-text-muted)" }}>
                     <span>Added {formatDate(account.createdAt)}</span>
                     {account.lastVerifiedAt && (
                       <>
@@ -749,11 +811,11 @@ export default function SocialAccountsPage() {
 
           {filtered.length === 0 && (
             <div className="py-16 text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5">
-                <Search className="h-7 w-7 text-slate-500" />
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
+                <Search className="h-7 w-7" style={{ color: "var(--page-text-muted)" }} />
               </div>
-              <h3 className="text-lg font-semibold text-white">No accounts found</h3>
-              <p className="mt-1 text-sm text-slate-400">Try adjusting your filters or add a new account.</p>
+              <h3 className="text-lg font-semibold" style={{ color: "var(--page-heading)" }}>No accounts found</h3>
+              <p className="mt-1 text-sm" style={{ color: "var(--page-text-secondary)" }}>Try adjusting your filters or add a new account.</p>
             </div>
           )}
         </div>
@@ -769,6 +831,7 @@ export default function SocialAccountsPage() {
                   <img
                     src={getProxiedImageUrl(selectedAccount.profileImageUrl)}
                     alt={selectedAccount.accountName}
+                    referrerPolicy="no-referrer"
                     className="h-12 w-12 rounded-xl object-cover ring-2 ring-white/10"
                     onError={(e) => {
                       e.currentTarget.src = "";
@@ -789,8 +852,8 @@ export default function SocialAccountsPage() {
                 </div>
               </div>
               <div>
-                <h3 className="font-semibold text-white">{selectedAccount.accountName}</h3>
-                <p className="text-sm text-slate-400">{selectedAccount.handle} · {selectedAccount.platformName}</p>
+                <h3 className="font-semibold" style={{ color: "var(--page-heading)" }}>{selectedAccount.accountName}</h3>
+                <p className="text-sm" style={{ color: "var(--page-text-secondary)" }}>{selectedAccount.handle} · {selectedAccount.platformName}</p>
               </div>
               {selectedAccount.isVerified ? (
                 <Badge variant="success" size="sm" dot>Verified</Badge>
@@ -800,25 +863,25 @@ export default function SocialAccountsPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-white/5 p-3">
-                <div className="text-lg font-bold text-white">{formatNumber(selectedAccount.followers)}</div>
-                <div className="text-xs text-slate-400">Followers</div>
+              <div className="rounded-xl p-3" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
+                <div className="text-lg font-bold tabular-nums" style={{ color: "var(--page-heading)" }}>{formatNumber(selectedAccount.followers)}</div>
+                <div className="text-xs" style={{ color: "var(--page-text-muted)" }}>Followers</div>
               </div>
-              <div className="rounded-xl bg-white/5 p-3">
-                <div className="text-lg font-bold text-white">{formatNumber(selectedAccount.following)}</div>
-                <div className="text-xs text-slate-400">Following</div>
+              <div className="rounded-xl p-3" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
+                <div className="text-lg font-bold tabular-nums" style={{ color: "var(--page-heading)" }}>{formatNumber(selectedAccount.following)}</div>
+                <div className="text-xs" style={{ color: "var(--page-text-muted)" }}>Following</div>
               </div>
             </div>
 
             <div className="space-y-2">
-              <h4 className="text-xs font-medium uppercase tracking-wider text-slate-500">Connection Details</h4>
+              <h4 className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--page-text-muted)" }}>Connection Details</h4>
               <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span className="text-slate-400">Profile URL</span><a href={selectedAccount.profileUrl} className="text-purple-400 hover:underline">{selectedAccount.profileUrl}</a></div>
-                <div className="flex justify-between"><span className="text-slate-400">Status</span><span className={selectedAccount.isVerified ? "text-green-400" : "text-amber-400"}>{selectedAccount.isVerified ? "Verified" : "Unverified"}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Last Verified</span><span className="text-white">{selectedAccount.lastVerifiedAt ? formatDate(selectedAccount.lastVerifiedAt) : "Never"}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Last Posted</span><span className="text-white">{selectedAccount.lastPostedAt ? formatDate(selectedAccount.lastPostedAt) : "Never"}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">API Key</span><span className="font-mono text-xs text-slate-300">••••••••{selectedAccount.id.slice(-4)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Access Token</span><span className="font-mono text-xs text-slate-300">••••••••••••</span></div>
+                <div className="flex justify-between gap-4"><span style={{ color: "var(--page-text-secondary)" }}>Profile URL</span><a href={selectedAccount.profileUrl} className="truncate text-purple-400 hover:underline">{selectedAccount.profileUrl}</a></div>
+                <div className="flex justify-between"><span style={{ color: "var(--page-text-secondary)" }}>Status</span><span style={{ color: selectedAccount.isVerified ? "#10b981" : "#f59e0b" }}>{selectedAccount.isVerified ? "Verified" : "Unverified"}</span></div>
+                <div className="flex justify-between"><span style={{ color: "var(--page-text-secondary)" }}>Last Verified</span><span style={{ color: "var(--page-text)" }}>{selectedAccount.lastVerifiedAt ? formatDate(selectedAccount.lastVerifiedAt) : "Never"}</span></div>
+                <div className="flex justify-between"><span style={{ color: "var(--page-text-secondary)" }}>Last Posted</span><span style={{ color: "var(--page-text)" }}>{selectedAccount.lastPostedAt ? formatDate(selectedAccount.lastPostedAt) : "Never"}</span></div>
+                <div className="flex justify-between"><span style={{ color: "var(--page-text-secondary)" }}>API Key</span><span className="font-mono text-xs" style={{ color: "var(--page-text)" }}>••••••••{selectedAccount.id.slice(-4)}</span></div>
+                <div className="flex justify-between"><span style={{ color: "var(--page-text-secondary)" }}>Access Token</span><span className="font-mono text-xs" style={{ color: "var(--page-text)" }}>••••••••••••</span></div>
               </div>
             </div>
 
@@ -865,12 +928,13 @@ export default function SocialAccountsPage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-400">Platform</label>
-            <select 
+            <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--page-text-muted)" }}>Platform</label>
+            <select
               value={formPlatformId}
               onChange={(e) => setFormPlatformId(e.target.value)}
               disabled={isEdit}
-              className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none focus:border-purple-500/50 disabled:opacity-50"
+              className="w-full rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[rgba(124,58,237,0.50)] disabled:opacity-50"
+              style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
             >
               <option value="">Select a platform...</option>
               {dbPlatforms
@@ -887,8 +951,8 @@ export default function SocialAccountsPage() {
               return (
                 <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 text-xs text-blue-300 space-y-3">
                   <div>
-                    <p className="font-semibold text-sm text-white mb-1">Easy One-Click Connection (Recommended):</p>
-                    <p className="text-gray-300 mb-3">Connect your Facebook Page automatically. No developer access tokens or page IDs needed.</p>
+                    <p className="font-semibold text-sm mb-1" style={{ color: "var(--page-heading)" }}>Easy One-Click Connection (Recommended):</p>
+                    <p className="mb-3" style={{ color: "var(--page-text-secondary)" }}>Connect your Facebook Page automatically. No developer access tokens or page IDs needed.</p>
                     <Button 
                       onClick={handleFacebookOAuth} 
                       disabled={isLoading}
@@ -902,7 +966,7 @@ export default function SocialAccountsPage() {
                   </div>
                   
                   <div className="border-t border-blue-500/20 pt-2.5">
-                    <p className="font-semibold text-white mb-1">Manual Developer Connection:</p>
+                    <p className="font-semibold mb-1" style={{ color: "var(--page-heading)" }}>Manual Developer Connection:</p>
                     <p>Or configure manually below by pasting your Meta Access Token and typing your account details.</p>
                   </div>
                 </div>
@@ -912,8 +976,8 @@ export default function SocialAccountsPage() {
               return (
                 <div className="rounded-xl bg-[#0A66C2]/10 border border-[#0A66C2]/20 p-4 text-xs text-blue-200 space-y-3">
                   <div>
-                    <p className="font-semibold text-sm text-white mb-1">Easy One-Click Connection (Recommended):</p>
-                    <p className="text-gray-300 mb-3">Sign in with LinkedIn to connect an account. Choose where posts should be published:</p>
+                    <p className="font-semibold text-sm mb-1" style={{ color: "var(--page-heading)" }}>Easy One-Click Connection (Recommended):</p>
+                    <p className="mb-3" style={{ color: "var(--page-text-secondary)" }}>Sign in with LinkedIn to connect an account. Choose where posts should be published:</p>
                     <div className="grid grid-cols-1 gap-2">
                       <Button
                         onClick={() => handleLinkedinOAuth("personal")}
@@ -936,7 +1000,7 @@ export default function SocialAccountsPage() {
                     </div>
                   </div>
                   <div className="border-t border-[#0A66C2]/20 pt-2.5 space-y-1">
-                    <p className="text-gray-300"><strong className="text-white">Personal Profile</strong> works out of the box. <strong className="text-white">Company Page</strong> requires the "Community Management API" product enabled on your LinkedIn app and admin rights on the page.</p>
+                    <p style={{ color: "var(--page-text-secondary)" }}><strong style={{ color: "var(--page-heading)" }}>Personal Profile</strong> works out of the box. <strong style={{ color: "var(--page-heading)" }}>Company Page</strong> requires the "Community Management API" product enabled on your LinkedIn app and admin rights on the page.</p>
                     <p className="text-amber-300/90">Note: LinkedIn Job postings and Ads require a separate LinkedIn partnership approval and aren't available via a standard app yet.</p>
                   </div>
                 </div>
@@ -946,8 +1010,8 @@ export default function SocialAccountsPage() {
               return (
                 <div className="rounded-xl bg-pink-500/10 border border-pink-500/20 p-4 text-xs text-pink-300 space-y-3">
                   <div>
-                    <p className="font-semibold text-sm text-white mb-1">Easy One-Click Connection (Recommended):</p>
-                    <p className="text-gray-300 mb-3">Connect your Instagram Business or Creator account automatically in one click.</p>
+                    <p className="font-semibold text-sm mb-1" style={{ color: "var(--page-heading)" }}>Easy One-Click Connection (Recommended):</p>
+                    <p className="mb-3" style={{ color: "var(--page-text-secondary)" }}>Connect your Instagram Business or Creator account automatically in one click.</p>
                     <Button 
                       onClick={handleInstagramOAuth} 
                       disabled={isLoading}
@@ -961,7 +1025,7 @@ export default function SocialAccountsPage() {
                   </div>
                   
                   <div className="border-t border-pink-500/20 pt-2.5">
-                    <p className="font-semibold text-white mb-1">Manual Developer Connection:</p>
+                    <p className="font-semibold mb-1" style={{ color: "var(--page-heading)" }}>Manual Developer Connection:</p>
                     <p>Or configure manually below by pasting your Meta Access Token and typing your account details.</p>
                   </div>
                 </div>
@@ -971,8 +1035,8 @@ export default function SocialAccountsPage() {
               return (
                 <div className="rounded-xl bg-black/30 border border-white/20 p-4 text-xs text-gray-200 space-y-3">
                   <div>
-                    <p className="font-semibold text-sm text-white mb-1">Easy One-Click Connection (Recommended):</p>
-                    <p className="text-gray-300 mb-3">Sign in with X to connect an account and post tweets automatically.</p>
+                    <p className="font-semibold text-sm mb-1" style={{ color: "var(--page-heading)" }}>Easy One-Click Connection (Recommended):</p>
+                    <p className="mb-3" style={{ color: "var(--page-text-secondary)" }}>Sign in with X to connect an account and post tweets automatically.</p>
                     <Button
                       onClick={handleTwitterOAuth}
                       disabled={isLoading}
@@ -994,8 +1058,8 @@ export default function SocialAccountsPage() {
               return (
                 <div className="rounded-xl bg-[#FF0000]/10 border border-[#FF0000]/20 p-4 text-xs text-red-200 space-y-3">
                   <div>
-                    <p className="font-semibold text-sm text-white mb-1">Easy One-Click Connection (Recommended):</p>
-                    <p className="text-gray-300 mb-3">Sign in with Google to connect your YouTube channel and upload videos.</p>
+                    <p className="font-semibold text-sm mb-1" style={{ color: "var(--page-heading)" }}>Easy One-Click Connection (Recommended):</p>
+                    <p className="mb-3" style={{ color: "var(--page-text-secondary)" }}>Sign in with Google to connect your YouTube channel and upload videos.</p>
                     <Button
                       onClick={handleYoutubeOAuth}
                       disabled={isLoading}
@@ -1008,7 +1072,7 @@ export default function SocialAccountsPage() {
                     </Button>
                   </div>
                   <div className="border-t border-[#FF0000]/20 pt-2.5">
-                    <p className="text-amber-300/90">Note: "Publishing" to YouTube uploads a <strong className="text-white">video</strong> (attach one to your post). While your Google app is unverified, uploads may be forced to private until you complete Google's verification.</p>
+                    <p className="text-amber-500 dark:text-amber-300/90">Note: "Publishing" to YouTube uploads a <strong style={{ color: "var(--page-heading)" }}>video</strong> (attach one to your post). While your Google app is unverified, uploads may be forced to private until you complete Google's verification.</p>
                   </div>
                 </div>
               );
@@ -1033,8 +1097,8 @@ export default function SocialAccountsPage() {
             value={formProfileUrl}
             onChange={(e) => setFormProfileUrl(e.target.value)}
           />
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <h4 className="mb-3 text-sm font-medium text-white flex items-center gap-2">
+          <div className="rounded-xl p-4" style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--sidebar-hover-bg)" }}>
+            <h4 className="mb-3 text-sm font-medium flex items-center gap-2" style={{ color: "var(--page-heading)" }}>
               <Key className="h-4 w-4 text-purple-400" /> API Credentials
             </h4>
             <div className="space-y-3">
