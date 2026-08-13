@@ -609,12 +609,13 @@ export default function SocialAccountsPage() {
             {filtered.map((account, i) => (
               <motion.div
                 key={account.id}
+                className={cn("relative transition-all", menuOpen === account.id ? "z-40" : "z-0")}
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ delay: i * 0.04 }}
               >
-                <GlassCard padding="md" hover>
+                <GlassCard padding="md" hover className={cn("relative", menuOpen === account.id ? "z-40" : "z-0")}>
                   <div className="flex items-center gap-4">
                     {/* Platform indicator / Profile Image */}
                     <div className="relative shrink-0">
@@ -733,13 +734,21 @@ export default function SocialAccountsPage() {
                         </button>
                         <AnimatePresence>
                           {menuOpen === account.id && (
-                            <motion.div
-                              initial={{ opacity: 0, y: 5, scale: 0.95 }}
-                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                              exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                              className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-xl py-1 shadow-2xl backdrop-blur-xl"
-                              style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--surface-bg)" }}
-                            >
+                            <>
+                              <div
+                                className="fixed inset-0 z-40"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setMenuOpen(null);
+                                }}
+                              />
+                              <motion.div
+                                initial={{ opacity: 0, y: 5, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl py-1 shadow-2xl backdrop-blur-xl"
+                                style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--surface-bg)" }}
+                              >
                               <button 
                                 type="button"
                                 onClick={(e) => {
@@ -789,8 +798,9 @@ export default function SocialAccountsPage() {
                                 <Trash2 className="h-3.5 w-3.5" /> Delete
                               </button>
                             </motion.div>
-                          )}
-                        </AnimatePresence>
+                          </>
+                        )}
+                      </AnimatePresence>
                       </div>
                     </div>
                   </div>
