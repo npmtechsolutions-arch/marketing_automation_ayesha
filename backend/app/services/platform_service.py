@@ -173,6 +173,45 @@ def _content_with_hashtags(post: Any, limit: int | None = None) -> str:
     return f"{content}{sep}{tag_str}" if content else tag_str
 
 
+def _assert_public_http_url(url: str) -> None:
+    """Guard against SSRF.
+
+    ``media_urls`` / ``*_music_url`` are user-supplied and fetched server-side,
+    so a caller could otherwise point them at internal services or the cloud
+    metadata endpoint (``169.254.169.254``). Allow only http(s) URLs whose host
+    resolves exclusively to public IP addresses.
+    """
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Refusing to fetch non-http(s) URL: {parsed.scheme or 'no scheme'}")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("Refusing to fetch URL with no host")
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise ValueError(f"Could not resolve host: {host}") from e
+
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+            or not ip.is_global
+        ):
+            raise ValueError(f"Refusing to fetch internal/non-public address for host: {host}")
+
+
 def _fetch_to_file(url: str, path: str) -> None:
     """Download a URL (or decode a base64 data URL) to a local file path."""
     if url.startswith("data:"):
@@ -181,12 +220,29 @@ def _fetch_to_file(url: str, path: str) -> None:
         with open(path, "wb") as f:
             f.write(base64.b64decode(encoded))
         return
+
     import httpx
-    with httpx.Client(follow_redirects=True) as client:
-        r = client.get(url, timeout=30.0)
-        r.raise_for_status()
-        with open(path, "wb") as f:
-            f.write(r.content)
+
+    # SSRF protection: validate the target (and every redirect hop) resolves to
+    # a public address before we connect. Redirects are followed manually so an
+    # attacker-controlled 3xx cannot bounce us into internal space.
+    _assert_public_http_url(url)
+    current = url
+    with httpx.Client(follow_redirects=False) as client:
+        for _ in range(5):
+            r = client.get(current, timeout=30.0)
+            if r.is_redirect:
+                location = r.headers.get("location")
+                if not location:
+                    break
+                current = str(httpx.URL(str(r.url)).join(location))
+                _assert_public_http_url(current)
+                continue
+            r.raise_for_status()
+            with open(path, "wb") as f:
+                f.write(r.content)
+            return
+    raise ValueError("Too many redirects while fetching media URL")
 
 
 def _render_image_audio_to_video(

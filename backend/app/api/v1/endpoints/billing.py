@@ -250,18 +250,27 @@ async def stripe_webhook(
 
     stripe = _get_stripe()
 
-    # Verify webhook signature
-    if settings.STRIPE_WEBHOOK_SECRET and stripe_signature:
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, stripe_signature, settings.STRIPE_WEBHOOK_SECRET
-            )
-        except stripe.error.SignatureVerificationError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature")
-    else:
-        import json
-
-        event = json.loads(payload)
+    # SECURITY: webhook events mutate billing state (subscription tier/limits),
+    # so they MUST be authenticated by their Stripe signature. Never fall back
+    # to parsing the raw body — an attacker who omits the signature header (or
+    # when the secret is unset) could otherwise forge events, e.g. grant their
+    # own account a paid tier.
+    if not settings.STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Stripe webhook secret not configured",
+        )
+    if not stripe_signature:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing Stripe-Signature header",
+        )
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, stripe_signature, settings.STRIPE_WEBHOOK_SECRET
+        )
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature")
 
     event_type = event.get("type") if isinstance(event, dict) else event.type
     data_object = event.get("data", {}).get("object", {}) if isinstance(event, dict) else event.data.object

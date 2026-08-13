@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     LINKEDIN_REDIRECT_URI: str = "http://localhost:8000/api/v1/linkedin/callback"
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
+    # Firebase project used by the frontend Google sign-in popup. The backend
+    # verifies the ID token's signature/issuer/audience against this project.
+    FIREBASE_PROJECT_ID: str = "marketengine-ai"
     # Must EXACTLY match an "Authorized redirect URI" in the Google Cloud OAuth client.
     YOUTUBE_REDIRECT_URI: str = "http://localhost:8000/api/v1/youtube/callback"
     TWITTER_CLIENT_ID: str = ""
@@ -133,6 +136,26 @@ class Settings(BaseSettings):
             allowed_set.add(f"{self.FRONTEND_URL}/")
 
         self.CORS_ORIGINS = list(allowed_set)
+
+        # SECURITY: refuse to boot a non-debug (production) instance that is
+        # still signing tokens with a publicly-known placeholder secret. Doing
+        # so would let anyone forge access tokens for any user. Local/dev runs
+        # (DEBUG=true) are exempt so the defaults remain convenient.
+        _insecure_secrets = {
+            "change-me-in-production",
+            "change-me-jwt-secret",
+            "dev-secret-key-change-in-production",
+            "dev-jwt-secret-change-in-production",
+        }
+        if not self.DEBUG and (
+            self.SECRET_KEY in _insecure_secrets
+            or self.JWT_SECRET_KEY in _insecure_secrets
+        ):
+            raise RuntimeError(
+                "SECRET_KEY and JWT_SECRET_KEY must be set to strong, unique "
+                "values in production (DEBUG=false). Refusing to start with a "
+                "known placeholder secret."
+            )
 
 
 settings = Settings()

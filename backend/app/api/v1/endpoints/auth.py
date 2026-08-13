@@ -27,6 +27,7 @@ from app.models.user import User
 from app.models.user_session import UserSession
 from app.services import totp_service
 from app.services.email_service import EmailService
+from app.services.firebase_auth import verify_firebase_id_token
 from app.schemas.common import MessageResponse
 from app.schemas.user import (
     FirebaseGoogleAuthRequest,
@@ -624,9 +625,18 @@ async def google_firebase_auth(
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate or register user via Firebase Google OAuth Popup token."""
-    email = payload.email
-    full_name = payload.full_name or email.split("@")[0]
-    picture = payload.avatar_url
+    # SECURITY: never trust the client-supplied email. Verify the Firebase ID
+    # token server-side and derive the identity from its signed claims. Without
+    # this, anyone could POST an arbitrary email and be logged in as that user.
+    claims = await verify_firebase_id_token(payload.id_token)
+    email = claims.get("email")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google account has no email address",
+        )
+    full_name = claims.get("name") or payload.full_name or email.split("@")[0]
+    picture = claims.get("picture") or payload.avatar_url
 
     # Look up existing user by email
     result = await db.execute(select(User).where(User.email == email))

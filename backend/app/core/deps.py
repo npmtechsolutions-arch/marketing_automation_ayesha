@@ -14,6 +14,17 @@ async def get_current_user(
 ):
     """Extract and validate the current user from the JWT bearer token."""
     payload = decode_token(token)
+    # Only genuine access tokens may authenticate a request. Refresh tokens and
+    # 2FA-challenge tokens also carry ``sub = user_id``; without this check they
+    # would be accepted here, allowing a refresh token to be used as an access
+    # token and — critically — letting the pre-2FA challenge token bypass the
+    # second factor entirely.
+    if payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     user_id: str | None = payload.get("sub")
     if user_id is None:
         raise HTTPException(
@@ -58,6 +69,8 @@ async def get_optional_user(
         return None
     try:
         payload = decode_token(token)
+        if payload.get("type") != "access":
+            return None
         user_id: str | None = payload.get("sub")
         if user_id is None:
             return None

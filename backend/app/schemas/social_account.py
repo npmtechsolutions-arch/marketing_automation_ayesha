@@ -45,10 +45,14 @@ class SocialAccountResponse(BaseModel):
     account_handle: str | None = None
     profile_url: str | None = None
     profile_image_url: str | None = None
-    api_key: str | None = None
-    # api_secret is intentionally excluded for security
-    access_token: str | None = None
-    refresh_token: str | None = None
+    # OAuth/API credentials are populated from the ORM (so computed flags below
+    # can see them) but are NEVER serialized back to clients. Returning them
+    # let any account member — including a read-only VIEWER — exfiltrate every
+    # connected platform's tokens.
+    api_key: str | None = Field(None, exclude=True)
+    api_secret: str | None = Field(None, exclude=True)
+    access_token: str | None = Field(None, exclude=True)
+    refresh_token: str | None = Field(None, exclude=True)
     token_expires_at: datetime | None = None
     config: dict | None = None
     is_active: bool
@@ -75,6 +79,12 @@ class SocialAccountResponse(BaseModel):
                     except (ValueError, TypeError):
                         pass
         return 0
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def has_credentials(self) -> bool:
+        """Whether the account has stored credentials, without exposing them."""
+        return bool(self.access_token or self.refresh_token or self.api_key)
 
 
 class SocialAccountWithPlatform(SocialAccountResponse):

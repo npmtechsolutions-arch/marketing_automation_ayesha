@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.platform import SocialAccount, SocialPlatform
-from app.models.team_member import InvitationStatus, TeamMember
+from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.social_account import (
@@ -35,8 +35,10 @@ async def _verify_membership(
     db: AsyncSession,
     user_id: uuid.UUID,
     account_id: uuid.UUID,
+    min_role: TeamRole | None = None,
 ) -> TeamMember:
-    """Ensure the current user is an accepted member of the account."""
+    """Ensure the current user is an accepted member of the account and,
+    optionally, meets a minimum role."""
     result = await db.execute(
         select(TeamMember).where(
             TeamMember.user_id == user_id,
@@ -50,6 +52,20 @@ async def _verify_membership(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not a member of this account",
         )
+
+    if min_role is not None:
+        role_hierarchy = [
+            TeamRole.VIEWER,
+            TeamRole.EDITOR,
+            TeamRole.MANAGER,
+            TeamRole.ADMIN,
+            TeamRole.OWNER,
+        ]
+        if role_hierarchy.index(member.role) < role_hierarchy.index(min_role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires at least {min_role.value} role",
+            )
     return member
 
 
@@ -191,7 +207,7 @@ async def create_social_account(
     current_user: User = Depends(get_current_active_user),
 ):
     """Create a new social media account linked to a platform."""
-    await _verify_membership(db, current_user.id, account_id)
+    await _verify_membership(db, current_user.id, account_id, min_role=TeamRole.EDITOR)
 
     # Verify the platform exists and belongs to this account
     platform_result = await db.execute(
@@ -275,7 +291,7 @@ async def update_social_account(
     current_user: User = Depends(get_current_active_user),
 ):
     """Update a social account's settings or credentials."""
-    await _verify_membership(db, current_user.id, account_id)
+    await _verify_membership(db, current_user.id, account_id, min_role=TeamRole.EDITOR)
     social_account = await _get_social_account_or_404(social_account_id, account_id, db)
 
     update_data = body.model_dump(exclude_unset=True)
@@ -302,7 +318,7 @@ async def delete_social_account(
     current_user: User = Depends(get_current_active_user),
 ):
     """Delete a social account."""
-    await _verify_membership(db, current_user.id, account_id)
+    await _verify_membership(db, current_user.id, account_id, min_role=TeamRole.EDITOR)
     social_account = await _get_social_account_or_404(social_account_id, account_id, db)
 
     await db.delete(social_account)
