@@ -90,7 +90,7 @@ interface CampaignStats {
   budget_remaining: number | null;
 }
 
-const platformIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+const platformIconMap: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
   instagram: Instagram,
   linkedin: Linkedin,
   twitter: Twitter,

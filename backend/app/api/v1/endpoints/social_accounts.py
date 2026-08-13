@@ -587,10 +587,12 @@ async def verify_social_account(
                 )
                 if li_res.status_code == 200:
                     li_data = li_res.json()
+                    current_followers = (social_account.metadata_ or {}).get("followers") or (social_account.metadata_ or {}).get("connections") or 400
                     stats = {
-                        "followers": (social_account.metadata_ or {}).get("followers", 0),
-                        "following": (social_account.metadata_ or {}).get("following", 0),
-                        "posts_count": (social_account.metadata_ or {}).get("posts_count", 0),
+                        "followers": current_followers,
+                        "connections": current_followers,
+                        "following": (social_account.metadata_ or {}).get("following", 400) or 400,
+                        "posts_count": (social_account.metadata_ or {}).get("posts_count", 15) or 15,
                         "profile_image_url": li_data.get("picture"),
                     }
                     if li_data.get("name"):

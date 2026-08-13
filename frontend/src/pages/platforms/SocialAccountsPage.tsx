@@ -664,7 +664,9 @@ export default function SocialAccountsPage() {
                     <div className="hidden sm:flex items-center gap-6 text-xs" style={{ color: "var(--page-text-muted)" }}>
                       <div className="text-center min-w-[55px]">
                         <div className="font-semibold tabular-nums text-sm" style={{ color: "var(--page-heading)" }}>
-                          {formatNumber(account.followers)}
+                          {account.platformSlug.includes("linkedin") && account.followers >= 400
+                            ? `${formatNumber(account.followers)}+`
+                            : formatNumber(account.followers)}
                         </div>
                         <div>
                           {account.platformSlug.includes("youtube")
@@ -677,13 +679,17 @@ export default function SocialAccountsPage() {
                       <div className="text-center min-w-[55px]">
                         <div className="font-semibold tabular-nums text-sm" style={{ color: "var(--page-heading)" }}>
                           {formatNumber(
-                            account.platformSlug.includes("youtube")
+                            account.platformSlug.includes("youtube") || account.platformSlug.includes("linkedin")
                               ? (account.postsCount || 0)
                               : account.following
                           )}
                         </div>
                         <div>
-                          {account.platformSlug.includes("youtube") ? "videos" : "following"}
+                          {account.platformSlug.includes("youtube")
+                            ? "videos"
+                            : account.platformSlug.includes("linkedin")
+                            ? "posts"
+                            : "following"}
                         </div>
                       </div>
                     </div>
@@ -865,12 +871,34 @@ export default function SocialAccountsPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl p-3" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
-                <div className="text-lg font-bold tabular-nums" style={{ color: "var(--page-heading)" }}>{formatNumber(selectedAccount.followers)}</div>
-                <div className="text-xs" style={{ color: "var(--page-text-muted)" }}>Followers</div>
+                <div className="text-lg font-bold tabular-nums" style={{ color: "var(--page-heading)" }}>
+                  {selectedAccount.platformSlug.includes("linkedin") && selectedAccount.followers >= 400
+                    ? `${formatNumber(selectedAccount.followers)}+`
+                    : formatNumber(selectedAccount.followers)}
+                </div>
+                <div className="text-xs" style={{ color: "var(--page-text-muted)" }}>
+                  {selectedAccount.platformSlug.includes("youtube")
+                    ? "Subscribers"
+                    : selectedAccount.platformSlug.includes("linkedin")
+                    ? "Connections"
+                    : "Followers"}
+                </div>
               </div>
               <div className="rounded-xl p-3" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
-                <div className="text-lg font-bold tabular-nums" style={{ color: "var(--page-heading)" }}>{formatNumber(selectedAccount.following)}</div>
-                <div className="text-xs" style={{ color: "var(--page-text-muted)" }}>Following</div>
+                <div className="text-lg font-bold tabular-nums" style={{ color: "var(--page-heading)" }}>
+                  {formatNumber(
+                    selectedAccount.platformSlug.includes("youtube") || selectedAccount.platformSlug.includes("linkedin")
+                      ? (selectedAccount.postsCount || 0)
+                      : selectedAccount.following
+                  )}
+                </div>
+                <div className="text-xs" style={{ color: "var(--page-text-muted)" }}>
+                  {selectedAccount.platformSlug.includes("youtube")
+                    ? "Videos"
+                    : selectedAccount.platformSlug.includes("linkedin")
+                    ? "Posts"
+                    : "Following"}
+                </div>
               </div>
             </div>
 
