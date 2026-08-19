@@ -18,6 +18,7 @@ from app.core.database import AsyncSessionLocal, get_db
 from app.core.deps import get_current_active_user
 from app.models.platform import SocialAccount, SocialPlatform
 from app.models.user import User
+from app.services.entitlements import enforce_platform_limit, platform_slot_available
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,9 @@ async def instagram_authorize(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Instagram platform not found in this workspace",
         )
+
+    # Stop at the plan's platform cap before sending the user off to Meta.
+    await enforce_platform_limit(db, account_id, platform_id)
 
     # Sign identity into the state token (valid 15 minutes).
     state = jwt.encode(
@@ -229,6 +233,10 @@ async def instagram_callback(
     # 3. Persist/Upsert the Instagram SocialAccount record
     try:
         async with AsyncSessionLocal() as session:
+            # Re-check the plan cap: the consent round-trip may have taken the
+            # account past its limit, and the state token can be replayed.
+            if not await platform_slot_available(session, account_id, platform_id):
+                return _frontend_redirect("error", "plan_limit")
             await _upsert_instagram_account(
                 session,
                 account_id=account_id,

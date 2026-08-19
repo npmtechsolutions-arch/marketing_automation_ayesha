@@ -177,7 +177,13 @@ export default function SocialAccountsPage() {
     const liResult = params.get("linkedin");
     const twitterResult = params.get("twitter");
     const youtubeResult = params.get("youtube");
-    const reason = params.get("reason");
+    // Backend failure codes are machine-readable; translate the ones a user can act on.
+    const REASON_MESSAGES: Record<string, string> = {
+      plan_limit:
+        "You have reached the connected platform limit for your plan. Disconnect a platform or upgrade your plan.",
+    };
+    const rawReason = params.get("reason");
+    const reason = rawReason ? REASON_MESSAGES[rawReason] ?? rawReason : null;
 
     if (fbResult === "success") {
       showSuccess("Facebook Page connected successfully!");

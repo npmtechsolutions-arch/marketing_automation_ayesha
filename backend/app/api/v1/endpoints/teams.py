@@ -17,6 +17,7 @@ from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.team import InviteInfoResponse, TeamInvite, TeamMemberResponse, TeamMemberUpdate
+from app.services.entitlements import enforce_member_limit
 
 router = APIRouter(
     prefix="/accounts/{account_id}/team",
@@ -126,16 +127,7 @@ async def invite_team_member(
         )
 
     # Check team member limit
-    member_count_result = await db.execute(
-        select(func.count()).where(TeamMember.account_id == account_id)
-    )
-    member_count = member_count_result.scalar() or 0
-    if member_count >= account.max_team_members:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Team member limit reached ({account.max_team_members}). "
-            "Upgrade your plan to add more members.",
-        )
+    await enforce_member_limit(db, account)
 
     # Check for existing membership or pending invite
     existing_result = await db.execute(

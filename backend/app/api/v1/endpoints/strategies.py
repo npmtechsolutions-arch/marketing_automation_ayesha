@@ -19,6 +19,7 @@ from app.models.team_member import TeamMember, TeamRole
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.strategy import StrategyGenerate, StrategyResponse, StrategyUpdate
 from app.api.v1.endpoints.ai import _call_anthropic
+from app.services.entitlements import enforce_post_limit
 
 router = APIRouter()
 
@@ -321,6 +322,8 @@ async def apply_strategy(
 ):
     """Apply strategy recommendations by creating draft posts from the strategy's content themes."""
     await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    # All `count` drafts land in this month's allowance, so check them as a batch.
+    await enforce_post_limit(db, account_id, adding=count)
     strategy = await _get_strategy_or_404(strategy_id, account_id, db)
 
     themes = strategy.content_themes or []

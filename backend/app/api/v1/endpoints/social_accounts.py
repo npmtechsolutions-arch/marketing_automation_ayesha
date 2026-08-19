@@ -23,6 +23,7 @@ from app.schemas.social_account import (
     SocialAccountUpdate,
     SocialAccountWithPlatform,
 )
+from app.services.entitlements import enforce_platform_limit
 
 router = APIRouter()
 
@@ -222,6 +223,8 @@ async def create_social_account(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Social platform not found in this account",
         )
+
+    await enforce_platform_limit(db, account_id, body.platform_id)
 
     # Fetch real stats for Instagram on creation
     profile_image_url = body.profile_image_url

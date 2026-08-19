@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     STRIPE_PRICE_STARTER: str = ""
     STRIPE_PRICE_GROWTH: str = ""
     STRIPE_PRICE_PRO: str = ""
+    # Allows an account admin to switch subscription tier directly, without a
+    # Stripe payment. Intended for development/demo deployments that have no
+    # Stripe keys — never enable this in production, it hands out paid tiers
+    # for free. When left false it is still implicitly on for DEBUG runs that
+    # have no STRIPE_SECRET_KEY configured.
+    BILLING_ALLOW_MANUAL_PLAN_CHANGE: bool = False
 
     # Social OAuth
     META_APP_ID: str = ""

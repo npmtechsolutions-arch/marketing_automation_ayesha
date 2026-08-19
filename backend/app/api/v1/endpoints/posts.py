@@ -19,6 +19,7 @@ from app.models.team_member import TeamMember, TeamRole
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.post import PostCreate, PostResponse, PostUpdate, PostWithPerformance
 from app.services.activity_service import log_activity
+from app.services.entitlements import enforce_post_limit
 
 router = APIRouter()
 
@@ -170,6 +171,7 @@ async def create_post(
 ):
     """Create a new post (draft by default)."""
     await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await enforce_post_limit(db, account_id)
 
     # Resolve target accounts from IDs to structured JSON
     target_accounts = None
@@ -850,6 +852,7 @@ async def duplicate_post(
 ):
     """Create a copy of an existing post as a new draft."""
     await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await enforce_post_limit(db, account_id)
     original = await _get_post_or_404(post_id, account_id, db)
 
     new_post = Post(
