@@ -94,7 +94,7 @@ async def facebook_authorize(
         algorithm=settings.JWT_ALGORITHM,
     )
 
-    redirect_uri = settings.LINKEDIN_REDIRECT_URI.replace("/linkedin/callback", "/facebook/callback")
+    redirect_uri = settings.META_REDIRECT_URI or settings.LINKEDIN_REDIRECT_URI.replace("/linkedin/callback", "/facebook/callback")
 
     params = {
         "response_type": "code",

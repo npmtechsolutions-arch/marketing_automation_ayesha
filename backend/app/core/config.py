@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     META_APP_ID: str = ""
     META_APP_SECRET: str = ""
     META_CONFIG_ID: str = ""
+    META_REDIRECT_URI: str = "http://localhost:8000/api/v1/facebook/callback"
     META_WEBHOOK_VERIFY_TOKEN: str = "marketengine_verify_token"
     LINKEDIN_CLIENT_ID: str = ""
     LINKEDIN_CLIENT_SECRET: str = ""

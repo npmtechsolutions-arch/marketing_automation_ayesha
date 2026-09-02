@@ -94,7 +94,7 @@ async def instagram_authorize(
         algorithm=settings.JWT_ALGORITHM,
     )
 
-    redirect_uri = settings.LINKEDIN_REDIRECT_URI.replace("/linkedin/callback", "/instagram/callback")
+    redirect_uri = (settings.META_REDIRECT_URI or settings.LINKEDIN_REDIRECT_URI.replace("/linkedin/callback", "/facebook/callback")).replace("/facebook/callback", "/instagram/callback")
 
     params = {
         "response_type": "code",
