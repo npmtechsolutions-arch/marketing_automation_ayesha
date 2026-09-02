@@ -642,7 +642,11 @@ export default function CreatePostPage() {
   }, []);
 
   const handleGenerateImage = useCallback(async () => {
-    if (!aiImagePrompt.trim()) return;
+    const promptToUse = aiImagePrompt.trim() || content.trim() || title.trim();
+    if (!promptToUse) {
+      showError("Please enter an image prompt or post content first.");
+      return;
+    }
 
     const accountId = localStorage.getItem("account_id");
     if (!accountId) {
@@ -653,7 +657,7 @@ export default function CreatePostPage() {
     setIsGeneratingImage(true);
     try {
       const payload = {
-        content: aiImagePrompt.trim(),
+        content: promptToUse,
         style: imageStyle,
         size: imageSize,
       };
@@ -663,6 +667,7 @@ export default function CreatePostPage() {
       
       if (data && data.image_url) {
         setGeneratedImages([data.image_url]);
+        setUploadedImages((prev) => Array.from(new Set([...prev, data.image_url])));
         showSuccess("Image generated successfully!");
       } else {
         throw new Error("No image URL returned from AI generator");
@@ -674,7 +679,7 @@ export default function CreatePostPage() {
     } finally {
       setIsGeneratingImage(false);
     }
-  }, [aiImagePrompt, imageStyle, imageSize]);
+  }, [aiImagePrompt, content, title, imageStyle, imageSize]);
 
   const toggleAccount = useCallback((id: string) => {
     setSelectedAccounts((prev) =>
@@ -1558,7 +1563,7 @@ export default function CreatePostPage() {
                         <Button
                           onClick={handleGenerateImage}
                           loading={isGeneratingImage}
-                          disabled={!aiImagePrompt.trim()}
+                          disabled={!aiImagePrompt.trim() && !content.trim() && !title.trim()}
                           icon={<Wand2 className="w-4 h-4" />}
                           className="w-full"
                         >

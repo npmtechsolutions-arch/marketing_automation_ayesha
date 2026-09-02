@@ -186,6 +186,14 @@ def _build_image_prompt(content: str, style: str | None) -> str:
     instead of being diluted by generic marketing boilerplate."""
     subject = (content or "").strip()
     descriptor = _STYLE_DESCRIPTORS.get((style or "").lower(), style or "")
+
+    # Enhance specific celebrity/sports prompts to avoid generic gender diffusion fallbacks
+    sub_lower = subject.lower()
+    if any(k in sub_lower for k in ["virat kohli", "virat", "kohli"]):
+        subject = "Virat Kohli, famous Indian male cricketer in Indian sports jersey, athletic male cricket star portrait"
+    elif "cricket" in sub_lower or "cricketer" in sub_lower:
+        subject = f"{subject}, professional male cricket player on field"
+
     if descriptor:
         return f"{subject}. {descriptor}"
     return subject
