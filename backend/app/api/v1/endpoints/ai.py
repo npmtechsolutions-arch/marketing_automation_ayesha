@@ -148,6 +148,53 @@ async def _call_anthropic(prompt: str, system_prompt: str, model: str = "claude-
         return text, input_tokens, output_tokens
 
 
+async def _call_gemini(prompt: str, system_prompt: str, model: str = "gemini-3.6-flash") -> tuple[str, int, int]:
+    """Call Google Gemini API via httpx and return (response_text, input_tokens, output_tokens)."""
+    import httpx
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.GEMINI_API_KEY.strip()}"
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": system_prompt}]
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": prompt}]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 2000,
+            "responseMimeType": "application/json"
+        }
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload, timeout=60.0)
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Gemini API error: {response.text}"
+            )
+        data = response.json()
+        candidates = data.get("candidates", [])
+        if not candidates:
+            raise HTTPException(status_code=500, detail="Gemini returned no response candidates.")
+        
+        parts = candidates[0].get("content", {}).get("parts", [])
+        text = parts[0].get("text", "").strip() if parts else ""
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+        
+        usage = data.get("usageMetadata", {})
+        input_tokens = usage.get("promptTokenCount", 0)
+        output_tokens = usage.get("candidatesTokenCount", 0)
+        return text, input_tokens, output_tokens
+
+
 # ---------------------------------------------------------------------------
 # Request / Response extras
 # ---------------------------------------------------------------------------
@@ -189,10 +236,20 @@ def _build_image_prompt(content: str, style: str | None) -> str:
 
     # Enhance specific celebrity/sports prompts to avoid generic gender diffusion fallbacks
     sub_lower = subject.lower()
-    if any(k in sub_lower for k in ["virat kohli", "virat", "kohli"]):
-        subject = "Virat Kohli, famous Indian male cricketer in Indian sports jersey, athletic male cricket star portrait"
+    if any(k in sub_lower for k in ["dhoni", "msd", "mahendra singh dhoni", "ms dhoni"]):
+        subject = "MS Dhoni, legendary Indian cricket captain, wearing blue Indian cricket jersey, athletic male sports legend portrait, stadium background"
+    elif any(k in sub_lower for k in ["virat kohli", "virat", "kohli"]):
+        subject = "Virat Kohli, famous Indian male cricketer in blue Indian sports jersey, athletic male cricket star portrait, stadium background"
+    elif any(k in sub_lower for k in ["sachin", "tendulkar"]):
+        subject = "Sachin Tendulkar, master blaster Indian cricket legend, blue Indian cricket jersey, male sports icon portrait"
+    elif any(k in sub_lower for k in ["rohit", "sharma"]):
+        subject = "Rohit Sharma, Indian cricket team captain, blue sports jersey, male cricketer portrait"
+    elif any(k in sub_lower for k in ["ronaldo", "cristiano"]):
+        subject = "Cristiano Ronaldo, famous male football star, sports jersey, athletic male athlete portrait"
+    elif any(k in sub_lower for k in ["messi", "lionel"]):
+        subject = "Lionel Messi, world champion male football star, Argentina sports jersey, athletic male athlete portrait"
     elif "cricket" in sub_lower or "cricketer" in sub_lower:
-        subject = f"{subject}, professional male cricket player on field"
+        subject = f"{subject}, professional male cricket player in team jersey on cricket field"
 
     if descriptor:
         return f"{subject}. {descriptor}"
@@ -201,14 +258,13 @@ def _build_image_prompt(content: str, style: str | None) -> str:
 
 def _pollinations_url(content: str, style: str | None, size: str | None) -> str:
     """Construct a Pollinations image URL with the flux model, prompt
-    enhancement and a deterministic seed derived from the prompt."""
+    enhancement and a random seed for fresh variations."""
     import urllib.parse
-    import zlib
+    import random
 
     prompt = _build_image_prompt(content, style)
     width, height = _SIZE_DIMENSIONS.get((size or "square").lower(), (1024, 1024))
-    # Deterministic per-prompt seed (stable across processes, unlike hash()).
-    seed = zlib.crc32(prompt.encode("utf-8")) % 1_000_000
+    seed = random.randint(100_000, 999_999)
     encoded = urllib.parse.quote(prompt)
     return (
         f"https://image.pollinations.ai/prompt/{encoded}"
@@ -286,7 +342,10 @@ async def generate_content(
     # Determine provider and model based on configured API keys
     provider = "mock"
     model = "mock"
-    if settings.OPENAI_API_KEY:
+    if settings.GEMINI_API_KEY:
+        provider = "gemini"
+        model = "gemini-3.6-flash"
+    elif settings.OPENAI_API_KEY:
         provider = "openai"
         model = "gpt-4o"
     elif settings.ANTHROPIC_API_KEY:
@@ -324,7 +383,9 @@ async def generate_content(
 
     try:
         user_prompt = f"Create social media content for: {body.prompt}\nPlatforms: {', '.join(body.platforms)}"
-        if provider == "openai":
+        if provider == "gemini":
+            raw_text, tokens_in, tokens_out = await _call_gemini(user_prompt, system_prompt, model="gemini-3.6-flash")
+        elif provider == "openai":
             raw_text, tokens_in, tokens_out = await _call_openai(user_prompt, system_prompt)
         else:
             raw_text, tokens_in, tokens_out = await _call_anthropic(user_prompt, system_prompt)

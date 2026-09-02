@@ -55,7 +55,8 @@ class Settings(BaseSettings):
     # have no STRIPE_SECRET_KEY configured.
     BILLING_ALLOW_MANUAL_PLAN_CHANGE: bool = False
 
-    # Social OAuth
+    # Social OAuth & AI Keys
+    GEMINI_API_KEY: str = ""
     META_APP_ID: str = ""
     META_APP_SECRET: str = ""
     META_CONFIG_ID: str = ""
