@@ -290,7 +290,7 @@ export default function StrategyPage() {
     ? Math.round(activeStrategy.confidence_score * 100)
     : null;
 
-  const allPlatforms = ["instagram", "facebook", "twitter", "linkedin", "youtube", "tiktok"];
+  const allPlatforms = ["instagram", "facebook", "twitter", "linkedin", "youtube"];
 
   const togglePlatform = (p: string) => {
     setSelectedPlatforms((prev) =>

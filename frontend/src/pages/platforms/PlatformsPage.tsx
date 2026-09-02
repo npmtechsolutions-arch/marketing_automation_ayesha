@@ -71,8 +71,6 @@ const ICON_OPTIONS = [
   { value: "linkedin", label: "LinkedIn" },
   { value: "twitter", label: "X / Twitter" },
   { value: "youtube", label: "YouTube" },
-  { value: "tiktok", label: "TikTok" },
-  { value: "pinterest", label: "Pinterest" },
   { value: "globe", label: "Globe" },
   { value: "share2", label: "Share" },
   { value: "megaphone", label: "Megaphone" },

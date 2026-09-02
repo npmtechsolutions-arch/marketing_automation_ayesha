@@ -47,7 +47,7 @@ import { showSuccess, showError } from "@/components/ui/Toast";
 // ────────────────────────────────────────────────────────
 // Types
 // ────────────────────────────────────────────────────────
-type Platform = "facebook" | "instagram" | "linkedin" | "twitter" | "youtube" | "tiktok" | "pinterest";
+type Platform = "facebook" | "instagram" | "linkedin" | "twitter" | "youtube";
 type Tone = "professional" | "casual" | "friendly" | "humorous" | "inspirational";
 type MediaTab = "upload" | "ai-generate" | "photography";
 type ImageStyle = "realistic" | "illustration" | "abstract" | "photography" | "3d-render";
