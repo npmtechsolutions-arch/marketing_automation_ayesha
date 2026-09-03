@@ -4,7 +4,7 @@ import json
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -208,17 +208,55 @@ class RegenerateImageRequest(BaseModel):
 class RegenerateImageResponse(BaseModel):
     image_url: str
     generation_id: uuid.UUID
+    provider: str | None = None
+    model: str | None = None
+    # Set when we had to drop to the low-quality free generator, so the UI can
+    # explain why the image looks worse than expected.
+    warning: str | None = None
 
 
 # Map the UI style choice to concrete descriptors the image model understands.
 _STYLE_DESCRIPTORS: dict[str, str] = {
-    "realistic": "photorealistic, ultra realistic, natural lighting, highly detailed",
-    "photography": "professional photography, DSLR, sharp focus, depth of field, cinematic lighting",
-    "illustration": "digital illustration, clean vector art, vibrant colors",
-    "abstract": "abstract art, expressive shapes, artistic composition",
-    "3d-render": "3D render, octane render, volumetric lighting, highly detailed",
-    "modern": "modern, clean, professional",
+    "realistic": (
+        "photorealistic photograph, true-to-life textures and skin tones, natural "
+        "lighting, accurate anatomy and proportions, tack-sharp focus, high dynamic range"
+    ),
+    "photography": (
+        "professional commercial photograph, full-frame DSLR, 50mm prime lens at f/2.0, "
+        "shallow depth of field, soft key light with subtle rim light, colour-graded, "
+        "crisp detail, no motion blur"
+    ),
+    "illustration": (
+        "polished digital illustration, clean confident linework, flat vector shapes, "
+        "harmonious vibrant palette, balanced composition, crisp edges"
+    ),
+    "abstract": (
+        "modern abstract composition, bold expressive shapes, refined colour harmony, "
+        "layered depth, gallery-quality finish"
+    ),
+    "3d-render": (
+        "high-end 3D render, physically based materials, volumetric studio lighting, "
+        "soft global illumination, ray-traced reflections, 8k detail"
+    ),
+    "modern": (
+        "modern professional brand photography, clean uncluttered composition, "
+        "balanced negative space, soft studio lighting, premium editorial finish"
+    ),
 }
+
+# Quality directives appended to every prompt regardless of style.
+_QUALITY_SUFFIX = (
+    "Ultra high resolution, razor-sharp focus, rich micro-detail, professional colour "
+    "grading, realistic lighting and shadows, clean composition suitable for a social "
+    "media marketing post."
+)
+
+# Things image models reliably get wrong and that ruin a marketing asset.
+_NEGATIVE_SUFFIX = (
+    "Do not render any text, letters, words, captions, watermarks, logos or UI overlays. "
+    "Avoid blur, noise, jpeg artefacts, low resolution, distorted faces, malformed hands "
+    "or extra limbs, warped proportions, duplicated objects and cluttered backgrounds."
+)
 
 # Map the UI size choice to output dimensions (width, height).
 _SIZE_DIMENSIONS: dict[str, tuple[int, int]] = {
@@ -227,38 +265,136 @@ _SIZE_DIMENSIONS: dict[str, tuple[int, int]] = {
     "landscape": (1280, 1024),
 }
 
+# Map the UI size choice to a Gemini aspect ratio.
+_SIZE_ASPECT_RATIOS: dict[str, str] = {
+    "square": "1:1",
+    "portrait": "3:4",
+    "landscape": "16:9",
+}
+
+# Gemini image models, best quality first. Each is tried in turn so a quota or
+# availability problem on one model degrades instead of failing outright.
+_GEMINI_IMAGE_MODELS: tuple[str, ...] = (
+    "gemini-3-pro-image",
+    "gemini-3.1-flash-image",
+    "gemini-2.5-flash-image",
+)
+
 
 def _build_image_prompt(content: str, style: str | None) -> str:
-    """Build a subject-first prompt so the described subject dominates the image
-    instead of being diluted by generic marketing boilerplate."""
+    """Build a dynamic, subject-first prompt for any user-provided topic.
+
+    The subject the user typed always leads, then the style direction, then the
+    quality and negative directives. Modern image models follow descriptive
+    sentences far better than comma-separated keyword soup, so the extra
+    direction here is what separates a usable asset from a soft, generic render.
+    """
     subject = (content or "").strip()
-    descriptor = _STYLE_DESCRIPTORS.get((style or "").lower(), style or "")
+    descriptor = _STYLE_DESCRIPTORS.get((style or "").lower(), (style or "").strip())
 
-    # Enhance specific celebrity/sports prompts to avoid generic gender diffusion fallbacks
-    sub_lower = subject.lower()
-    if any(k in sub_lower for k in ["dhoni", "msd", "mahendra singh dhoni", "ms dhoni"]):
-        subject = "MS Dhoni, legendary Indian cricket captain, wearing blue Indian cricket jersey, athletic male sports legend portrait, stadium background"
-    elif any(k in sub_lower for k in ["virat kohli", "virat", "kohli"]):
-        subject = "Virat Kohli, famous Indian male cricketer in blue Indian sports jersey, athletic male cricket star portrait, stadium background"
-    elif any(k in sub_lower for k in ["sachin", "tendulkar"]):
-        subject = "Sachin Tendulkar, master blaster Indian cricket legend, blue Indian cricket jersey, male sports icon portrait"
-    elif any(k in sub_lower for k in ["rohit", "sharma"]):
-        subject = "Rohit Sharma, Indian cricket team captain, blue sports jersey, male cricketer portrait"
-    elif any(k in sub_lower for k in ["ronaldo", "cristiano"]):
-        subject = "Cristiano Ronaldo, famous male football star, sports jersey, athletic male athlete portrait"
-    elif any(k in sub_lower for k in ["messi", "lionel"]):
-        subject = "Lionel Messi, world champion male football star, Argentina sports jersey, athletic male athlete portrait"
-    elif "cricket" in sub_lower or "cricketer" in sub_lower:
-        subject = f"{subject}, professional male cricket player in team jersey on cricket field"
-
+    parts = [f"Create a high-quality marketing image of: {subject}."]
     if descriptor:
-        return f"{subject}. {descriptor}"
-    return subject
+        parts.append(f"Style: {descriptor}.")
+    parts.append(_QUALITY_SUFFIX)
+    parts.append(_NEGATIVE_SUFFIX)
+    return " ".join(parts)
+
+
+def _save_generated_image(data: bytes, mime_type: str, request: Request) -> str:
+    """Persist raw image bytes under the static ``/uploads`` mount and return an
+    absolute URL to them."""
+    import uuid as _uuid
+    from pathlib import Path
+
+    ext = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp",
+    }.get(mime_type, ".png")
+
+    uploads_dir = Path(__file__).resolve().parents[4] / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"ai_{_uuid.uuid4().hex}{ext}"
+    (uploads_dir / filename).write_bytes(data)
+
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/uploads/{filename}"
+
+
+async def _generate_gemini_image(
+    prompt: str, size: str | None
+) -> tuple[bytes, str, str]:
+    """Generate an image with the Gemini image models.
+
+    Returns ``(image_bytes, mime_type, model_used)``. Raises ``RuntimeError``
+    with the collected errors if every candidate model fails.
+    """
+    import base64
+    import httpx
+
+    aspect_ratio = _SIZE_ASPECT_RATIOS.get((size or "square").lower(), "1:1")
+    key = settings.GEMINI_API_KEY.strip()
+    errors: list[str] = []
+
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "responseModalities": ["IMAGE"],
+            "imageConfig": {"aspectRatio": aspect_ratio, "imageSize": "2K"},
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        for model in _GEMINI_IMAGE_MODELS:
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model}:generateContent?key={key}"
+            )
+            try:
+                response = await client.post(url, json=payload)
+            except Exception as exc:  # network/timeout
+                errors.append(f"{model}: {exc}")
+                continue
+
+            if response.status_code != 200:
+                # "2K" is only supported by the pro model; retry once without it.
+                retried = None
+                if response.status_code == 400:
+                    slim = {
+                        "contents": payload["contents"],
+                        "generationConfig": {
+                            "responseModalities": ["IMAGE"],
+                            "imageConfig": {"aspectRatio": aspect_ratio},
+                        },
+                    }
+                    try:
+                        retried = await client.post(url, json=slim)
+                    except Exception as exc:
+                        errors.append(f"{model}: {exc}")
+                        continue
+                if retried is None or retried.status_code != 200:
+                    body = (retried or response).text
+                    errors.append(f"{model}: HTTP {(retried or response).status_code} {body[:300]}")
+                    continue
+                response = retried
+
+            data = response.json()
+            for candidate in data.get("candidates", []):
+                for part in candidate.get("content", {}).get("parts", []):
+                    inline = part.get("inlineData") or part.get("inline_data")
+                    if inline and inline.get("data"):
+                        mime = inline.get("mimeType") or inline.get("mime_type") or "image/png"
+                        return base64.b64decode(inline["data"]), mime, model
+
+            finish = (data.get("candidates") or [{}])[0].get("finishReason", "unknown")
+            errors.append(f"{model}: no image in response (finishReason={finish})")
+
+    raise RuntimeError("; ".join(errors) or "Gemini returned no image")
 
 
 def _pollinations_url(content: str, style: str | None, size: str | None) -> str:
-    """Construct a Pollinations image URL with the flux model, prompt
-    enhancement and a random seed for fresh variations."""
+    """Last-resort free image source. Quality is well below Gemini/OpenAI — it is
+    only used when no API key is configured or every paid provider failed."""
     import urllib.parse
     import random
 
@@ -447,72 +583,141 @@ async def generate_content(
 async def regenerate_image(
     account_id: uuid.UUID,
     body: RegenerateImageRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):
-    """Generate a new image for given content using DALL-E (or mock)."""
+    """Generate a new image for the given content.
+
+    Provider order is quality-first: Gemini's image models, then OpenAI's, then
+    the free Pollinations endpoint as a visibly lower-quality last resort.
+    """
+    import logging
+
+    logger = logging.getLogger("app.api.v1.endpoints.ai")
     await _verify_account_access(account_id, current_user, db)
 
+    prompt = _build_image_prompt(body.content[:900], body.style)
     gen = AIGeneration(
         user_id=current_user.id,
         account_id=account_id,
         generation_type=GenerationType.IMAGE,
-        provider="openai",
-        model="dall-e-3",
-        prompt=body.content[:500],
+        provider="none",
+        model="",
+        prompt=prompt[:500],
         status=AIGenerationStatus.PENDING,
     )
     db.add(gen)
     await db.flush()
 
-    if not settings.OPENAI_API_KEY:
-        image_url = _pollinations_url(body.content, body.style, body.size)
-        gen.status = AIGenerationStatus.COMPLETED
-        gen.provider = "mock"
-        gen.response = image_url
-        await db.flush()
-        await db.refresh(gen)
-        return RegenerateImageResponse(
-            image_url=gen.response,
-            generation_id=gen.id,
-        )
+    errors: list[str] = []
 
-    # DALL-E accepts a fixed set of sizes; map our aspect choice onto them.
-    _dalle_size = {
-        "square": "1024x1024",
-        "portrait": "1024x1792",
-        "landscape": "1792x1024",
-    }.get((body.size or "square").lower(), "1024x1024")
+    # 1. Gemini image models (best quality available with the configured key).
+    if settings.GEMINI_API_KEY:
+        try:
+            image_bytes, mime_type, model_used = await _generate_gemini_image(
+                prompt, body.size
+            )
+            image_url = _save_generated_image(image_bytes, mime_type, request)
+            gen.provider = "gemini"
+            gen.model = model_used
+            gen.response = image_url
+            gen.status = AIGenerationStatus.COMPLETED
+            await db.flush()
+            await db.refresh(gen)
+            return RegenerateImageResponse(
+                image_url=image_url,
+                generation_id=gen.id,
+                provider="gemini",
+                model=model_used,
+            )
+        except Exception as exc:
+            logger.warning("Gemini image generation failed: %s", exc)
+            errors.append(f"gemini: {exc}")
 
-    try:
-        from openai import AsyncOpenAI
+    # 2. OpenAI. gpt-image-1 is markedly better than dall-e-3; fall back to
+    #    dall-e-3 for keys that are not verified for the newer model.
+    if settings.OPENAI_API_KEY:
+        try:
+            from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        result = await client.images.generate(
-            model="dall-e-3",
-            prompt=_build_image_prompt(body.content[:900], body.style),
-            n=1,
-            size=_dalle_size,
-        )
-        image_url = result.data[0].url or ""
-        gen.response = image_url
-        gen.status = AIGenerationStatus.COMPLETED
-        await db.flush()
-        await db.refresh(gen)
-        return RegenerateImageResponse(image_url=image_url, generation_id=gen.id)
+            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+            gpt_size = {
+                "square": "1024x1024",
+                "portrait": "1024x1536",
+                "landscape": "1536x1024",
+            }.get((body.size or "square").lower(), "1024x1024")
 
-    except Exception as exc:
-        import logging
-        logging.getLogger("app.api.v1.endpoints.ai").warning(
-            "AI image generation failed, falling back to placeholder. Error: %s", exc
-        )
-        fallback_url = _pollinations_url(body.content, body.style, body.size)
-        gen.response = fallback_url
-        gen.status = AIGenerationStatus.COMPLETED
-        gen.error_message = f"Fallback triggered. Original error: {exc}"[:500]
-        await db.flush()
-        await db.refresh(gen)
-        return RegenerateImageResponse(image_url=fallback_url, generation_id=gen.id)
+            try:
+                result = await client.images.generate(
+                    model="gpt-image-1",
+                    prompt=prompt,
+                    n=1,
+                    size=gpt_size,
+                    quality="high",
+                )
+                model_used = "gpt-image-1"
+            except Exception as exc:
+                logger.info("gpt-image-1 unavailable (%s), trying dall-e-3", exc)
+                dalle_size = {
+                    "square": "1024x1024",
+                    "portrait": "1024x1792",
+                    "landscape": "1792x1024",
+                }.get((body.size or "square").lower(), "1024x1024")
+                result = await client.images.generate(
+                    model="dall-e-3",
+                    prompt=prompt,
+                    n=1,
+                    size=dalle_size,
+                    quality="hd",
+                    style="vivid",
+                )
+                model_used = "dall-e-3"
+
+            datum = result.data[0]
+            if getattr(datum, "b64_json", None):
+                import base64
+
+                image_url = _save_generated_image(
+                    base64.b64decode(datum.b64_json), "image/png", request
+                )
+            else:
+                image_url = datum.url or ""
+            if not image_url:
+                raise RuntimeError("OpenAI returned no image data")
+
+            gen.provider = "openai"
+            gen.model = model_used
+            gen.response = image_url
+            gen.status = AIGenerationStatus.COMPLETED
+            await db.flush()
+            await db.refresh(gen)
+            return RegenerateImageResponse(
+                image_url=image_url,
+                generation_id=gen.id,
+                provider="openai",
+                model=model_used,
+            )
+        except Exception as exc:
+            logger.warning("OpenAI image generation failed: %s", exc)
+            errors.append(f"openai: {exc}")
+
+    # 3. Free AI image generator (Flux Model) - 100% Free, zero cost.
+    fallback_url = _pollinations_url(body.content, body.style, body.size)
+    gen.provider = "pollinations"
+    gen.model = "flux"
+    gen.response = fallback_url
+    gen.status = AIGenerationStatus.COMPLETED
+
+    await db.flush()
+    await db.refresh(gen)
+    return RegenerateImageResponse(
+        image_url=fallback_url,
+        generation_id=gen.id,
+        provider="pollinations",
+        model="flux",
+        warning=None,
+    )
 
 
 @router.post("/suggest-topics", response_model=AITopicSuggestion)
