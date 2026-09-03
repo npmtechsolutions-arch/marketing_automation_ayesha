@@ -42,7 +42,7 @@ import PlatformIcon from "@/components/shared/PlatformIcon";
 import DevicePreview from "@/components/shared/DevicePreview";
 import { cn } from "@/lib/utils";
 import api, { getAccountId } from "@/lib/api";
-import { showSuccess, showError } from "@/components/ui/Toast";
+import { showSuccess, showError, showWarning } from "@/components/ui/Toast";
 
 // ────────────────────────────────────────────────────────
 // Types
@@ -668,7 +668,13 @@ export default function CreatePostPage() {
       if (data && data.image_url) {
         setGeneratedImages([data.image_url]);
         setUploadedImages((prev) => Array.from(new Set([...prev, data.image_url])));
-        showSuccess("Image generated successfully!");
+        if (data.warning) {
+          // The backend had to drop to the free low-quality generator — say why
+          // instead of leaving the user staring at a blurry image.
+          showWarning(data.warning);
+        } else {
+          showSuccess(`Image generated with ${data.model || "AI"}!`);
+        }
       } else {
         throw new Error("No image URL returned from AI generator");
       }

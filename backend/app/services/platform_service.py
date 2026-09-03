@@ -94,6 +94,65 @@ def _download_media_bytes(url: str) -> bytes:
         return r.content
 
 
+def _is_private_host_url(url: str) -> bool:
+    """True if ``url`` points at a host the public internet cannot reach.
+
+    AI-generated images are stored under the backend's own ``/uploads`` mount,
+    so in local/LAN deployments the URL is unreachable to Meta's servers and has
+    to be re-hosted before publishing.
+    """
+    if not url.startswith(("http://", "https://")):
+        return False
+    import ipaddress
+    import urllib.parse
+
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    if not host:
+        return False
+    if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
+def _ensure_public_media_url(url: str) -> str:
+    """Return a URL that Meta's servers can fetch, re-hosting the media if needed."""
+    if url.startswith("data:"):
+        logger.info("Converting base64 media data to a public URL...")
+        return _upload_base64_to_public_url(url)
+
+    if _is_private_host_url(url):
+        logger.info("Media URL %s is not publicly reachable — re-hosting it.", url)
+        try:
+            data = _download_media_bytes(url)
+            filename = url.rsplit("/", 1)[-1].split("?")[0] or "file.png"
+            ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
+            content_type = {
+                "png": "image/png",
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "gif": "image/gif",
+                "webp": "image/webp",
+                "mp4": "video/mp4",
+                "mov": "video/quicktime",
+            }.get(ext, "image/png")
+            public_url = _upload_bytes_to_public_url(data, filename, content_type)
+            if public_url:
+                return public_url
+        except Exception as e:
+            logger.exception("Failed to re-host local media URL: %s", e)
+
+    return url
+
+
+def _is_public_media_url(url: str) -> bool:
+    """True if the URL can be handed straight to a platform's Graph API."""
+    return not url.startswith("data:") and not _is_private_host_url(url)
+
+
 def _first_media_url(post: Any) -> str | None:
     """Extract the first media URL from a post's ``media_urls`` (list or JSON string)."""
     raw = getattr(post, "media_urls", None)
@@ -413,11 +472,11 @@ class PlatformService:
                 except json.JSONDecodeError:
                     media_url = post.media_urls
 
-        # Upload base64 if needed
-        if media_url and media_url.startswith("data:"):
-            logger.info("Converting base64 media data to a public URL...")
-            media_url = _upload_base64_to_public_url(media_url)
-            if media_url.startswith("data:"):
+        # Facebook fetches the media itself, so base64 and locally-hosted URLs
+        # (e.g. AI images saved under /uploads) have to be re-hosted publicly.
+        if media_url:
+            media_url = _ensure_public_media_url(media_url)
+            if not _is_public_media_url(media_url):
                 raise ValueError("Failed to upload post media to a public host. Facebook Graph API requires public media URLs.")
 
         # Determine media type (image vs video)
@@ -607,12 +666,11 @@ class PlatformService:
             else:
                 raise ValueError("Instagram publishing requires an image. Please attach an image to your post.")
 
-        # Convert base64 data url to public url
-        if media_url.startswith("data:"):
-            logger.info("Converting base64 media data to a public URL...")
-            media_url = _upload_base64_to_public_url(media_url)
-            if media_url.startswith("data:"):
-                raise ValueError("Failed to upload post media to a public host. Instagram Graph API requires public media URLs.")
+        # Instagram fetches the media itself, so base64 and locally-hosted URLs
+        # (e.g. AI images saved under /uploads) have to be re-hosted publicly.
+        media_url = _ensure_public_media_url(media_url)
+        if not _is_public_media_url(media_url):
+            raise ValueError("Failed to upload post media to a public host. Instagram Graph API requires public media URLs.")
 
         # ── Photo + music → render a Reel ──
         # Instagram feed photos can't carry audio. If the user attached a music
