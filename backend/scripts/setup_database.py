@@ -1,9 +1,17 @@
+import sys
+from pathlib import Path
+
+# These scripts live in backend/scripts/, but import the application package
+# from backend/. Put the backend root on sys.path so `import app...` resolves
+# whether the script is run as `python scripts/<name>.py` or `python -m`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import asyncio
 import argparse
 import sys
 import os
 
-# Add parent directory to path so app imports work
+# The script's own directory, so sibling scripts (create_db, migrate_db) import.
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 async def run_setup(seed_db=False):

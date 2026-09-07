@@ -5,10 +5,18 @@ but runs inline, so it works in environments without Redis/Celery. Useful for
 ops, testing, or a one-off cleanup.
 
 Usage:
-    python purge_deleted_users.py                # use configured retention window
-    python purge_deleted_users.py --days 30      # override retention window
-    python purge_deleted_users.py --dry-run      # report what would be purged
+    python scripts/purge_deleted_users.py                # use configured retention window
+    python scripts/purge_deleted_users.py --days 30      # override retention window
+    python scripts/purge_deleted_users.py --dry-run      # report what would be purged
 """
+import sys
+from pathlib import Path
+
+# These scripts live in backend/scripts/, but import the application package
+# from backend/. Put the backend root on sys.path so `import app...` resolves
+# whether the script is run as `python scripts/<name>.py` or `python -m`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 
 import argparse
 import asyncio

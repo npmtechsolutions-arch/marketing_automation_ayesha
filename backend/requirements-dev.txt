@@ -1,0 +1,22 @@
+# Development and test dependencies.
+#
+#     pip install -r requirements-dev.txt
+#
+# Includes the runtime requirements, so this is the only file a contributor
+# needs to install.
+-r requirements.txt
+
+# Test runner and async support
+pytest==9.1.1
+pytest-asyncio==1.4.0
+
+# In-memory database for the test suite — the tests run on SQLite so they
+# need no Postgres or Redis service.
+aiosqlite==0.22.1
+
+# ASGI test client (also a runtime dependency, pinned here for reproducible
+# test runs; this version satisfies the httpx>=0.27.0 range in requirements.txt).
+httpx==0.28.1
+
+# Linter / formatter
+ruff==0.16.6

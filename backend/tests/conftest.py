@@ -64,7 +64,7 @@ from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
 
 # Importing the package registers every model on Base.metadata.
-import app.models  # noqa: F401,E402
+import app.models  # noqa: F401
 
 
 @pytest.fixture(scope="session")

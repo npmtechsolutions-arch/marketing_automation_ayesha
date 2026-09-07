@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# These scripts live in backend/scripts/, but import the application package
+# from backend/. Put the backend root on sys.path so `import app...` resolves
+# whether the script is run as `python scripts/<name>.py` or `python -m`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import asyncio
 from sqlalchemy import text
 from app.core.database import engine
