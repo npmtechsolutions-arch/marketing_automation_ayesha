@@ -76,9 +76,7 @@ export default function RegisterPage() {
         avatar_url: firebaseUser.photoURL,
       });
 
-      const { access_token, refresh_token, user } = data;
-      localStorage.setItem("access_token", access_token);
-      localStorage.setItem("refresh_token", refresh_token);
+      const { access_token, user } = data;
 
       try {
         const accountsResponse: any = await api.get("/accounts");
@@ -99,13 +97,10 @@ export default function RegisterPage() {
 
       syncUserPreferences(user);
 
-      useAuthStore.setState({
-        user,
-        accessToken: access_token,
-        refreshToken: refresh_token,
-        isAuthenticated: true,
-        isLoading: false,
-      });
+      // The refresh token arrived as an httpOnly cookie; only the
+      // access token is held, and only in memory.
+      useAuthStore.getState().setSession(access_token, user);
+      useAuthStore.setState({ isLoading: false });
 
       showSuccess(`Account created! Welcome, ${user.full_name || "there"}!`);
       navigate("/dashboard");

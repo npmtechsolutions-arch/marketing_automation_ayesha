@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import api from "@/lib/api";
+import api, { refreshAccessToken } from "@/lib/api";
 import { useUIStore } from "./uiStore";
 
 export interface User {
@@ -16,10 +16,14 @@ export interface User {
 
 interface AuthState {
   user: User | null;
+  // Memory only. Never written to localStorage: a token sitting in storage
+  // outlives the tab and can be read back by any script that runs on the page.
   accessToken: string | null;
-  refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  // False until bootstrap() has had its turn, so guards can tell "signed out"
+  // apart from "we have not asked yet" and avoid bouncing to /login on reload.
+  isBootstrapped: boolean;
 }
 
 export interface LoginResult {
@@ -31,8 +35,10 @@ interface AuthActions {
   login: (email: string, password: string) => Promise<LoginResult>;
   complete2faLogin: (challengeToken: string, code: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
-  logout: () => void;
-  refreshAccessToken: () => Promise<void>;
+  logout: () => Promise<void>;
+  bootstrap: () => Promise<void>;
+  setSession: (accessToken: string, user: User | null) => void;
+  clearSession: () => void;
   setUser: (user: User) => void;
   loadUser: () => Promise<void>;
 }
@@ -77,22 +83,14 @@ async function resolveAccountId(): Promise<void> {
   }
 }
 
-const getInitialToken = () => {
-  const token = localStorage.getItem("access_token");
-  if (!token || token === "null" || token === "undefined" || !token.trim()) {
-    return null;
-  }
-  return token;
-};
-
-const initialToken = getInitialToken();
-
 export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   user: null,
-  accessToken: initialToken,
-  refreshToken: localStorage.getItem("refresh_token"),
-  isAuthenticated: !!initialToken,
+  // Nothing is restored synchronously; bootstrap() re-establishes the session
+  // from the httpOnly refresh cookie on load.
+  accessToken: null,
+  isAuthenticated: false,
   isLoading: false,
+  isBootstrapped: false,
 
   login: async (email: string, password: string) => {
     set({ isLoading: true });
@@ -105,19 +103,14 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         return { requires2fa: true, challengeToken: data.challenge_token };
       }
 
-      const { access_token, refresh_token, user } = data;
-      localStorage.setItem("access_token", access_token);
-      localStorage.setItem("refresh_token", refresh_token);
+      const { access_token, user } = data;
+      // The refresh token came back as an httpOnly cookie; the body copy is
+      // ignored so it never lands anywhere a script can read.
+      set({ user, accessToken: access_token, isAuthenticated: true, isBootstrapped: true });
       await resolveAccountId();
 
       syncUserPreferences(user);
-      set({
-        user,
-        accessToken: access_token,
-        refreshToken: refresh_token,
-        isAuthenticated: true,
-        isLoading: false,
-      });
+      set({ isLoading: false });
       return { requires2fa: false };
     } catch (error) {
       set({ isLoading: false });
@@ -132,19 +125,12 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         challenge_token: challengeToken,
         code,
       });
-      const { access_token, refresh_token, user } = data;
-      localStorage.setItem("access_token", access_token);
-      localStorage.setItem("refresh_token", refresh_token);
+      const { access_token, user } = data;
+      set({ user, accessToken: access_token, isAuthenticated: true, isBootstrapped: true });
       await resolveAccountId();
 
       syncUserPreferences(user);
-      set({
-        user,
-        accessToken: access_token,
-        refreshToken: refresh_token,
-        isAuthenticated: true,
-        isLoading: false,
-      });
+      set({ isLoading: false });
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -159,10 +145,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         password,
         full_name: fullName,
       });
-      const { access_token, refresh_token, user } = data;
-
-      localStorage.setItem("access_token", access_token);
-      localStorage.setItem("refresh_token", refresh_token);
+      const { access_token, user } = data;
+      set({ user, accessToken: access_token, isAuthenticated: true, isBootstrapped: true });
 
       // Fetch user's first account
       try {
@@ -189,51 +173,62 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       }
 
       syncUserPreferences(user);
-      set({
-        user,
-        accessToken: access_token,
-        refreshToken: refresh_token,
-        isAuthenticated: true,
-        isLoading: false,
-      });
+      set({ isLoading: false });
     } catch (error) {
       set({ isLoading: false });
       throw error;
     }
   },
 
-  logout: () => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
+  logout: async () => {
+    // Tell the backend first so the UserSession is actually revoked and the
+    // refresh cookie cleared -- dropping local state alone would leave the
+    // session usable by anyone holding the cookie.
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      // Already signed out, offline, or the token expired. Clearing locally is
+      // still the right outcome.
+    }
+    get().clearSession();
+  },
+
+  setSession: (accessToken: string, user: User | null) => {
+    set((state) => ({
+      accessToken,
+      user: user ?? state.user,
+      isAuthenticated: true,
+      isBootstrapped: true,
+    }));
+    if (user) syncUserPreferences(user);
+  },
+
+  clearSession: () => {
     localStorage.removeItem("account_id");
     set({
       user: null,
       accessToken: null,
-      refreshToken: null,
       isAuthenticated: false,
+      isBootstrapped: true,
     });
   },
 
-  refreshAccessToken: async () => {
-    const { refreshToken } = get();
-    if (!refreshToken) return;
-
+  // Called once on app load. There is no token in storage to read any more, so
+  // the only way to know whether a session survives a reload is to ask: if the
+  // httpOnly refresh cookie is still valid the backend returns a fresh access
+  // token, otherwise this is simply a signed-out visitor.
+  bootstrap: async () => {
+    if (get().isBootstrapped) return;
+    set({ isLoading: true });
     try {
-      const { data } = await api.post("/auth/refresh", {
-        refresh_token: refreshToken,
-      });
-
-      localStorage.setItem("access_token", data.access_token);
-      if (data.refresh_token) {
-        localStorage.setItem("refresh_token", data.refresh_token);
-      }
-
-      set({
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token ?? refreshToken,
-      });
+      const accessToken = await refreshAccessToken();
+      set({ accessToken, isAuthenticated: true });
+      await get().loadUser();
+      await resolveAccountId();
     } catch {
-      get().logout();
+      set({ user: null, accessToken: null, isAuthenticated: false });
+    } finally {
+      set({ isLoading: false, isBootstrapped: true });
     }
   },
 
@@ -274,7 +269,10 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     } catch (error: any) {
       set({ isLoading: false });
       if (error?.response?.status === 401) {
-        get().logout();
+        // The axios interceptor already tried to refresh. Clear locally rather
+        // than calling logout(), which would revoke a session that may still
+        // be perfectly valid.
+        get().clearSession();
       }
     }
   },

@@ -1,14 +1,17 @@
 """Authentication endpoints."""
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import (
     APIRouter,
     BackgroundTasks,
+    Body,
     Depends,
     HTTPException,
     Request,
+    Response,
     status,
 )
 from sqlalchemy import select
@@ -55,6 +58,8 @@ from app.schemas.user import (
 import httpx
 from urllib.parse import urlencode
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
@@ -99,16 +104,61 @@ def _device_from_user_agent(ua: str | None) -> str:
     return f"{browser} on {os_name}"
 
 
+# The refresh token is delivered as a cookie rather than in the response body so
+# that page scripts cannot read it: an XSS on the app can still call the API as
+# the user, but it cannot exfiltrate a long-lived credential. Scoped to the auth
+# path so it is not attached to every ordinary API call.
+REFRESH_COOKIE_NAME = "refresh_token"
+REFRESH_COOKIE_PATH = "/api/v1/auth"
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        # Secure cookies are dropped over plain http. Browsers treat localhost
+        # as a secure context so development still works, but a dev server on a
+        # LAN address would not -- hence relaxing it under DEBUG only.
+        secure=not settings.DEBUG,
+        samesite="lax",
+        path=REFRESH_COOKIE_PATH,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME, path=REFRESH_COOKIE_PATH, httponly=True,
+        secure=not settings.DEBUG, samesite="lax",
+    )
+
+
+def _read_refresh_token(request: Request, payload: TokenRefresh | None) -> str | None:
+    """Take an explicitly supplied token over the ambient cookie.
+
+    Browsers send only the cookie, so they are unaffected. A client that names a
+    token in the body means that one -- silently preferring whatever cookie
+    happened to be attached would act on a different session than the caller
+    asked for.
+    """
+    if payload is not None and payload.refresh_token:
+        return payload.refresh_token
+    return request.cookies.get(REFRESH_COOKIE_NAME)
+
+
 async def _issue_session_tokens(
-    db: AsyncSession, user: User, request: Request | None
+    db: AsyncSession, user: User, request: Request | None, response: Response
 ) -> UserWithToken:
     """Create a UserSession row and return access/refresh tokens bound to it.
 
-    Both tokens carry the session id (``sid``); the refresh token's id is used
-    to revoke the session later. Called only after full authentication.
+    Both tokens carry the session id (``sid``). The refresh token additionally
+    carries ``rjti``, the current rotation id: it changes on every refresh, so a
+    refresh token can only be spent once. Called only after full authentication.
     """
     session_id = uuid.uuid4()
     sid = session_id.hex
+    refresh_jti = uuid.uuid4().hex
 
     ua = request.headers.get("user-agent") if request else None
     ip = None
@@ -120,7 +170,7 @@ async def _issue_session_tokens(
         UserSession(
             id=session_id,
             user_id=user.id,
-            refresh_jti=sid,
+            refresh_jti=refresh_jti,
             device=_device_from_user_agent(ua),
             user_agent=ua,
             ip_address=ip,
@@ -129,10 +179,12 @@ async def _issue_session_tokens(
     await db.flush()
 
     token_data = {"sub": str(user.id), "sid": sid}
+    refresh = create_refresh_token({**token_data, "rjti": refresh_jti})
+    _set_refresh_cookie(response, refresh)
     return UserWithToken(
         user=UserResponse.model_validate(user),
         access_token=create_access_token(token_data),
-        refresh_token=create_refresh_token(token_data),
+        refresh_token=refresh,
     )
 
 
@@ -145,6 +197,7 @@ async def _issue_session_tokens(
 async def register(
     payload: UserCreate,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Register a new user account.
@@ -195,7 +248,7 @@ async def register(
     await db.flush()
 
     # Generate tokens (register never requires 2FA — it's a brand new account)
-    return await _issue_session_tokens(db, user, request)
+    return await _issue_session_tokens(db, user, request, response)
 
 
 @router.post("/login", response_model=LoginResult)
@@ -203,6 +256,7 @@ async def register(
 async def login(
     payload: UserLogin,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate a user.
@@ -262,7 +316,7 @@ async def login(
     # Update last login timestamp
     user.last_login_at = datetime.now(timezone.utc)
 
-    tokens = await _issue_session_tokens(db, user, request)
+    tokens = await _issue_session_tokens(db, user, request, response)
     return LoginResult(
         requires_2fa=False,
         user=tokens.user,
@@ -282,6 +336,7 @@ async def login(
 async def login_2fa(
     payload: TwoFactorLogin,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Complete a 2FA login using a TOTP code or a recovery code."""
@@ -350,7 +405,7 @@ async def login_2fa(
         )
 
     user.last_login_at = datetime.now(timezone.utc)
-    tokens = await _issue_session_tokens(db, user, request)
+    tokens = await _issue_session_tokens(db, user, request, response)
     return LoginResult(
         requires_2fa=False,
         user=tokens.user,
@@ -361,17 +416,34 @@ async def login_2fa(
 
 @router.post("/refresh", response_model=UserWithToken)
 async def refresh_token(
-    payload: TokenRefresh,
     request: Request,
+    response: Response,
+    payload: TokenRefresh | None = Body(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Exchange a valid refresh token for new access and refresh tokens.
+    """Exchange a refresh token for a new access/refresh pair.
 
-    If the token is bound to a session (carries ``sid``), the session must
-    still exist and not be revoked. Legacy tokens without a ``sid`` are
-    accepted for backward compatibility.
+    The token must be bound to a live session and must present that session's
+    *current* rotation id. Three things are enforced here, each of which was a
+    way to keep using a session that should have ended:
+
+    * A token without ``sid`` is rejected. These used to be accepted as
+      "legacy", which meant anyone holding one bypassed revocation entirely.
+    * A ``sid`` with no matching session row is rejected. The old code looked
+      the session up but issued fresh tokens anyway when it found nothing.
+    * A stale ``rjti`` revokes the whole session. Refresh tokens rotate on every
+      use, so a superseded one being presented means two parties hold the same
+      token -- i.e. it was stolen. There is no way to tell victim from thief, so
+      the session ends for both and the real user signs in again.
     """
-    token_payload = decode_token(payload.refresh_token)
+    raw_token = _read_refresh_token(request, payload)
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No refresh token provided",
+        )
+
+    token_payload = decode_token(raw_token)
 
     if token_payload.get("type") != "refresh":
         raise HTTPException(
@@ -380,47 +452,81 @@ async def refresh_token(
         )
 
     user_id = token_payload.get("sub")
-    if user_id is None:
+    sid = token_payload.get("sid")
+    presented_jti = token_payload.get("rjti")
+
+    if user_id is None or not sid or not presented_jti:
+        # Pre-session tokens land here. They cannot be revoked, so they are no
+        # longer honoured; the user signs in again once.
+        _clear_refresh_cookie(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload",
+            detail="This session is no longer valid. Please sign in again.",
         )
 
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    try:
+        session_uuid = uuid.UUID(sid)
+    except (ValueError, AttributeError):
+        _clear_refresh_cookie(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This session is no longer valid. Please sign in again.",
+        )
 
-    if user is None or not user.is_active:
+    session = (
+        await db.execute(select(UserSession).where(UserSession.id == session_uuid))
+    ).scalar_one_or_none()
+
+    if session is None or session.revoked:
+        _clear_refresh_cookie(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This session has been revoked. Please sign in again.",
+        )
+
+    if session.refresh_jti != presented_jti:
+        # Reuse of a rotated token: the current holder and whoever spent it
+        # before are not the same party. Kill the session rather than guess.
+        session.revoked = True
+        # Commit before raising. get_db rolls the session back when the request
+        # raises, which would silently undo this revocation -- the whole point
+        # of detecting the reuse.
+        await db.commit()
+        _clear_refresh_cookie(response)
+        logger.warning(
+            "Refresh token reuse detected; session revoked. session=%s user=%s",
+            sid,
+            user_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This session has been revoked. Please sign in again.",
+        )
+
+    user = (
+        await db.execute(select(User).where(User.id == user_id))
+    ).scalar_one_or_none()
+    if user is None or not user.is_active or user.deleted_at is not None:
+        _clear_refresh_cookie(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
         )
 
-    # Session enforcement: if this token is bound to a session, honor revocation.
-    sid = token_payload.get("sid")
-    session = None
-    if sid:
-        session_result = await db.execute(
-            select(UserSession).where(UserSession.refresh_jti == sid)
-        )
-        session = session_result.scalar_one_or_none()
-        if session is not None and session.revoked:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="This session has been revoked. Please sign in again.",
-            )
-        if session is not None:
-            session.last_active_at = datetime.now(timezone.utc)
+    # Rotate: the token just spent is now worthless, and presenting it again
+    # trips the reuse branch above.
+    new_jti = uuid.uuid4().hex
+    session.refresh_jti = new_jti
+    session.last_active_at = datetime.now(timezone.utc)
 
-    token_data = {"sub": str(user.id)}
-    if sid:
-        token_data["sid"] = sid
-    new_access_token = create_access_token(token_data)
-    new_refresh_token = create_refresh_token(token_data)
+    token_data = {"sub": str(user.id), "sid": sid}
+    new_refresh_token = create_refresh_token({**token_data, "rjti": new_jti})
     await db.flush()
+    _set_refresh_cookie(response, new_refresh_token)
 
     return UserWithToken(
         user=UserResponse.model_validate(user),
-        access_token=new_access_token,
+        access_token=create_access_token(token_data),
         refresh_token=new_refresh_token,
     )
 
@@ -434,12 +540,57 @@ async def get_auth_me(
 
 
 @router.post("/logout", response_model=MessageResponse)
-async def logout():
-    """Log out the current user.
+async def logout(
+    request: Request,
+    response: Response,
+    payload: TokenRefresh | None = Body(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """End the current session.
 
-    Note: Full token blacklisting requires a Redis-backed token store.
-    This is a placeholder that acknowledges the logout request.
+    Identifies the session from the refresh token (cookie or body) or, failing
+    that, from the ``sid`` in the bearer access token, and marks that
+    UserSession revoked so no further refresh can succeed. The access token
+    already issued stays valid until it expires -- that window is why
+    ACCESS_TOKEN_EXPIRE_MINUTES is short.
+
+    Always reports success: whether a given session existed is not something an
+    unauthenticated caller should be able to probe.
     """
+    sid = None
+
+    raw_refresh = _read_refresh_token(request, payload)
+    if raw_refresh:
+        try:
+            sid = decode_token(raw_refresh).get("sid")
+        except HTTPException:
+            sid = None
+
+    if not sid:
+        # Fall back to the access token's session id.
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            try:
+                sid = decode_token(auth_header.split(" ", 1)[1]).get("sid")
+            except HTTPException:
+                sid = None
+
+    if sid:
+        try:
+            session_uuid = uuid.UUID(sid)
+        except (ValueError, AttributeError):
+            session_uuid = None
+        if session_uuid is not None:
+            session = (
+                await db.execute(
+                    select(UserSession).where(UserSession.id == session_uuid)
+                )
+            ).scalar_one_or_none()
+            if session is not None and not session.revoked:
+                session.revoked = True
+                await db.flush()
+
+    _clear_refresh_cookie(response)
     return MessageResponse(message="Successfully logged out")
 
 
@@ -466,7 +617,9 @@ async def forgot_password(
     user = result.scalar_one_or_none()
 
     if user is not None and user.is_active:
-        token = create_password_reset_token(user.email)
+        token, reset_jti = create_password_reset_token(user.email)
+        # Recorded server-side so the link can be spent exactly once.
+        challenge_store.register_reset_token(reset_jti)
         # Queued rather than awaited: the response must not depend on the mail
         # provider being reachable, and the timing must not differ between a
         # known and an unknown address (which would undo the generic response
@@ -486,12 +639,13 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
 ):
     """Reset the password using a valid reset token."""
-    email = verify_password_reset_token(payload.token)
-    if not email:
+    decoded = verify_password_reset_token(payload.token)
+    if decoded is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token",
         )
+    email, reset_jti = decoded
 
     if len(payload.new_password) < 8:
         raise HTTPException(
@@ -507,8 +661,31 @@ async def reset_password(
             detail="User not found or inactive",
         )
 
+    # Spend the link. The delete is atomic, so a replayed link -- or two
+    # concurrent submissions of the same one -- succeeds at most once. Done
+    # after validation so a rejected password does not burn the user's link.
+    if not challenge_store.consume_reset_token(reset_jti):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
     user.password_hash = await get_password_hash_async(payload.new_password)
     db.add(user)
+
+    # A password reset is how someone recovers a compromised account, so every
+    # existing session must end -- otherwise whoever prompted the reset keeps
+    # their refresh token and simply carries on.
+    existing_sessions = (
+        await db.execute(
+            select(UserSession).where(
+                UserSession.user_id == user.id, UserSession.revoked.is_(False)
+            )
+        )
+    ).scalars().all()
+    for session in existing_sessions:
+        session.revoked = True
+    await db.flush()
 
     return MessageResponse(message="Password has been reset successfully")
 
@@ -539,6 +716,7 @@ async def get_google_auth_url(redirect_uri: str | None = None):
 async def google_auth_callback(
     payload: GoogleAuthRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Exchange Google OAuth code for tokens, and log in or register user."""
@@ -680,7 +858,7 @@ async def google_auth_callback(
         db.add(team_member)
         await db.flush()
 
-    return await _issue_session_tokens(db, user, request)
+    return await _issue_session_tokens(db, user, request, response)
 
 
 @router.get("/google/callback")
@@ -705,6 +883,7 @@ async def google_auth_callback_get(code: str | None = None, error: str | None = 
 async def google_firebase_auth(
     payload: FirebaseGoogleAuthRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate or register user via Firebase Google OAuth Popup token."""
@@ -803,5 +982,5 @@ async def google_firebase_auth(
         db.add(team_member)
         await db.flush()
 
-    return await _issue_session_tokens(db, user, request)
+    return await _issue_session_tokens(db, user, request, response)
 

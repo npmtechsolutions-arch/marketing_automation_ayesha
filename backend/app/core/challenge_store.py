@@ -1,4 +1,8 @@
-"""State for in-flight 2FA login challenges.
+"""Server-side state for single-use auth artefacts.
+
+Covers in-flight 2FA login challenges and password reset tokens. Both are
+stateless JWTs, which means that without a record of use they stay valid for
+their whole lifetime no matter how often they are presented.
 
 A challenge token proves the password step succeeded and the user still owes a
 second factor. As a bare JWT it is replayable until it expires, and it offers
@@ -34,6 +38,11 @@ MAX_FAILED_ATTEMPTS = 5
 
 _CHALLENGE_PREFIX = "2fa:challenge:"
 _ATTEMPTS_PREFIX = "2fa:attempts:"
+_RESET_PREFIX = "pwreset:"
+
+# Password reset tokens are valid for 1 hour (create_password_reset_token),
+# so their record expires with them.
+RESET_TTL_SECONDS = 60 * 60
 
 
 class _MemoryStore:
@@ -100,7 +109,7 @@ class _RedisStore:
         return int(value)
 
     def clear(self) -> None:
-        for prefix in (_CHALLENGE_PREFIX, _ATTEMPTS_PREFIX):
+        for prefix in (_CHALLENGE_PREFIX, _ATTEMPTS_PREFIX, _RESET_PREFIX):
             for key in self._client.scan_iter(match=f"{prefix}*"):
                 self._client.delete(key)
 
@@ -162,6 +171,20 @@ def record_failed_attempt(jti: str) -> int:
     return _store.incr(f"{_ATTEMPTS_PREFIX}{jti}", CHALLENGE_TTL_SECONDS)
 
 
+def register_reset_token(jti: str) -> None:
+    """Record a freshly issued password reset token as unused."""
+    _store.set(f"{_RESET_PREFIX}{jti}", 1, RESET_TTL_SECONDS)
+
+
+def consume_reset_token(jti: str) -> bool:
+    """Consume a password reset token. True only for the caller that got it.
+
+    The delete is atomic, so a replayed link -- including two concurrent
+    submissions of the same one -- succeeds at most once.
+    """
+    return _store.delete(f"{_RESET_PREFIX}{jti}")
+
+
 def reset() -> None:
-    """Clear all challenge state. For tests."""
+    """Clear all stored state. For tests."""
     _store.clear()

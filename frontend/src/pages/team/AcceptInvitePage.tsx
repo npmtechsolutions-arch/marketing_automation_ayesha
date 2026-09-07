@@ -121,20 +121,15 @@ export default function AcceptInvitePage() {
         avatar_url: firebaseUser.photoURL,
       });
 
-      const { access_token, refresh_token, user: loggedUser } = data;
-      localStorage.setItem("access_token", access_token);
-      localStorage.setItem("refresh_token", refresh_token);
+      const { access_token, user: loggedUser } = data;
       localStorage.setItem("account_id", accountId!);
 
       syncUserPreferences(loggedUser);
 
-      useAuthStore.setState({
-        user: loggedUser,
-        accessToken: access_token,
-        refreshToken: refresh_token,
-        isAuthenticated: true,
-        isLoading: false,
-      });
+      // The refresh token arrived as an httpOnly cookie; only the
+      // access token is held, and only in memory.
+      useAuthStore.getState().setSession(access_token, loggedUser);
+      useAuthStore.setState({ isLoading: false });
 
       // Now accept the invitation
       await api.post(`/accounts/${accountId}/team/accept-invite?token=${encodeURIComponent(token!)}`);

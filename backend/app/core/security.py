@@ -133,24 +133,43 @@ def verify_2fa_challenge_token(token: str) -> tuple[str, str] | None:
         return None
 
 
-def create_password_reset_token(email: str) -> str:
-    """Create a JWT token for password reset, valid for 1 hour."""
+def create_password_reset_token(email: str) -> tuple[str, str]:
+    """Create a password reset token, valid for 1 hour.
+
+    Returns ``(token, jti)``. The ``jti`` identifies this specific link so the
+    server can make it single-use (see ``app.core.challenge_store``): a bare JWT
+    stays valid for its full hour however many times it is presented, so a reset
+    link could be replayed after the password had already been changed.
+    """
     expire = datetime.now(timezone.utc) + timedelta(hours=1)
-    to_encode = {"sub": email, "exp": expire, "type": "password_reset"}
-    return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    jti = uuid.uuid4().hex
+    to_encode = {"sub": email, "exp": expire, "type": "password_reset", "jti": jti}
+    token = jwt.encode(
+        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    )
+    return token, jti
 
 
-def verify_password_reset_token(token: str) -> str | None:
-    """Verify the reset token and return the email if valid."""
+def verify_password_reset_token(token: str) -> tuple[str, str] | None:
+    """Return ``(email, jti)`` if the reset token is well-formed, else None.
+
+    Signature, expiry and type only. Whether the link has already been used is
+    separate server-side state -- callers must also consume it via
+    ``challenge_store.consume_reset_token``.
+    """
     try:
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
         )
-        if payload.get("type") == "password_reset":
-            return payload.get("sub")
-        return None
+        if payload.get("type") != "password_reset":
+            return None
+        email = payload.get("sub")
+        jti = payload.get("jti")
+        if not email or not jti:
+            return None
+        return email, jti
     except JWTError:
         return None
 

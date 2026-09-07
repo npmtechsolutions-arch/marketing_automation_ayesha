@@ -142,15 +142,40 @@ import ArticlePage from '@/pages/help/ArticlePage';
 /** Redirects unauthenticated users to /login */
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isBootstrapped = useAuthStore((s) => s.isBootstrapped);
+  // Nothing is read from storage on load any more -- the session is restored by
+  // an async call to /auth/refresh. Redirecting before that resolves would
+  // bounce every signed-in user to /login on a page reload.
+  if (!isBootstrapped) {
+    return <AuthBootstrapping />;
+  }
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
   return <>{children}</>;
 }
 
+/** Shown while the session is being restored from the refresh cookie. */
+function AuthBootstrapping() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div
+        className="h-8 w-8 animate-spin rounded-full border-2 border-purple-500 border-t-transparent"
+        role="status"
+        aria-label="Loading"
+      />
+    </div>
+  );
+}
+
 /** Redirects already-authenticated users to /dashboard (login/register) */
 function ProtectedPublicRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, user, isBootstrapped } = useAuthStore();
+  // Same reason as ProtectedRoute: decide only once the session is known, or a
+  // signed-in user briefly sees the login form on reload.
+  if (!isBootstrapped) {
+    return <AuthBootstrapping />;
+  }
   if (isAuthenticated && user) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -269,14 +294,15 @@ function ScrollToTop() {
 }
 
 function App() {
-  const loadUser = useAuthStore((s) => s.loadUser);
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const bootstrap = useAuthStore((s) => s.bootstrap);
 
+  // Restore the session once on load. There is no token in storage to read;
+  // bootstrap() asks the API whether the httpOnly refresh cookie is still good
+  // and loads the user if it is. It also fetches the user, so the previous
+  // loadUser() effect is no longer needed.
   useEffect(() => {
-    if (isAuthenticated) {
-      loadUser();
-    }
-  }, [isAuthenticated, loadUser]);
+    bootstrap();
+  }, [bootstrap]);
 
   return (
     <ErrorBoundary>

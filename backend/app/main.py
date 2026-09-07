@@ -63,10 +63,14 @@ app.state.limiter = ratelimit.limiter
 app.add_exception_handler(RateLimitExceeded, ratelimit.rate_limit_exceeded_handler)
 
 # CORS middleware
+# Credentials are now sent cross-origin (the refresh token rides in a cookie),
+# so the allow-list must be exact. The previous allow_origin_regex matched every
+# *.onrender.com host -- anyone can deploy there, and combined with
+# allow_credentials that let an attacker-controlled origin make credentialed
+# requests to this API and read the responses.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex=r"https://.*\.onrender\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

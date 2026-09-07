@@ -25,7 +25,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     JWT_SECRET_KEY: str = "change-me-jwt-secret"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    # Short-lived on purpose: an access token cannot be revoked once issued,
+    # so its lifetime is the window an attacker keeps a stolen one. Session
+    # continuity comes from the rotating refresh token instead.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # Database
