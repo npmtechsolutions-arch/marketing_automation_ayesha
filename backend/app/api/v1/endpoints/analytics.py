@@ -2,9 +2,9 @@ import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,7 +19,6 @@ from app.schemas.analytics import (
     PerformanceTrend,
     TopPost,
 )
-from app.schemas.common import MessageResponse
 from app.core.authz import verify_account_access as _verify_account_access
 
 router = APIRouter()

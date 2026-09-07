@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import ClassVar
 
 from pydantic_settings import BaseSettings
-from pydantic import Field
 
 
 class Settings(BaseSettings):

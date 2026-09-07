@@ -31,6 +31,7 @@ import logging
 import time
 
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from limits import parse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -138,11 +139,9 @@ def rate_limit_key_for_user(request: Request) -> str:
     return f"user:{user_id}" if user_id else f"ip:{get_remote_address(request)}"
 
 
-async def rate_limit_exceeded_handler(request: Request, exc) -> "JSONResponse":
+async def rate_limit_exceeded_handler(request: Request, exc) -> JSONResponse:
     """Return slowapi's limit breaches as 429 + Retry-After, shaped like the
     app's other errors (``{"detail": ...}``)."""
-    from fastapi.responses import JSONResponse
-
     retry_after = _DEFAULT_RETRY_AFTER
     limit = getattr(exc, "limit", None)
     # slowapi wraps the parsed item differently across versions; try both.

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, field_serializer
 
 
 class PostBase(BaseModel):

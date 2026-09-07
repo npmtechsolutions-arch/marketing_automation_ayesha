@@ -14,8 +14,6 @@ from app.models.account import Account
 from app.models.platform import SocialPlatform
 from app.models.post import Post
 from app.models.team_member import TeamMember, TeamRole
-from app.schemas.account import AccountResponse, AccountUpdate
-from app.schemas.common import MessageResponse
 from app.core.authz import verify_account_access as _verify_account_access
 
 router = APIRouter()

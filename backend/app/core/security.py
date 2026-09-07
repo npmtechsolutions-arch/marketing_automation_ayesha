@@ -3,7 +3,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 from fastapi import HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
@@ -78,7 +79,7 @@ def decode_token(token: str) -> dict:
             algorithms=[settings.JWT_ALGORITHM],
         )
         return payload
-    except JWTError as e:
+    except PyJWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -129,7 +130,7 @@ def verify_2fa_challenge_token(token: str) -> tuple[str, str] | None:
         if not user_id or not jti:
             return None
         return user_id, jti
-    except JWTError:
+    except PyJWTError:
         return None
 
 
@@ -170,6 +171,6 @@ def verify_password_reset_token(token: str) -> tuple[str, str] | None:
         if not email or not jti:
             return None
         return email, jti
-    except JWTError:
+    except PyJWTError:
         return None
 

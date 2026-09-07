@@ -1,7 +1,7 @@
 """Admin panel endpoints (superadmin only)."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
@@ -16,7 +16,7 @@ from app.models.audit_log import ActivityLog as AuditLog
 from app.models.post import Post
 from app.models.team_member import TeamMember
 from app.models.user import User
-from app.schemas.common import MessageResponse, PaginatedResponse
+from app.schemas.common import PaginatedResponse
 
 router = APIRouter()
 

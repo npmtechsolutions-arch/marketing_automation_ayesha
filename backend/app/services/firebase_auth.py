@@ -13,7 +13,8 @@ import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509 import load_pem_x509_certificate
 from fastapi import HTTPException, status
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 
 from app.core.config import settings
 
@@ -78,7 +79,7 @@ async def verify_firebase_id_token(id_token: str) -> dict:
 
     try:
         kid = jwt.get_unverified_header(id_token).get("kid")
-    except JWTError:
+    except PyJWTError:
         raise _unauthorized("Invalid Google credential")
 
     certs = await _get_signing_certs()
@@ -104,7 +105,7 @@ async def verify_firebase_id_token(id_token: str) -> dict:
             audience=project_id,
             issuer=f"https://securetoken.google.com/{project_id}",
         )
-    except JWTError:
+    except PyJWTError:
         raise _unauthorized("Invalid or expired Google credential")
 
     if not claims.get("email"):

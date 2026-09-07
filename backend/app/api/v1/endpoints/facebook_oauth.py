@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
-from jose import jwt
+import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

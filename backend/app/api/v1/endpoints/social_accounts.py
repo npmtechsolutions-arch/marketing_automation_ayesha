@@ -1,5 +1,6 @@
 """Social account management endpoints."""
 
+import logging
 import math
 import uuid
 import httpx
@@ -24,6 +25,11 @@ from app.schemas.social_account import (
     SocialAccountWithPlatform,
 )
 from app.services.entitlements import enforce_platform_limit
+
+# Module level: this was previously only bound inside one function, so the
+# `except` handlers in others raised NameError instead of logging -- turning
+# every handled error there into an unhandled one.
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -439,8 +445,6 @@ async def verify_social_account(
         username = username.strip("@").strip()
         stats = await get_instagram_public_metrics(username)
     elif "facebook" in platform_slug:
-        import logging
-        logger = logging.getLogger(__name__)
         if not access_token or "mock" in access_token or "test" in access_token or access_token.startswith("refreshed_"):
             # Mock setup
             if not social_account.config or not social_account.config.get("page_id"):

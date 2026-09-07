@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 import logging
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -553,7 +553,6 @@ async def _do_publish_to_platforms(post_id: uuid.UUID):
                 post.status = PostStatus.PUBLISHED
                 post.published_at = datetime.now(timezone.utc)
                 from app.models.post_performance import PostPerformance
-                import random
                 session.add(PostPerformance(
                     id=uuid.uuid4(),
                     post_id=post.id,
@@ -666,7 +665,6 @@ async def _do_publish_to_platforms(post_id: uuid.UUID):
 
             if success_count > 0:
                 from app.models.post_performance import PostPerformance
-                import random
                 for res_item in posting_results:
                     if res_item["status"] == "published":
                         sa_id = res_item["social_account_id"]
