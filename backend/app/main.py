@@ -7,6 +7,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from slowapi.errors import RateLimitExceeded
+
+from app.core import ratelimit
 from app.core.config import settings
 from app.core.database import init_db
 
@@ -53,6 +56,11 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+# Rate limiting. The limiter is attached to app.state (slowapi reads it from
+# there) and RateLimitExceeded is mapped to a 429 carrying Retry-After.
+app.state.limiter = ratelimit.limiter
+app.add_exception_handler(RateLimitExceeded, ratelimit.rate_limit_exceeded_handler)
 
 # CORS middleware
 app.add_middleware(

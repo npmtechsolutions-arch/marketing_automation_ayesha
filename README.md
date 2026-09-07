@@ -158,6 +158,44 @@ Frontend variables are separate: Vite reads `VITE_`-prefixed values from `fronte
 
 ---
 
+## Rate limiting
+
+Authentication and AI generation endpoints are rate limited with [slowapi](https://github.com/laurentS/slowapi). Counters live in Redis (`REDIS_URL`) so a limit holds across every worker and instance.
+
+| Endpoint | Limit | Keyed on |
+|---|---|---|
+| `POST /auth/login` | 5 / minute | client IP |
+| `POST /auth/login` | 10 / hour | email address |
+| `POST /auth/login/2fa` | 15 / minute | client IP |
+| `POST /auth/register` | 5 / hour | client IP |
+| `POST /auth/forgot-password` | 3 / hour | client IP + email |
+| `POST /accounts/{id}/ai/*` | 20 / hour | user |
+
+Exceeding a limit returns **429** with a `Retry-After` header. The AI limit is keyed on the user rather than the IP, so a shared office address does not throttle a whole team; it is temporary until database-backed entitlements land in Phase 1.3.
+
+> **Behind a proxy, uvicorn needs `--proxy-headers` *and* `--forwarded-allow-ips`.** Otherwise every request appears to come from the proxy's address, all clients share one bucket, and normal traffic trips the per-IP limits within seconds — five bad logins from anyone would lock out the whole user base.
+>
+> `--proxy-headers` alone is not enough: uvicorn only honours `X-Forwarded-For` when the *immediate peer* is listed in `--forwarded-allow-ips`, which defaults to `127.0.0.1`. On Render (and in any container setup) the platform proxy connects from a non-local address, so the header is ignored and you are back to one shared bucket. Verified: with a non-matching `--forwarded-allow-ips`, six requests carrying six different `X-Forwarded-For` values were counted against a single bucket and the sixth was refused.
+>
+> The Dockerfiles and compose command pass `--proxy-headers --forwarded-allow-ips='*'`. Trusting any peer is safe when only the platform's proxy can reach the port, which is the case on Render — do not expose the container directly to the internet with that setting.
+>
+> **If the service is started some other way — a start command configured in a hosting dashboard, for example — those flags must be added there too**, or the per-IP limits behave as a single global limit.
+
+If Redis is unreachable the limiter falls back to in-process counters and logs a warning (an error outside `DEBUG`). Nothing breaks, but limits then apply *per worker* rather than globally, which is materially weaker — treat that log line as a production alert.
+
+### 2FA challenge hardening
+
+The short-lived challenge token issued between the password step and the TOTP step carries a `jti` and has matching server-side state, so it is:
+
+- **single-use** — consumed on a successful sign-in and rejected on replay, and
+- **attempt-capped** — 5 wrong codes per challenge, after which that challenge is refused with 429 and the user must sign in again.
+
+The per-IP limit on `/auth/login/2fa` is deliberately looser (15/minute) than the 5-attempt cap, so the cap is the binding constraint on guessing. When both were 5, the IP limit fired first and the per-challenge cap never got to act — and a user who mistyped their code five times was blocked for a full minute even after signing in again for a fresh challenge.
+
+Without these a captured challenge token was replayable until expiry and allowed unlimited guesses at a six-digit code. This state also uses Redis, with the same per-process fallback.
+
+---
+
 ## Credential encryption
 
 Social-platform credentials (`api_key`, `api_secret`, `access_token`, `refresh_token` on `social_accounts`) are encrypted at rest with Fernet, so a database dump or replica does not expose every connected account's tokens.

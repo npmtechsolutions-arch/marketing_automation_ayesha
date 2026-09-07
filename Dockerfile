@@ -17,4 +17,11 @@ EXPOSE 8000
 # Apply database migrations, then start the API. Using the shell form so
 # the two commands chain; the container exits if migrations fail rather
 # than serving against an out-of-date schema.
-CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
+# --proxy-headers makes uvicorn resolve the real client IP from
+# X-Forwarded-For instead of reporting the reverse proxy's address.
+# Without it every request behind a proxy shares one IP, so the per-IP
+# rate limits would throttle all users collectively. forwarded-allow-ips
+# trusts the immediate peer to set that header, which holds when only the
+# platform's proxy can reach this port; do not expose the container
+# directly to the internet with this setting.
+CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'

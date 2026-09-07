@@ -16,8 +16,12 @@ from app.models.ai_generation import AIGeneration, AIGenerationStatus, Generatio
 from app.models.business import Business
 from app.schemas.ai import AIContentGenerate, AIContentResponse, AITopicSuggestion
 from app.core.authz import verify_account_access as _verify_account_access
+from app.core.ratelimit import ai_generation_rate_limit
 
-router = APIRouter()
+# Every endpoint on this router is an AI generation call, so the per-user
+# rate limit is applied router-wide -- new generation endpoints are covered
+# automatically rather than needing to remember the decorator.
+router = APIRouter(dependencies=[Depends(ai_generation_rate_limit)])
 
 
 # ---------------------------------------------------------------------------

@@ -229,3 +229,20 @@ def auth_header():
         return {"Authorization": f"Bearer {token}"}
 
     return _make
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limits():
+    """Give every test a clean rate-limit and 2FA-challenge state.
+
+    Counters are process-global, so without this one test's requests would
+    consume another's budget and the order tests run in would change results.
+    """
+    from app.core import challenge_store
+    from app.core.ratelimit import limiter
+
+    limiter.reset()
+    challenge_store.reset()
+    yield
+    limiter.reset()
+    challenge_store.reset()

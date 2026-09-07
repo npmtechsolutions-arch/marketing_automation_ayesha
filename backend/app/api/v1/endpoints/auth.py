@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
+from app.core import challenge_store
+from app.core.ratelimit import enforce_limit, limiter, too_many_requests
+from slowapi.util import get_remote_address
 from app.core.security import (
     create_2fa_challenge_token,
     create_access_token,
@@ -131,6 +134,7 @@ async def _issue_session_tokens(
     response_model=UserWithToken,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("5/hour")
 async def register(
     payload: UserCreate,
     request: Request,
@@ -188,6 +192,7 @@ async def register(
 
 
 @router.post("/login", response_model=LoginResult)
+@limiter.limit("5/minute")
 async def login(
     payload: UserLogin,
     request: Request,
@@ -198,6 +203,17 @@ async def login(
     If the account has 2FA enabled, returns a short-lived challenge token that
     must be completed via ``/auth/login/2fa``. Otherwise returns tokens.
     """
+    # Per-email limit on top of the per-IP decorator: stops a single account
+    # being ground down from many addresses. Counted before the lookup so it
+    # also covers addresses that do not exist, which would otherwise leave an
+    # unlimited enumeration oracle.
+    enforce_limit(
+        "login:email",
+        "10/hour",
+        payload.email.strip().lower(),
+        detail="Too many sign-in attempts for this account. Try again later.",
+    )
+
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
 
@@ -227,9 +243,13 @@ async def login(
 
     # Password OK. If 2FA is on, defer token issuance to the 2FA step.
     if user.two_factor_enabled:
+        challenge_token, jti = create_2fa_challenge_token(str(user.id))
+        # Record it server-side so it can be consumed exactly once and its
+        # wrong-code attempts counted.
+        challenge_store.register_challenge(jti)
         return LoginResult(
             requires_2fa=True,
-            challenge_token=create_2fa_challenge_token(str(user.id)),
+            challenge_token=challenge_token,
         )
 
     # Update last login timestamp
@@ -245,17 +265,43 @@ async def login(
 
 
 @router.post("/login/2fa", response_model=LoginResult)
+# Higher than /login's 5/minute on purpose: the binding constraint here is the
+# per-challenge cap of 5 wrong codes (challenge_store.MAX_FAILED_ATTEMPTS). At
+# 5/minute the IP limit fired first and shadowed it, and a user who fumbled
+# their code then signed in again was blocked for a minute despite holding a
+# fresh challenge. This still bounds a distributed attack while letting the
+# per-challenge cap do the work it exists for.
+@limiter.limit("15/minute")
 async def login_2fa(
     payload: TwoFactorLogin,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Complete a 2FA login using a TOTP code or a recovery code."""
-    user_id = verify_2fa_challenge_token(payload.challenge_token)
-    if user_id is None:
+    decoded = verify_2fa_challenge_token(payload.challenge_token)
+    if decoded is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Your verification session expired. Please sign in again.",
+        )
+    user_id, jti = decoded
+
+    # A valid signature is not enough: the challenge must still be outstanding.
+    # This rejects a token that was already used to sign in, so capturing one
+    # does not give an attacker a reusable credential.
+    if not challenge_store.challenge_is_active(jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your verification session expired. Please sign in again.",
+        )
+
+    # Cap wrong codes per challenge so a captured token cannot be used to
+    # brute-force a six-digit TOTP.
+    if challenge_store.failed_attempts(jti) >= challenge_store.MAX_FAILED_ATTEMPTS:
+        raise too_many_requests(
+            "Too many incorrect codes for this sign-in attempt. "
+            "Please sign in again to get a new verification session.",
+            retry_after=challenge_store.CHALLENGE_TTL_SECONDS,
         )
 
     result = await db.execute(select(User).where(User.id == user_id))
@@ -279,9 +325,21 @@ async def login_2fa(
             verified = True
 
     if not verified:
+        # Record the miss and report it as an invalid code. The cap is enforced
+        # by the pre-check above, so MAX_FAILED_ATTEMPTS wrong codes each get a
+        # plain 400 and the *next* submission is the one refused with 429.
+        challenge_store.record_failed_attempt(jti)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid verification code.",
+        )
+
+    # Correct code: burn the challenge so it cannot be replayed. Losing the
+    # race here means another request already consumed it.
+    if not challenge_store.consume_challenge(jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your verification session expired. Please sign in again.",
         )
 
     user.last_login_at = datetime.now(timezone.utc)
@@ -381,9 +439,20 @@ async def logout():
 @router.post("/forgot-password", response_model=MessageResponse)
 async def forgot_password(
     payload: PasswordReset,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Request a password reset email."""
+    # Keyed on IP *and* email together, so one address cannot be spammed with
+    # reset mail and one client cannot walk a list of addresses.
+    enforce_limit(
+        "forgot-password",
+        "3/hour",
+        get_remote_address(request),
+        payload.email.strip().lower(),
+        detail="Too many password reset requests. Please try again later.",
+    )
+
     # Look up user (but always return success to prevent enumeration)
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()

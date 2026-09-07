@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -85,26 +86,49 @@ def decode_token(token: str) -> dict:
         ) from e
 
 
-def create_2fa_challenge_token(user_id: str) -> str:
+def create_2fa_challenge_token(user_id: str) -> tuple[str, str]:
     """Create a short-lived token proving a user passed the password step and
     now owes a 2FA code. Valid for 5 minutes.
+
+    Returns ``(token, jti)``. The ``jti`` identifies this specific challenge so
+    the server can make it single-use and count failed code attempts against it
+    (see ``app.core.challenge_store``); the JWT alone would be replayable until
+    expiry and offers nowhere to keep that state.
     """
     expire = datetime.now(timezone.utc) + timedelta(minutes=5)
-    to_encode = {"sub": str(user_id), "exp": expire, "type": "2fa_challenge"}
-    return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    jti = uuid.uuid4().hex
+    to_encode = {
+        "sub": str(user_id),
+        "exp": expire,
+        "type": "2fa_challenge",
+        "jti": jti,
+    }
+    token = jwt.encode(
+        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    )
+    return token, jti
 
 
-def verify_2fa_challenge_token(token: str) -> str | None:
-    """Return the user id if the challenge token is valid, else None."""
+def verify_2fa_challenge_token(token: str) -> tuple[str, str] | None:
+    """Return ``(user_id, jti)`` if the challenge token is valid, else None.
+
+    Validity here means the signature, expiry and type check out. Whether the
+    challenge has already been used is separate server-side state -- callers
+    must also check ``challenge_store``.
+    """
     try:
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
         )
-        if payload.get("type") == "2fa_challenge":
-            return payload.get("sub")
-        return None
+        if payload.get("type") != "2fa_challenge":
+            return None
+        user_id = payload.get("sub")
+        jti = payload.get("jti")
+        if not user_id or not jti:
+            return None
+        return user_id, jti
     except JWTError:
         return None
 

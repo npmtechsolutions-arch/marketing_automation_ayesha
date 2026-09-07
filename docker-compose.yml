@@ -59,7 +59,7 @@ services:
       - ./backend:/app
     # Apply migrations before serving. Only this service migrates; the celery
     # services share the same database and must not race it.
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips='*'"
 
   # ---------- Celery worker ----------
   celery_worker:
