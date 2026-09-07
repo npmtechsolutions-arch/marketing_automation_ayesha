@@ -24,11 +24,27 @@ if TYPE_CHECKING:
 
 
 class TeamRole(str, enum.Enum):
+    """Roles within a workspace.
+
+    Not a straight ladder any more. OWNER..VIEWER still rank in that order, but
+    CONTRIBUTOR, ANALYST and CLIENT are deliberately *orthogonal* to it: an
+    analyst is not "more" than an editor, they see different things. What a role
+    may do is defined by its permission set in ``app.core.permissions``, not by
+    its position in a list.
+    """
+
     OWNER = "owner"
     ADMIN = "admin"
     MANAGER = "manager"
     EDITOR = "editor"
     VIEWER = "viewer"
+    # Drafts content but cannot publish or schedule it.
+    CONTRIBUTOR = "contributor"
+    # Reads analytics and reports. No access to content at all.
+    ANALYST = "analyst"
+    # External reviewer: sees only what is awaiting their approval, and can
+    # approve or reject it. No internal data.
+    CLIENT = "client"
 
 
 class InvitationStatus(str, enum.Enum):

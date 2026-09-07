@@ -12,7 +12,8 @@ import uuid
 
 import pytest
 
-from app.core.authz import ROLE_HIERARCHY, verify_account_access
+from app.core.authz import verify_account_access
+from app.core.permissions import CONTENT_CREATE, CONTENT_PUBLISH, CONTENT_VIEW
 from app.models.team_member import InvitationStatus, TeamRole
 
 pytestmark = pytest.mark.asyncio
@@ -149,35 +150,32 @@ async def test_non_member_is_denied(
 
 
 # ---------------------------------------------------------------------------
-# (c) Role hierarchy is still enforced
+# (c) Role restrictions are still enforced
+#
+# These were rank comparisons (min_role) until roles stopped forming a ladder.
+# The behaviour they pinned -- a viewer cannot write, a pending invite grants
+# nothing -- is unchanged; only the mechanism is.
 # ---------------------------------------------------------------------------
 
-async def test_role_hierarchy_order():
-    """VIEWER < EDITOR < MANAGER < ADMIN < OWNER, per RBAC-Permissions.md."""
-    assert list(ROLE_HIERARCHY) == [
-        TeamRole.VIEWER,
-        TeamRole.EDITOR,
-        TeamRole.MANAGER,
-        TeamRole.ADMIN,
-        TeamRole.OWNER,
-    ]
-
-
 @pytest.mark.parametrize(
-    "role,min_role,allowed",
+    "role,permission,allowed",
     [
-        (TeamRole.VIEWER, TeamRole.EDITOR, False),
-        (TeamRole.EDITOR, TeamRole.EDITOR, True),
-        (TeamRole.EDITOR, TeamRole.MANAGER, False),
-        (TeamRole.MANAGER, TeamRole.EDITOR, True),
-        (TeamRole.MANAGER, TeamRole.ADMIN, False),
-        (TeamRole.ADMIN, TeamRole.MANAGER, True),
-        (TeamRole.OWNER, TeamRole.ADMIN, True),
-        (TeamRole.VIEWER, None, True),
+        (TeamRole.VIEWER, CONTENT_CREATE, False),
+        (TeamRole.EDITOR, CONTENT_CREATE, True),
+        (TeamRole.EDITOR, CONTENT_PUBLISH, True),
+        (TeamRole.MANAGER, CONTENT_CREATE, True),
+        (TeamRole.ADMIN, CONTENT_CREATE, True),
+        (TeamRole.OWNER, CONTENT_CREATE, True),
+        (TeamRole.VIEWER, CONTENT_VIEW, True),
+        # The roles that have no place in the old ordering.
+        (TeamRole.CONTRIBUTOR, CONTENT_CREATE, True),
+        (TeamRole.CONTRIBUTOR, CONTENT_PUBLISH, False),
+        (TeamRole.ANALYST, CONTENT_VIEW, False),
+        (TeamRole.CLIENT, CONTENT_CREATE, False),
     ],
 )
-async def test_min_role_enforced(
-    db_session, user_factory, account_factory, member_factory, role, min_role, allowed
+async def test_permission_enforced(
+    db_session, user_factory, account_factory, member_factory, role, permission, allowed
 ):
     from fastapi import HTTPException
 
@@ -191,21 +189,21 @@ async def test_min_role_enforced(
 
     if allowed:
         member = await verify_account_access(
-            account.id, member_user, db_session, min_role=min_role
+            account.id, member_user, db_session, permission=permission
         )
         assert member.role is role
     else:
         with pytest.raises(HTTPException) as exc:
             await verify_account_access(
-                account.id, member_user, db_session, min_role=min_role
+                account.id, member_user, db_session, permission=permission
             )
         assert exc.value.status_code == 403
 
 
-async def test_min_role_not_bypassed_by_pending_high_role(
+async def test_permission_not_bypassed_by_pending_high_role(
     db_session, user_factory, account_factory, member_factory
 ):
-    """A PENDING OWNER invitation must not satisfy even the lowest min_role."""
+    """A PENDING OWNER invitation grants no permission at all."""
     from fastapi import HTTPException
 
     owner = await user_factory()
@@ -218,15 +216,15 @@ async def test_min_role_not_bypassed_by_pending_high_role(
 
     with pytest.raises(HTTPException) as exc:
         await verify_account_access(
-            account.id, invitee, db_session, min_role=TeamRole.VIEWER
+            account.id, invitee, db_session, permission=CONTENT_VIEW
         )
     assert exc.value.status_code == 403
 
 
-async def test_write_endpoint_enforces_editor_role(
+async def test_write_endpoint_denies_a_viewer(
     client, auth_header, user_factory, account_factory, member_factory
 ):
-    """An accepted VIEWER cannot create a post (needs EDITOR)."""
+    """An accepted VIEWER cannot create a post (needs content.create)."""
     owner = await user_factory()
     account = await account_factory(owner)
     viewer = await user_factory()
@@ -241,7 +239,7 @@ async def test_write_endpoint_enforces_editor_role(
         json={"content": "hello world", "target_accounts": []},
     )
     assert response.status_code == 403
-    assert "editor" in response.json()["detail"].lower()
+    assert "viewer" in response.json()["detail"].lower()
 
 
 # ---------------------------------------------------------------------------

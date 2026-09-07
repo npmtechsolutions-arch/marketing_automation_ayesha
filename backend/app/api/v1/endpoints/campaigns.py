@@ -14,9 +14,13 @@ from app.core.deps import get_current_active_user
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.post import Post, PostStatus
 from app.models.post_performance import PostPerformance
-from app.models.team_member import TeamRole
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.core.authz import verify_account_access as _verify_account_access
+from app.core.permissions import (
+    CONTENT_CREATE,
+    CONTENT_DELETE,
+    CONTENT_PUBLISH,
+)
 
 router = APIRouter()
 
@@ -227,7 +231,7 @@ async def create_campaign(
     current_user=Depends(get_current_active_user),
 ):
     """Create a new campaign."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
 
     campaign = Campaign(
         user_id=current_user.id,
@@ -270,7 +274,7 @@ async def update_campaign(
     current_user=Depends(get_current_active_user),
 ):
     """Update campaign details. Only draft or paused campaigns can be edited."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
     campaign = await _get_campaign_or_404(campaign_id, account_id, db)
 
     if campaign.status not in (CampaignStatus.DRAFT, CampaignStatus.PAUSED):
@@ -295,7 +299,7 @@ async def delete_campaign(
     current_user=Depends(get_current_active_user),
 ):
     """Delete a campaign. Only draft campaigns can be deleted."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.MANAGER)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_DELETE)
     campaign = await _get_campaign_or_404(campaign_id, account_id, db)
 
     if campaign.status != CampaignStatus.DRAFT:
@@ -317,7 +321,7 @@ async def activate_campaign(
     current_user=Depends(get_current_active_user),
 ):
     """Activate a campaign."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.MANAGER)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_PUBLISH)
     campaign = await _get_campaign_or_404(campaign_id, account_id, db)
 
     if campaign.status not in (CampaignStatus.DRAFT, CampaignStatus.PAUSED):
@@ -340,7 +344,7 @@ async def pause_campaign(
     current_user=Depends(get_current_active_user),
 ):
     """Pause an active campaign."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.MANAGER)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_PUBLISH)
     campaign = await _get_campaign_or_404(campaign_id, account_id, db)
 
     if campaign.status != CampaignStatus.ACTIVE:
@@ -363,7 +367,7 @@ async def complete_campaign(
     current_user=Depends(get_current_active_user),
 ):
     """Mark a campaign as completed."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.MANAGER)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_PUBLISH)
     campaign = await _get_campaign_or_404(campaign_id, account_id, db)
 
     if campaign.status not in (CampaignStatus.ACTIVE, CampaignStatus.PAUSED):
@@ -542,7 +546,7 @@ async def attach_posts(
     current_user=Depends(get_current_active_user),
 ):
     """Link one or more of the account's posts to this campaign."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
     await _get_campaign_or_404(campaign_id, account_id, db)
 
     if not body.post_ids:
@@ -570,7 +574,7 @@ async def detach_post(
     current_user=Depends(get_current_active_user),
 ):
     """Remove a post from this campaign (the post itself is not deleted)."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
     await _get_campaign_or_404(campaign_id, account_id, db)
 
     result = await db.execute(
@@ -599,7 +603,7 @@ async def log_spend(
     current_user=Depends(get_current_active_user),
 ):
     """Record budget spend. mode='add' increments, mode='set' overwrites the total spent."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
     campaign = await _get_campaign_or_404(campaign_id, account_id, db)
 
     if body.mode == "set":

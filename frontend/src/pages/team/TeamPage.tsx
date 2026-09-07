@@ -33,7 +33,15 @@ import { cn } from "@/lib/utils";
 import api, { getAccountId } from "@/lib/api";
 
 // ── Types ───────────────────────────────────────────────────────────
-type Role = "owner" | "admin" | "manager" | "editor" | "viewer";
+type Role =
+  | "owner"
+  | "admin"
+  | "manager"
+  | "editor"
+  | "viewer"
+  | "contributor"
+  | "analyst"
+  | "client";
 type InvitationStatus = "pending" | "accepted" | "declined" | "expired";
 
 interface TeamMember {
@@ -59,26 +67,66 @@ const roleConfig: Record<Role, { label: string; color: string; bg: string; borde
   manager: { label: "Manager", color: "text-emerald-300", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
   editor: { label: "Editor", color: "text-amber-300", bg: "bg-amber-500/10", border: "border-amber-500/20" },
   viewer: { label: "Viewer", color: "text-gray-300", bg: "bg-white/5", border: "border-white/10" },
+  contributor: { label: "Contributor", color: "text-teal-300", bg: "bg-teal-500/10", border: "border-teal-500/20" },
+  analyst: { label: "Analyst", color: "text-sky-300", bg: "bg-sky-500/10", border: "border-sky-500/20" },
+  // Visually distinct because a client is external to the organisation.
+  client: { label: "Client", color: "text-rose-300", bg: "bg-rose-500/10", border: "border-rose-500/20" },
 };
 
+// Kept in step with ROLE_DESCRIPTIONS in app/core/permissions.py. The API also
+// serves these from GET /team/roles, which is the authoritative copy.
 const roleDescriptions: Record<Exclude<Role, "owner">, string> = {
-  admin: "Full access to all features, team management, and billing",
-  manager: "Create, edit, and schedule content across all platforms",
-  editor: "Create and edit content, but cannot publish or manage team",
-  viewer: "View-only access to content, analytics, and reports",
+  admin: "Full access to content, team, billing and settings.",
+  manager: "Manages content and approvals, and sees billing. Cannot change the team or settings.",
+  editor: "Creates, edits and publishes content.",
+  viewer: "Read-only access to content and analytics.",
+  contributor: "Writes drafts. Cannot publish or schedule.",
+  analyst: "Reads analytics and reports only. No access to content.",
+  client: "External reviewer. Sees only content awaiting their approval, and can approve or reject it.",
 };
 
-const permissions = [
-  { label: "View dashboard & analytics", owner: true, admin: true, manager: true, editor: true, viewer: true },
-  { label: "Create & edit content", owner: true, admin: true, manager: true, editor: true, viewer: false },
-  { label: "Publish & schedule posts", owner: true, admin: true, manager: true, editor: false, viewer: false },
-  { label: "Manage campaigns", owner: true, admin: true, manager: true, editor: false, viewer: false },
-  { label: "View team members", owner: true, admin: true, manager: true, editor: true, viewer: true },
-  { label: "Invite & remove members", owner: true, admin: true, manager: false, editor: false, viewer: false },
-  { label: "Manage connected platforms", owner: true, admin: true, manager: false, editor: false, viewer: false },
-  { label: "Access billing & subscription", owner: true, admin: true, manager: false, editor: false, viewer: false },
-  { label: "Change workspace settings", owner: true, admin: false, manager: false, editor: false, viewer: false },
-  { label: "Transfer or delete workspace", owner: true, admin: false, manager: false, editor: false, viewer: false },
+// Assignable by invitation or role change. Owner is absent: transferring
+// ownership is not an invitation, and the API rejects it here too.
+const ASSIGNABLE_ROLES: { value: Exclude<Role, "owner">; label: string }[] = [
+  { value: "admin", label: "Admin" },
+  { value: "manager", label: "Manager" },
+  { value: "editor", label: "Editor" },
+  { value: "contributor", label: "Contributor" },
+  { value: "viewer", label: "Viewer" },
+  { value: "analyst", label: "Analyst" },
+  { value: "client", label: "Client" },
+];
+
+// The permission matrix is loaded from GET /team/roles rather than hardcoded.
+//
+// The previous hardcoded table had drifted from the backend -- it claimed an
+// editor could not publish, while the API had allowed exactly that since the
+// role was introduced. A table that lies about permissions is worse than no
+// table, so it now renders whatever the server's registry actually says.
+interface RoleOption {
+  value: Role;
+  label: string;
+  description: string;
+  permissions: string[];
+}
+
+// Display order and wording for the matrix rows.
+const PERMISSION_ROWS: { key: string; label: string }[] = [
+  { key: "content.view", label: "View content" },
+  { key: "content.create", label: "Create & edit drafts" },
+  { key: "content.publish", label: "Publish & schedule" },
+  { key: "content.approve", label: "Approve or reject" },
+  { key: "content.delete", label: "Delete content" },
+  { key: "accounts.connect", label: "Connect social accounts" },
+  { key: "accounts.manage", label: "Manage social accounts" },
+  { key: "analytics.view", label: "View analytics" },
+  { key: "reports.view", label: "View reports" },
+  { key: "reports.manage", label: "Create & edit reports" },
+  { key: "team.view", label: "View team members" },
+  { key: "team.manage", label: "Invite & remove members" },
+  { key: "billing.view", label: "View billing" },
+  { key: "billing.manage", label: "Change the plan" },
+  { key: "settings.manage", label: "Change workspace settings" },
 ];
 
 const planLimit = 10;
@@ -95,6 +143,7 @@ export default function TeamPage() {
   const [showPermissions, setShowPermissions] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("editor");
+  const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState(false);
@@ -127,6 +176,16 @@ export default function TeamPage() {
       const payload = res.data ?? res;
       const items: TeamMember[] = payload.items ?? payload ?? [];
       setMembers(items);
+
+      // The assignable roles and their permissions, straight from the server's
+      // registry, so the dropdown and the matrix cannot drift from enforcement.
+      try {
+        const rolesRes: any = await api.get(`/accounts/${accountId}/team/roles`);
+        setRoleOptions((rolesRes.data ?? rolesRes) as RoleOption[]);
+      } catch {
+        // A role list we cannot load is not worth failing the page over; the
+        // dropdown falls back to the static ASSIGNABLE_ROLES list.
+      }
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Failed to load team members.");
@@ -548,20 +607,25 @@ export default function TeamPage() {
                       <thead>
                         <tr style={{ borderBottom: "1px solid var(--surface-border)" }}>
                           <th className="text-left font-medium py-3 pr-4 min-w-[200px]" style={{ color: "var(--page-text-muted)" }}>Permission</th>
-                          {(["owner", "admin", "manager", "editor", "viewer"] as Role[]).map((r) => (
-                            <th key={r} className="text-center py-3 px-3">
-                              <span className={cn("text-xs font-medium", roleConfig[r].color)}>{roleConfig[r].label}</span>
+                          {roleOptions.map((option) => (
+                            <th key={option.value} className="text-center py-3 px-3">
+                              <span
+                                className={cn("text-xs font-medium", roleConfig[option.value]?.color)}
+                                title={option.description}
+                              >
+                                {option.label}
+                              </span>
                             </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {permissions.map((perm, idx) => (
-                          <tr key={idx} style={{ borderBottom: "1px solid var(--surface-border)" }}>
-                            <td className="py-3 pr-4" style={{ color: "var(--page-text)" }}>{perm.label}</td>
-                            {(["owner", "admin", "manager", "editor", "viewer"] as Role[]).map((r) => (
-                              <td key={r} className="text-center py-3 px-3">
-                                {perm[r] ? (
+                        {PERMISSION_ROWS.map((row) => (
+                          <tr key={row.key} style={{ borderBottom: "1px solid var(--surface-border)" }}>
+                            <td className="py-3 pr-4" style={{ color: "var(--page-text)" }}>{row.label}</td>
+                            {roleOptions.map((option) => (
+                              <td key={option.value} className="text-center py-3 px-3">
+                                {option.permissions.includes(row.key) ? (
                                   <Check className="w-4 h-4 text-emerald-400 mx-auto" />
                                 ) : (
                                   <X className="w-4 h-4 mx-auto" style={{ color: "var(--page-text-muted)", opacity: 0.5 }} />
@@ -648,12 +712,7 @@ export default function TeamPage() {
 
               <Select
                 label="Role"
-                options={[
-                  { value: "admin", label: "Admin" },
-                  { value: "manager", label: "Manager" },
-                  { value: "editor", label: "Editor" },
-                  { value: "viewer", label: "Viewer" },
-                ]}
+                options={ASSIGNABLE_ROLES}
                 value={inviteRole}
                 onChange={setInviteRole}
               />
@@ -712,12 +771,7 @@ export default function TeamPage() {
 
             <Select
               label="New Role"
-              options={[
-                { value: "admin", label: "Admin" },
-                { value: "manager", label: "Manager" },
-                { value: "editor", label: "Editor" },
-                { value: "viewer", label: "Viewer" },
-              ]}
+              options={ASSIGNABLE_ROLES}
               value={newRole}
               onChange={setNewRole}
             />

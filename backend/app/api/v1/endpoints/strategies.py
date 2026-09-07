@@ -15,12 +15,16 @@ from app.models.ai_generation import AIGeneration, AIGenerationStatus, Generatio
 from app.models.business import Business
 from app.models.post import Post, PostStatus
 from app.models.strategy import Strategy
-from app.models.team_member import TeamRole
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.strategy import StrategyGenerate, StrategyResponse, StrategyUpdate
 from app.api.v1.endpoints.ai import _call_anthropic
 from app.services.entitlements import enforce_post_limit
 from app.core.authz import verify_account_access as _verify_account_access
+from app.core.permissions import (
+    CONTENT_CREATE,
+    CONTENT_DELETE,
+    CONTENT_PUBLISH,
+)
 
 router = APIRouter()
 
@@ -100,7 +104,7 @@ async def generate_strategy(
     current_user=Depends(get_current_active_user),
 ):
     """Generate a new marketing strategy using AI."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
 
     # Fetch business
     biz_result = await db.execute(
@@ -243,7 +247,7 @@ async def update_strategy(
     current_user=Depends(get_current_active_user),
 ):
     """Update a strategy."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
     strategy = await _get_strategy_or_404(strategy_id, account_id, db)
 
     update_data = body.model_dump(exclude_unset=True)
@@ -263,7 +267,7 @@ async def delete_strategy(
     current_user=Depends(get_current_active_user),
 ):
     """Delete a strategy."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.MANAGER)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_DELETE)
     strategy = await _get_strategy_or_404(strategy_id, account_id, db)
     await db.delete(strategy)
     await db.flush()
@@ -278,7 +282,7 @@ async def activate_strategy(
     current_user=Depends(get_current_active_user),
 ):
     """Set a strategy as the active strategy. Deactivates all others for this account."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.MANAGER)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_PUBLISH)
     strategy = await _get_strategy_or_404(strategy_id, account_id, db)
 
     # Deactivate all other strategies in the same account
@@ -303,7 +307,7 @@ async def apply_strategy(
     current_user=Depends(get_current_active_user),
 ):
     """Apply strategy recommendations by creating draft posts from the strategy's content themes."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
     # All `count` drafts land in this month's allowance, so check them as a batch.
     await enforce_post_limit(db, account_id, adding=count)
     strategy = await _get_strategy_or_404(strategy_id, account_id, db)

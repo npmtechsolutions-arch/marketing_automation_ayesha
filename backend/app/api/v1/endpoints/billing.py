@@ -13,7 +13,6 @@ from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.account import Account, SubscriptionStatus, SubscriptionTier
 from app.models.organization import Organization
-from app.models.team_member import TeamRole
 from app.schemas.billing import (
     BillingInfo,
     CheckoutSession,
@@ -33,6 +32,9 @@ from app.services.entitlements import (
     count_team_members,
 )
 from app.core.authz import verify_account_access as _verify_account_access
+from app.core.permissions import (
+    BILLING_MANAGE,
+)
 
 router = APIRouter()
 
@@ -219,7 +221,7 @@ async def create_checkout_session(
     current_user=Depends(get_current_active_user),
 ):
     """Create a Stripe Checkout session for a subscription upgrade."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.ADMIN)
+    await _verify_account_access(account_id, current_user, db, permission=BILLING_MANAGE)
     organization = await _get_organization_or_404(account_id, db)
 
     if not _stripe_enabled():
@@ -299,7 +301,7 @@ async def change_plan(
     BILLING_ALLOW_MANUAL_PLAN_CHANGE) — on a Stripe-backed deployment the tier
     is owned by Stripe and only the webhook may change it.
     """
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.ADMIN)
+    await _verify_account_access(account_id, current_user, db, permission=BILLING_MANAGE)
     organization = await _get_organization_or_404(account_id, db)
 
     if not _manual_plan_change_enabled():
@@ -338,7 +340,7 @@ async def create_portal_session(
     current_user=Depends(get_current_active_user),
 ):
     """Create a Stripe Customer Portal session for managing subscriptions."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.ADMIN)
+    await _verify_account_access(account_id, current_user, db, permission=BILLING_MANAGE)
     organization = await _get_organization_or_404(account_id, db)
 
     if not organization.stripe_customer_id:

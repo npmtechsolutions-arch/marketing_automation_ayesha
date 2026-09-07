@@ -19,11 +19,25 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
+from app.core.permissions import (
+    PERMISSIONS,
+    ROLE_DESCRIPTIONS,
+    TEAM_MANAGE,
+    TEAM_VIEW,
+    permissions_for,
+    role_has_permission,
+)
 from app.models.account import Account
 from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
-from app.schemas.team import InviteInfoResponse, TeamInvite, TeamMemberResponse, TeamMemberUpdate
+from app.schemas.team import (
+    InviteInfoResponse,
+    RoleOption,
+    TeamInvite,
+    TeamMemberResponse,
+    TeamMemberUpdate,
+)
 from app.services.email_service import EmailService
 from app.services.entitlements import enforce_member_limit
 
@@ -37,8 +51,9 @@ async def _get_member_or_403(
     db: AsyncSession,
     user_id: uuid.UUID,
     account_id: uuid.UUID,
+    permission: str | None = None,
 ) -> TeamMember:
-    """Return the team membership or raise 403."""
+    """Return the team membership, optionally requiring a permission."""
     result = await db.execute(
         select(TeamMember).where(
             TeamMember.user_id == user_id,
@@ -52,6 +67,15 @@ async def _get_member_or_403(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not a member of this account",
         )
+
+    if permission is not None and not role_has_permission(member.role, permission):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Your role ({member.role.value}) cannot "
+                f"{PERMISSIONS.get(permission, permission).lower()}."
+            ),
+        )
     return member
 
 
@@ -60,14 +84,34 @@ async def _require_admin(
     user_id: uuid.UUID,
     account_id: uuid.UUID,
 ) -> TeamMember:
-    """Require the user to be an owner or admin of the account."""
-    member = await _get_member_or_403(db, user_id, account_id)
-    if member.role not in (TeamRole.OWNER, TeamRole.ADMIN):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only owners and admins can manage team members",
+    """Require the team.manage permission (owners and admins hold it)."""
+    return await _get_member_or_403(db, user_id, account_id, permission=TEAM_MANAGE)
+
+
+@router.get("/roles", response_model=list[RoleOption])
+async def list_assignable_roles(
+    account_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """The roles that can be assigned, with what each one grants.
+
+    Served from the same registry the authorization checks use, so the dropdown
+    and the enforcement cannot drift apart.
+    """
+    await _get_member_or_403(db, current_user.id, account_id, permission=TEAM_VIEW)
+
+    return [
+        RoleOption(
+            value=role.value,
+            label=role.value.replace("_", " ").title(),
+            description=ROLE_DESCRIPTIONS[role],
+            permissions=sorted(permissions_for(role)),
         )
-    return member
+        for role in TeamRole
+        # Ownership transfer is not an invitation.
+        if role is not TeamRole.OWNER
+    ]
 
 
 @router.get("/", response_model=PaginatedResponse[TeamMemberResponse])
@@ -79,7 +123,7 @@ async def list_team_members(
     current_user: User = Depends(get_current_active_user),
 ):
     """List all team members for an account."""
-    await _get_member_or_403(db, current_user.id, account_id)
+    await _get_member_or_403(db, current_user.id, account_id, permission=TEAM_VIEW)
 
     # Count
     count_query = select(func.count()).where(TeamMember.account_id == account_id)

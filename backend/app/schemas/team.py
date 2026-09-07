@@ -7,13 +7,30 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 from app.schemas.user import UserResponse
 
 
+# Every role that may be assigned by invitation. OWNER is absent deliberately:
+# ownership transfers are not an invitation, and letting one be issued here
+# would be a privilege-escalation path for any admin.
+ASSIGNABLE_ROLES = Literal[
+    "admin", "manager", "editor", "viewer", "contributor", "analyst", "client",
+]
+
+
 class TeamInvite(BaseModel):
     email: EmailStr
-    role: Literal["admin", "manager", "editor", "viewer"]
+    role: ASSIGNABLE_ROLES
 
 
 class TeamMemberUpdate(BaseModel):
-    role: str
+    role: ASSIGNABLE_ROLES
+
+
+class RoleOption(BaseModel):
+    """A role the UI can offer, with text explaining what it grants."""
+
+    value: str
+    label: str
+    description: str
+    permissions: list[str]
 
 
 class TeamMemberResponse(BaseModel):

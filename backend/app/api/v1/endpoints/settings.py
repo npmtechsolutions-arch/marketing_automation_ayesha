@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.account import Account
-from app.models.team_member import TeamRole
 from app.core.authz import verify_account_access as _verify_account_access
+from app.core.permissions import (
+    SETTINGS_MANAGE,
+)
 from app.services.entitlements import (
     count_connected_platforms,
     count_posts_this_month,
@@ -103,7 +105,7 @@ async def update_account_settings(
     current_user=Depends(get_current_active_user),
 ):
     """Update account settings. Requires admin role or above."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.ADMIN)
+    await _verify_account_access(account_id, current_user, db, permission=SETTINGS_MANAGE)
     account = await _get_account_or_404(account_id, db)
 
     if body.name is not None:

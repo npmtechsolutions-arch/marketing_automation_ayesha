@@ -15,12 +15,19 @@ from app.core.database import get_db, AsyncSessionLocal
 from app.core.deps import get_current_active_user
 from app.models.platform import SocialAccount
 from app.models.post import Post, PostStatus
-from app.models.team_member import TeamRole
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.post import PostCreate, PostResponse, PostUpdate, PostWithPerformance
 from app.services.activity_service import log_activity
 from app.services.entitlements import enforce_post_limit
 from app.core.authz import verify_account_access as _verify_account_access
+from app.core.permissions import (  # noqa: F401
+    CONTENT_APPROVE,
+    CONTENT_CREATE,
+    CONTENT_VIEW,
+    CONTENT_DELETE,
+    CONTENT_PUBLISH,
+)
+from app.core.permissions import restricts_content_to_approvals
 
 router = APIRouter()
 
@@ -85,9 +92,17 @@ async def list_posts(
     current_user=Depends(get_current_active_user),
 ):
     """List posts for an account with optional filters and pagination."""
-    await _verify_account_access(account_id, current_user, db)
+    member = await _verify_account_access(
+        account_id, current_user, db, permission=CONTENT_VIEW
+    )
 
     conditions = [Post.account_id == account_id, Post.deleted_at.is_(None)]
+    if restricts_content_to_approvals(member.role):
+        # A CLIENT is an external reviewer. Holding content.view lets them open
+        # the approval queue and nothing else -- without this they would see
+        # every draft in the workspace, which is precisely what the role exists
+        # to prevent.
+        conditions.append(Post.status == PostStatus.PENDING_APPROVAL)
 
     if status_filter:
         conditions.append(Post.status == status_filter)
@@ -141,7 +156,7 @@ async def create_post(
     current_user=Depends(get_current_active_user),
 ):
     """Create a new post (draft by default)."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
     await enforce_post_limit(db, account_id)
 
     # Resolve target accounts from IDs to structured JSON
@@ -425,7 +440,7 @@ async def update_post(
     current_user=Depends(get_current_active_user),
 ):
     """Update a post. Only draft or rejected posts can be edited."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
     post = await _get_post_or_404(post_id, account_id, db)
 
     if post.status not in (
@@ -498,7 +513,7 @@ async def delete_post(
     current_user=Depends(get_current_active_user),
 ):
     """Soft-delete a post."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_DELETE)
     post = await _get_post_or_404(post_id, account_id, db)
 
     post.deleted_at = datetime.now(timezone.utc)
@@ -745,7 +760,7 @@ async def publish_post(
     current_user=Depends(get_current_active_user),
 ):
     """Publish a post immediately. Sets status to 'publishing' and triggers a background task."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_PUBLISH)
     post = await _get_post_or_404(post_id, account_id, db)
 
     if post.status not in (PostStatus.DRAFT, PostStatus.APPROVED, PostStatus.SCHEDULED, PostStatus.FAILED):
@@ -774,7 +789,7 @@ async def schedule_post(
     current_user=Depends(get_current_active_user),
 ):
     """Schedule a post for future publication."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_PUBLISH)
     post = await _get_post_or_404(post_id, account_id, db)
 
     if post.status not in (PostStatus.DRAFT, PostStatus.APPROVED, PostStatus.FAILED, PostStatus.SCHEDULED):
@@ -820,7 +835,7 @@ async def duplicate_post(
     current_user=Depends(get_current_active_user),
 ):
     """Create a copy of an existing post as a new draft."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.EDITOR)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
     await enforce_post_limit(db, account_id)
     original = await _get_post_or_404(post_id, account_id, db)
 
@@ -869,7 +884,7 @@ async def approve_post(
     current_user=Depends(get_current_active_user),
 ):
     """Approve a post. Requires manager role or above."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.MANAGER)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_APPROVE)
     post = await _get_post_or_404(post_id, account_id, db)
 
     if post.status != PostStatus.PENDING_APPROVAL:
@@ -909,7 +924,7 @@ async def reject_post(
     current_user=Depends(get_current_active_user),
 ):
     """Reject a post with a reason. Requires manager role or above."""
-    await _verify_account_access(account_id, current_user, db, min_role=TeamRole.MANAGER)
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_APPROVE)
     post = await _get_post_or_404(post_id, account_id, db)
 
     if post.status != PostStatus.PENDING_APPROVAL:
