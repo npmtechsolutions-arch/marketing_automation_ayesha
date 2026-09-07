@@ -12,7 +12,6 @@ from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.post import Post, PostStatus
 from app.models.post_performance import PostPerformance
-from app.models.team_member import TeamMember
 from app.api.v1.endpoints.posts import _sync_post_performance
 from app.schemas.analytics import (
     AnalyticsExport,
@@ -21,6 +20,7 @@ from app.schemas.analytics import (
     TopPost,
 )
 from app.schemas.common import MessageResponse
+from app.core.authz import verify_account_access as _verify_account_access
 
 router = APIRouter()
 
@@ -83,22 +83,6 @@ async def _sync_all_account_posts(account_id: uuid.UUID, db: AsyncSession) -> No
         
         if synced_any:
             await db.commit()
-
-
-async def _verify_account_access(account_id: uuid.UUID, user, db: AsyncSession) -> TeamMember:
-    result = await db.execute(
-        select(TeamMember).where(
-            TeamMember.account_id == account_id,
-            TeamMember.user_id == user.id,
-        )
-    )
-    member = result.scalar_one_or_none()
-    if not member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to this account",
-        )
-    return member
 
 
 def _period_to_timedelta(period: str) -> timedelta:

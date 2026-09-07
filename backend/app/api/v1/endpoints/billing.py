@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.account import Account, SubscriptionStatus, SubscriptionTier
-from app.models.team_member import TeamMember, TeamRole
+from app.models.team_member import TeamRole
 from app.schemas.billing import (
     BillingInfo,
     CheckoutSession,
@@ -32,6 +32,7 @@ from app.services.entitlements import (
     count_posts_this_month,
     count_team_members,
 )
+from app.core.authz import verify_account_access as _verify_account_access
 
 router = APIRouter()
 
@@ -39,24 +40,6 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-async def _verify_account_access(
-    account_id: uuid.UUID, user, db: AsyncSession, *, min_role: TeamRole | None = None
-) -> TeamMember:
-    result = await db.execute(
-        select(TeamMember).where(
-            TeamMember.account_id == account_id,
-            TeamMember.user_id == user.id,
-        )
-    )
-    member = result.scalar_one_or_none()
-    if not member:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this account")
-    role_hierarchy = [TeamRole.VIEWER, TeamRole.EDITOR, TeamRole.MANAGER, TeamRole.ADMIN, TeamRole.OWNER]
-    if min_role and role_hierarchy.index(member.role) < role_hierarchy.index(min_role):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Requires at least {min_role.value} role")
-    return member
-
 
 async def _get_account_or_404(account_id: uuid.UUID, db: AsyncSession) -> Account:
     result = await db.execute(select(Account).where(Account.id == account_id))

@@ -14,8 +14,8 @@ from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.ai_generation import AIGeneration, AIGenerationStatus, GenerationType
 from app.models.business import Business
-from app.models.team_member import TeamMember, TeamRole
 from app.schemas.ai import AIContentGenerate, AIContentResponse, AITopicSuggestion
+from app.core.authz import verify_account_access as _verify_account_access
 
 router = APIRouter()
 
@@ -23,24 +23,6 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-async def _verify_account_access(
-    account_id: uuid.UUID, user, db: AsyncSession
-) -> TeamMember:
-    result = await db.execute(
-        select(TeamMember).where(
-            TeamMember.account_id == account_id,
-            TeamMember.user_id == user.id,
-        )
-    )
-    member = result.scalar_one_or_none()
-    if not member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to this account",
-        )
-    return member
-
 
 async def _get_business(business_id: uuid.UUID, account_id: uuid.UUID, db: AsyncSession) -> Business | None:
     if not business_id:

@@ -15,11 +15,12 @@ from app.models.ai_generation import AIGeneration, AIGenerationStatus, Generatio
 from app.models.business import Business
 from app.models.post import Post, PostStatus
 from app.models.strategy import Strategy
-from app.models.team_member import TeamMember, TeamRole
+from app.models.team_member import TeamRole
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.strategy import StrategyGenerate, StrategyResponse, StrategyUpdate
 from app.api.v1.endpoints.ai import _call_anthropic
 from app.services.entitlements import enforce_post_limit
+from app.core.authz import verify_account_access as _verify_account_access
 
 router = APIRouter()
 
@@ -27,25 +28,6 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-async def _verify_account_access(
-    account_id: uuid.UUID, user, db: AsyncSession, *, min_role: TeamRole | None = None
-) -> TeamMember:
-    result = await db.execute(
-        select(TeamMember).where(
-            TeamMember.account_id == account_id,
-            TeamMember.user_id == user.id,
-        )
-    )
-    member = result.scalar_one_or_none()
-    if not member:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this account")
-
-    role_hierarchy = [TeamRole.VIEWER, TeamRole.EDITOR, TeamRole.MANAGER, TeamRole.ADMIN, TeamRole.OWNER]
-    if min_role and role_hierarchy.index(member.role) < role_hierarchy.index(min_role):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Requires at least {min_role.value} role")
-    return member
-
 
 async def _get_strategy_or_404(
     strategy_id: uuid.UUID, account_id: uuid.UUID, db: AsyncSession
