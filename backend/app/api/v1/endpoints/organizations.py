@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.account import Account
 from app.models.organization import Organization, OrganizationMember, OrgRole
+from app.models.plan import Plan
 from app.models.team_member import InvitationStatus
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
@@ -24,8 +25,10 @@ from app.schemas.organization import (
     OrganizationCreate,
     OrganizationResponse,
     OrganizationUpdate,
+    OrganizationUsageResponse,
     WorkspaceSummary,
 )
+from app.services import entitlement_service as ent
 from app.services.entitlements import enforce_workspace_limit
 from app.services.provisioning import create_workspace
 
@@ -160,3 +163,33 @@ async def create_organization_workspace(
     )
     await db.refresh(account)
     return WorkspaceSummary.model_validate(account)
+
+
+@router.get("/{organization_id}/usage", response_model=OrganizationUsageResponse)
+async def get_organization_usage(
+    organization_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Usage against the plan's allowance, feature by feature.
+
+    Any accepted member may read this: knowing how much of the plan is spent is
+    not privileged, and hiding it from non-admins is how people hit a cap with
+    no warning.
+    """
+    await verify_org_access(organization_id, current_user, db)
+    organization = await _get_organization(db, organization_id)
+
+    plan = (
+        await db.execute(
+            select(Plan).where(Plan.key == organization.subscription_tier.value)
+        )
+    ).scalar_one_or_none()
+
+    return OrganizationUsageResponse(
+        organization_id=organization.id,
+        plan_key=organization.subscription_tier.value,
+        plan_name=plan.name if plan else organization.subscription_tier.value.title(),
+        period_start=ent.period_start(),
+        features=await ent.usage_summary(db, organization),
+    )

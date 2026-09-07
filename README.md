@@ -171,7 +171,9 @@ Authentication and AI generation endpoints are rate limited with [slowapi](https
 | `POST /auth/forgot-password` | 3 / hour | client IP + email |
 | `POST /accounts/{id}/ai/*` | 20 / hour | user |
 
-Exceeding a limit returns **429** with a `Retry-After` header. The AI limit is keyed on the user rather than the IP, so a shared office address does not throttle a whole team; it is temporary until database-backed entitlements land in Phase 1.3.
+Exceeding a limit returns **429** with a `Retry-After` header. The AI limit is keyed on the user rather than the IP, so a shared office address does not throttle a whole team.
+
+These are an abuse backstop, not a billing control — they reset on their own and are per-process without Redis. What a plan actually allows is enforced separately by [entitlements](#entitlements), which is what returns **402**.
 
 > **Behind a proxy, uvicorn needs `--proxy-headers` *and* `--forwarded-allow-ips`.** Otherwise every request appears to come from the proxy's address, all clients share one bucket, and normal traffic trips the per-IP limits within seconds — five bad logins from anyone would lock out the whole user base.
 >
@@ -260,6 +262,46 @@ If `alembic check` does report differences, the database drifted from the models
 
 > **Alembic is the only thing that creates schema.** The application performs no DDL at startup: `init_db()` in `app/core/database.py` only waits for the database to accept connections. It previously ran `Base.metadata.create_all()` plus ad-hoc `ALTER TABLE ... IF NOT EXISTS` statements, which meant a model change could reach a database without a migration. If you change a model, you must generate a migration — nothing else will apply it.
 
+## Entitlements
+
+What each plan allows lives in the database — `plans`, `features`, `plan_features` and `usage_records` — not in the source. Limits used to be a `TIER_LIMITS` dictionary, which meant changing one needed a deploy and a customer who negotiated a higher cap could not have it.
+
+| Feature key | Unit | Counted |
+|---|---|---|
+| `workspaces` | count | live |
+| `team_members` | count | live |
+| `social_accounts` | count | live |
+| `posts_per_month` | count | metered |
+| `ai_requests_per_month` | count | metered |
+| `storage_bytes` | bytes | live |
+| `analytics_history_days` | count | live |
+| `reports_per_month` | count | metered |
+| `white_label` | boolean | — |
+
+**Live** features are counted with a query each time, so deleting a workspace frees the slot. **Metered** ones accumulate in `usage_records` for the calendar month and are not refunded — deleting a post does not give the allowance back, and an AI request that fails downstream has still cost us the call.
+
+A limit of `NULL` is unlimited; `0` means the plan does not include the feature. A missing `plan_features` row reads as `0`, never as unlimited — failing open on a missing entitlement would be the worst available default.
+
+Exceeding a limit returns **402 Payment Required**, not 403: the caller is authorised, the plan simply does not cover it, and upgrading makes it work.
+
+Metering is a single guarded statement rather than a read followed by a write:
+
+```sql
+INSERT INTO usage_records (...) VALUES (...)
+ON CONFLICT (organization_id, feature_key, period_start) DO UPDATE
+  SET count = usage_records.count + :amount
+  WHERE usage_records.count + :amount <= :limit
+RETURNING count
+```
+
+No row comes back when the guard rejects it, which is how the caller learns it was refused. Reading the count first would let two requests arriving at limit-1 both decide they fit — see [test_entitlement_concurrency.py](backend/tests/test_entitlement_concurrency.py).
+
+Limits are cached for 60 seconds per organization (Redis when configured, per-process otherwise). Every write path — a plan change, a limits edit, an admin CRUD call — invalidates the cache, so a raised cap takes effect immediately.
+
+Superadmins manage plans and limits at `/admin/plans` in the SPA, backed by `GET|POST|PATCH /api/v1/admin/plans`, `PUT /api/v1/admin/plans/{id}/limits` and `GET /api/v1/admin/features`. Retiring a plan deactivates it rather than deleting the row, because organizations reference plans by tier key and a missing plan would leave them with no limits at all.
+
+Customers see the same numbers on the billing page, from `GET /api/v1/organizations/{id}/usage`. Usage is organization-wide: one allowance shared across every workspace.
+
 ## Running the tests
 
 ```bash
@@ -270,7 +312,9 @@ DEBUG=true python -m pytest tests/ -q
 
 [`requirements-dev.txt`](backend/requirements-dev.txt) pins the test and lint tooling and includes `requirements.txt`, so it is the only file a contributor needs to install.
 
-The suite runs against in-memory SQLite and needs no Postgres or Redis. Shared fixtures (app client, database session, user/account/member factories, auth headers) live in [backend/tests/conftest.py](backend/tests/conftest.py).
+The suite runs against in-memory SQLite and needs no Postgres or Redis. Shared fixtures (app client, database session, user/account/member factories, auth headers, plan seeding and `set_limit`) live in [backend/tests/conftest.py](backend/tests/conftest.py).
+
+One file is the exception. [backend/tests/test_entitlement_concurrency.py](backend/tests/test_entitlement_concurrency.py) proves that two requests arriving at the same limit cannot both succeed, and that needs two connections running two transactions at once — which the single-connection SQLite harness cannot express. It creates its own scratch database on the server named by `DATABASE_URL` (overridable with `TEST_POSTGRES_ADMIN_URL`) and drops it afterwards, and **skips** when no Postgres is reachable. CI runs a Postgres service, so it executes there; locally it will skip unless Postgres is up.
 
 Linting:
 

@@ -128,6 +128,7 @@ import DataDeletionPage from '@/pages/public/DataDeletionPage';
 // Admin pages
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import AdminUsersPage from '@/pages/admin/AdminUsersPage';
+import AdminPlansPage from '@/pages/admin/AdminPlansPage';
 import AuditLogsPage from '@/pages/admin/AuditLogsPage';
 import ApiDocsPage from '@/pages/admin/ApiDocsPage';
 
@@ -190,13 +191,19 @@ function ProtectedPublicRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Requires authentication AND admin role */
+/** Requires authentication AND superadmin.
+ *
+ * This checked `user.role`, a field the API does not send, so it was always
+ * undefined and every admin route bounced to the dashboard. The backend's
+ * actual flag is `is_superadmin`, and it guards these endpoints server-side
+ * regardless -- this only decides what the SPA offers to render.
+ */
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useAuthStore();
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  if (user?.role !== 'admin') {
+  if (!user?.is_superadmin) {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
@@ -375,6 +382,7 @@ function App() {
             {/* Admin */}
             <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
+            <Route path="/admin/plans" element={<AdminRoute><AdminPlansPage /></AdminRoute>} />
             <Route path="/admin/audit-logs" element={<AdminRoute><AuditLogsPage /></AdminRoute>} />
             <Route path="/admin/api-docs" element={<AdminRoute><ApiDocsPage /></AdminRoute>} />
 

@@ -28,6 +28,10 @@ class UserResponse(UserBase):
     id: UUID
     avatar_url: str | None = None
     is_active: bool
+    # The SPA gates the admin routes on this. It used to read ``user.role``,
+    # which this schema has never sent, so every admin page redirected to the
+    # dashboard. Only the caller's own flag is exposed, never anyone else's.
+    is_superadmin: bool = False
     email_verified: bool
     two_factor_enabled: bool = False
     preferences: dict | None = None

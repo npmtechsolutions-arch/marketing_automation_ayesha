@@ -41,7 +41,7 @@ async def _create_post(client, auth_header, user, account, content="A post"):
 # ---------------------------------------------------------------------------
 
 async def test_post_allowance_is_shared_across_workspaces(
-    client, auth_header, user_factory, account_factory, organization_factory
+    client, auth_header, user_factory, account_factory, organization_factory, set_limit
 ):
     """The reason the Organization tier exists.
 
@@ -49,7 +49,9 @@ async def test_post_allowance_is_shared_across_workspaces(
     not get a fresh allowance.
     """
     user = await user_factory(password=PASSWORD)
-    organization = await organization_factory(user, monthly_post_limit=2)
+    organization = await organization_factory(user)
+    await set_limit(organization, "posts_per_month", 2)
+    await set_limit(organization, "workspaces", 5)
     first = await account_factory(user, name="Client A", organization=organization)
     second = await account_factory(user, name="Client B", organization=organization)
 
@@ -58,14 +60,14 @@ async def test_post_allowance_is_shared_across_workspaces(
 
     # The allowance is spent, wherever the third post is attempted.
     third = await _create_post(client, auth_header, user, first)
-    assert third.status_code == 403, (
+    assert third.status_code == 402, (
         "the organization's allowance was not shared across its workspaces"
     )
-    assert (await _create_post(client, auth_header, user, second)).status_code == 403
+    assert (await _create_post(client, auth_header, user, second)).status_code == 402
 
 
 async def test_seats_are_counted_per_person_not_per_workspace(
-    db_session, user_factory, account_factory, organization_factory
+    db_session, user_factory, account_factory, organization_factory, set_limit
 ):
     """One person across three workspaces occupies one seat, not three.
 
@@ -75,7 +77,8 @@ async def test_seats_are_counted_per_person_not_per_workspace(
     from app.services.entitlements import count_team_members
 
     user = await user_factory(password=PASSWORD)
-    organization = await organization_factory(user, max_team_members=5)
+    organization = await organization_factory(user)
+    await set_limit(organization, "team_members", 5)
     for name in ("A", "B", "C"):
         await account_factory(user, name=name, organization=organization)
 
@@ -83,14 +86,15 @@ async def test_seats_are_counted_per_person_not_per_workspace(
 
 
 async def test_distinct_people_each_take_a_seat(
-    db_session, user_factory, account_factory, organization_factory, member_factory
+    db_session, user_factory, account_factory, organization_factory, member_factory, set_limit
 ):
     from app.models.team_member import TeamRole
     from app.services.entitlements import count_team_members
 
     owner = await user_factory(password=PASSWORD)
     colleague = await user_factory(password=PASSWORD)
-    organization = await organization_factory(owner, max_team_members=5)
+    organization = await organization_factory(owner)
+    await set_limit(organization, "team_members", 5)
     workspace = await account_factory(owner, organization=organization)
     await member_factory(
         colleague, workspace,
@@ -264,10 +268,11 @@ async def test_workspace_list_is_scoped_to_the_organization(
 
 
 async def test_workspace_cap_is_enforced(
-    client, auth_header, user_factory, account_factory, organization_factory
+    client, auth_header, user_factory, account_factory, organization_factory, set_limit
 ):
     user = await user_factory(password=PASSWORD)
-    organization = await organization_factory(user, max_workspaces=2)
+    organization = await organization_factory(user)
+    await set_limit(organization, "workspaces", 2)
     await account_factory(user, name="One", organization=organization)
 
     second = await client.post(
@@ -282,16 +287,18 @@ async def test_workspace_cap_is_enforced(
         headers=auth_header(user),
         json={"name": "Three"},
     )
-    assert third.status_code == 403
+    # 402 Payment Required: authorised, but the plan does not cover it.
+    assert third.status_code == 402
     detail = third.json()["detail"].lower()
     assert "workspace" in detail and "upgrade" in detail
 
 
 async def test_unlimited_workspaces_on_enterprise(
-    client, auth_header, user_factory, organization_factory
+    client, auth_header, user_factory, organization_factory, set_limit
 ):
     user = await user_factory(password=PASSWORD)
-    organization = await organization_factory(user, max_workspaces=-1)
+    organization = await organization_factory(user)
+    await set_limit(organization, "workspaces", None)  # NULL = unlimited
 
     for i in range(3):
         response = await client.post(
@@ -303,11 +310,12 @@ async def test_unlimited_workspaces_on_enterprise(
 
 
 async def test_creating_a_workspace_requires_admin(
-    client, auth_header, user_factory, organization_factory, org_member_factory
+    client, auth_header, user_factory, organization_factory, org_member_factory, set_limit
 ):
     owner = await user_factory(password=PASSWORD)
     member = await user_factory(password=PASSWORD)
-    organization = await organization_factory(owner, max_workspaces=10)
+    organization = await organization_factory(owner)
+    await set_limit(organization, "workspaces", 10)
     await org_member_factory(
         member, organization,
         role=OrgRole.MEMBER, invitation_status=InvitationStatus.ACCEPTED,

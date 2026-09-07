@@ -8,6 +8,7 @@ from app.models.campaign import Campaign, CampaignStatus
 from app.models.notification import Notification
 from app.models.organization import OrgRole, Organization, OrganizationMember
 from app.models.permission import Permission, RolePermission, UserPermission
+from app.models.plan import Feature, FeatureUnit, Plan, PlanFeature, UsageRecord
 from app.models.platform import SocialAccount, SocialPlatform
 from app.models.post import Post, PostStatus
 from app.models.post_performance import PostPerformance
@@ -40,6 +41,12 @@ __all__ = [
     "ActivityLog",
     "AIGeneration",
     "Webhook",
+    # Plans & entitlements
+    "Plan",
+    "Feature",
+    "PlanFeature",
+    "UsageRecord",
+    "FeatureUnit",
     # Permissions
     "Permission",
     "RolePermission",

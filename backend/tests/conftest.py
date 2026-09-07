@@ -334,3 +334,79 @@ def reset_rate_limits():
     yield
     limiter.reset()
     challenge_store.reset()
+
+
+def _load_plan_seed():
+    """The seed function from the plans migration, imported by path.
+
+    Reused rather than duplicated so the tests exercise the same rows a real
+    database gets -- a second copy here would drift from the migration.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parent.parent
+        / "alembic" / "versions" / "d5b28a71f3c6_plans_and_entitlements.py"
+    )
+    spec = importlib.util.spec_from_file_location("plan_seed_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def seeded_plans(db_engine, db_session):
+    """Every test gets the standard plans and features.
+
+    The schema comes from create_all, which creates tables but no rows, so
+    without this every entitlement lookup would find no plan and treat the
+    feature as ungranted.
+    """
+    from app.services import entitlement_service
+
+    migration = _load_plan_seed()
+    await db_session.run_sync(lambda conn: migration.seed_plans(conn))
+    await db_session.flush()
+    # Limits are cached for 60s; a previous test's numbers must not leak.
+    entitlement_service.invalidate_all()
+    yield
+    entitlement_service.invalidate_all()
+
+
+@pytest_asyncio.fixture
+async def set_limit(db_session):
+    """Override one feature's limit for an organization's plan.
+
+    Limits are plan-level, so this edits the plan row the organization is on.
+    Each test gets its own database, so there is no bleed between them.
+    """
+    from sqlalchemy import select as sa_select
+
+    from app.models.plan import Plan, PlanFeature
+    from app.services import entitlement_service
+
+    async def _set(organization, feature_key: str, limit_value):
+        plan = (
+            await db_session.execute(
+                sa_select(Plan).where(Plan.key == organization.subscription_tier.value)
+            )
+        ).scalar_one()
+        row = (
+            await db_session.execute(
+                sa_select(PlanFeature).where(
+                    PlanFeature.plan_id == plan.id,
+                    PlanFeature.feature_key == feature_key,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = PlanFeature(
+                id=uuid.uuid4(), plan_id=plan.id, feature_key=feature_key
+            )
+            db_session.add(row)
+        row.limit_value = limit_value
+        await db_session.flush()
+        entitlement_service.invalidate_all()
+
+    return _set

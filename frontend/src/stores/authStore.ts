@@ -8,6 +8,9 @@ export interface User {
   full_name: string;
   avatar_url?: string;
   role: string;
+  // Gates the /admin routes. The API sends this; `role` it never has, which
+  // is why the admin panel used to be unreachable.
+  is_superadmin?: boolean;
   is_active: boolean;
   two_factor_enabled?: boolean;
   preferences?: Record<string, any> | null;

@@ -18,6 +18,9 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  Database,
+  BarChart3,
+  Lock,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -25,6 +28,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { showError, showSuccess } from "@/components/ui/Toast";
 import api, { getAccountId } from "@/lib/api";
+import { useAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
 
 // ── API types ───────────────────────────────────────────────────────
@@ -145,6 +149,49 @@ const STATUS_BADGE: Record<string, { label: string; variant: "success" | "info" 
 
 const fmtLimit = (value: number) => (value < 0 ? "Unlimited" : value.toLocaleString());
 
+const fmtBytes = (value: number) => {
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let n = value / 1024;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  return `${n % 1 === 0 ? n : n.toFixed(1)} ${units[i]}`;
+};
+
+/** One entitlement's consumption, from GET /organizations/{id}/usage. */
+interface FeatureUsage {
+  key: string;
+  name: string;
+  description: string | null;
+  unit: string;
+  metered: boolean;
+  used: number;
+  limit: number | null;
+  unlimited: boolean;
+  enabled: boolean;
+}
+
+interface OrganizationUsage {
+  organization_id: string;
+  plan_key: string;
+  plan_name: string;
+  period_start: string;
+  features: FeatureUsage[];
+}
+
+const FEATURE_ICONS: Record<string, React.ReactNode> = {
+  posts_per_month: <FileText className="w-4 h-4 text-purple-400" />,
+  team_members: <Users className="w-4 h-4 text-blue-400" />,
+  social_accounts: <Share2 className="w-4 h-4 text-emerald-400" />,
+  workspaces: <Building2 className="w-4 h-4 text-cyan-400" />,
+  ai_requests_per_month: <Sparkles className="w-4 h-4 text-pink-400" />,
+  storage_bytes: <Database className="w-4 h-4 text-amber-400" />,
+  reports_per_month: <BarChart3 className="w-4 h-4 text-indigo-400" />,
+};
+
 const fmtDate = (iso: string | null) =>
   iso
     ? new Date(iso).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
@@ -155,10 +202,14 @@ const errorDetail = (err: any, fallback: string) => {
   return typeof detail === "string" ? detail : fallback;
 };
 
-function UsageMeter({ label, used, limit, icon }: { label: string; used: number; limit: number; icon: React.ReactNode }) {
-  const isUnlimited = limit < 0;
-  const pct = isUnlimited || limit === 0 ? 0 : Math.min(100, (used / limit) * 100);
+function UsageMeter({ label, used, limit, unit, icon }: { label: string; used: number; limit: number | null; unit?: string; icon: React.ReactNode }) {
+  // `null` is unlimited. The old shape used -1, which could not be told apart
+  // from a very large cap, and 0 -- a feature the plan does not include --
+  // came back as "unlimited" under `limit < 0` reasoning.
+  const isUnlimited = limit === null;
+  const pct = isUnlimited || !limit ? 0 : Math.min(100, (used / limit) * 100);
   const isHigh = !isUnlimited && pct > 80;
+  const fmt = unit === "bytes" ? fmtBytes : (n: number) => n.toLocaleString();
 
   return (
     <div>
@@ -168,7 +219,7 @@ function UsageMeter({ label, used, limit, icon }: { label: string; used: number;
           <span className="text-sm" style={{ color: "var(--page-text)" }}>{label}</span>
         </div>
         <span className={cn("text-sm font-medium tabular-nums", isHigh && "text-amber-400")} style={!isHigh ? { color: "var(--page-text)" } : undefined}>
-          {used}{isUnlimited ? "" : ` / ${limit}`}
+          {fmt(used)}{isUnlimited ? " / Unlimited" : ` / ${fmt(limit)}`}
         </span>
       </div>
       <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
@@ -196,6 +247,9 @@ export default function BillingPage() {
   const [error, setError] = useState<string | null>(null);
   const [pendingPlan, setPendingPlan] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
+  // Entitlement usage is organization-wide: a cap is spent across every
+  // workspace, so this cannot come from the workspace-scoped billing call.
+  const [orgUsage, setOrgUsage] = useState<OrganizationUsage | null>(null);
   const plansRef = useRef<HTMLDivElement>(null);
 
   // ── Load subscription + invoices ─────────────────────────────────
@@ -226,9 +280,26 @@ export default function BillingPage() {
     setLoading(false);
   }, []);
 
+  const loadUsage = useCallback(async () => {
+    const orgId = useAuthStore.getState().activeOrgId;
+    if (!orgId) {
+      await useAuthStore.getState().loadTenants();
+    }
+    const resolved = useAuthStore.getState().activeOrgId;
+    if (!resolved) return;
+    try {
+      const res: any = await api.get(`/organizations/${resolved}/usage`);
+      setOrgUsage(res.data ?? res);
+    } catch {
+      // Usage is supplementary; the page still shows the plan without it.
+      setOrgUsage(null);
+    }
+  }, []);
+
   useEffect(() => {
     loadBilling();
-  }, [loadBilling]);
+    loadUsage();
+  }, [loadBilling, loadUsage]);
 
   // Returning from Stripe Checkout.
   useEffect(() => {
@@ -428,10 +499,45 @@ export default function BillingPage() {
                       : "No renewal date on file"}
               </p>
             </div>
+            {/* Every entitlement the plan defines, not a hardcoded three. The
+                numbers are organization-wide -- one allowance shared across
+                all workspaces -- which is why they come from the usage
+                endpoint rather than this workspace's billing record. */}
             <div className="flex-1 space-y-4">
-              <UsageMeter label="Posts this month" used={usage.posts?.used ?? 0} limit={usage.posts?.limit ?? currentPlan.posts} icon={<FileText className="w-4 h-4 text-purple-400" />} />
-              <UsageMeter label="Team Members" used={usage.members?.used ?? 0} limit={usage.members?.limit ?? currentPlan.members} icon={<Users className="w-4 h-4 text-blue-400" />} />
-              <UsageMeter label="Platforms" used={usage.platforms?.used ?? 0} limit={usage.platforms?.limit ?? currentPlan.platforms} icon={<Share2 className="w-4 h-4 text-emerald-400" />} />
+              {orgUsage ? (
+                <>
+                  {orgUsage.features
+                    .filter((f) => f.unit !== "boolean")
+                    .map((f) => (
+                      <UsageMeter
+                        key={f.key}
+                        label={f.name}
+                        used={f.used}
+                        limit={f.limit}
+                        unit={f.unit}
+                        icon={FEATURE_ICONS[f.key] ?? <Zap className="w-4 h-4 text-purple-400" />}
+                      />
+                    ))}
+                  {orgUsage.features.some((f) => f.unit === "boolean") && (
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      {orgUsage.features
+                        .filter((f) => f.unit === "boolean")
+                        .map((f) => (
+                          <Badge key={f.key} variant={f.enabled ? "success" : "default"}>
+                            {!f.enabled && <Lock className="w-3 h-3 mr-1 inline" />}
+                            {f.name}
+                          </Badge>
+                        ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <UsageMeter label="Posts this month" used={usage.posts?.used ?? 0} limit={usage.posts?.limit ?? currentPlan.posts} icon={<FileText className="w-4 h-4 text-purple-400" />} />
+                  <UsageMeter label="Team Members" used={usage.members?.used ?? 0} limit={usage.members?.limit ?? currentPlan.members} icon={<Users className="w-4 h-4 text-blue-400" />} />
+                  <UsageMeter label="Platforms" used={usage.platforms?.used ?? 0} limit={usage.platforms?.limit ?? currentPlan.platforms} icon={<Share2 className="w-4 h-4 text-emerald-400" />} />
+                </>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap gap-3 mt-6 pt-6" style={{ borderTop: "1px solid var(--surface-border)" }}>

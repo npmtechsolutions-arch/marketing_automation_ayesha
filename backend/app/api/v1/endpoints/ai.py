@@ -17,11 +17,23 @@ from app.models.business import Business
 from app.schemas.ai import AIContentGenerate, AIContentResponse, AITopicSuggestion
 from app.core.authz import verify_account_access as _verify_account_access
 from app.core.ratelimit import ai_generation_rate_limit
+from app.core.entitlement_deps import meter_ai_request
 
-# Every endpoint on this router is an AI generation call, so the per-user
-# rate limit is applied router-wide -- new generation endpoints are covered
-# automatically rather than needing to remember the decorator.
-router = APIRouter(dependencies=[Depends(ai_generation_rate_limit)])
+# Every endpoint on this router is an AI generation call, so both guards are
+# applied router-wide: new generation endpoints are covered automatically
+# rather than depending on someone remembering to add them.
+#
+# The two do different jobs and both are needed. The entitlement meters what
+# the organization has paid for -- an AI request costs real money, and before
+# this it was unmetered entirely. The rate limit stays as an abuse backstop:
+# it bounds how fast a single user can burn the allowance, which a monthly
+# quota alone does not.
+router = APIRouter(
+    dependencies=[
+        Depends(ai_generation_rate_limit),
+        Depends(meter_ai_request),
+    ]
+)
 
 
 # ---------------------------------------------------------------------------

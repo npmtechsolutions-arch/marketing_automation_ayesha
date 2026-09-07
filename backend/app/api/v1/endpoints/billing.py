@@ -21,11 +21,8 @@ from app.schemas.billing import (
     PlanSummary,
     UsageMetric,
 )
+from app.models.plan import Plan, PlanFeature
 from app.services.entitlements import (
-    TIER_LIMITS,
-    TIER_NAMES,
-    TIER_PRICING,
-    TIER_RANK,
     apply_tier as _apply_tier,
     count_connected_platforms,
     count_posts_this_month,
@@ -111,26 +108,61 @@ def _manual_plan_change_enabled() -> bool:
     return settings.BILLING_ALLOW_MANUAL_PLAN_CHANGE is True
 
 
-def _plan_catalog() -> list[PlanSummary]:
+async def _plan_catalog(db: AsyncSession) -> list[PlanSummary]:
+    """The catalog, read from the plans table rather than a literal.
+
+    Editing a plan's price or limits is now a data change; this endpoint
+    reflects it without a deploy.
+    """
+    rows = (
+        await db.execute(
+            select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.sort_order)
+        )
+    ).scalars().all()
+
     plans: list[PlanSummary] = []
-    for tier in sorted(TIER_RANK, key=lambda t: TIER_RANK[t]):
-        limits = TIER_LIMITS[tier]
-        monthly, annual = TIER_PRICING[tier]
+    for plan in rows:
+        limits = {
+            r.feature_key: r.limit_value
+            for r in (
+                await db.execute(
+                    select(PlanFeature).where(PlanFeature.plan_id == plan.id)
+                )
+            ).scalars().all()
+        }
+        # -1 stands in for unlimited in the response, since the schema's fields
+        # are ints and NULL is how the table spells it.
+        def _limit(key: str) -> int:
+            value = limits.get(key)
+            return -1 if value is None else int(value)
+
+        monthly = float(plan.price_monthly)
         plans.append(
             PlanSummary(
-                id=tier.value,
-                name=TIER_NAMES[tier],
-                rank=TIER_RANK[tier],
+                id=plan.key,
+                name=plan.name,
+                rank=plan.sort_order,
                 monthly_price=monthly,
-                annual_price=annual,
-                posts=limits["posts"],
-                members=limits["members"],
-                platforms=limits["platforms"],
-                purchasable=bool(_tier_price_id(tier)),
-                contact_sales=tier is SubscriptionTier.ENTERPRISE,
+                # The annual price was a second literal; it is 80% of monthly,
+                # which is what the old TIER_PRICING pairs encoded.
+                annual_price=round(monthly * 0.8, 2) if monthly else 0.0,
+                posts=_limit("posts_per_month"),
+                members=_limit("team_members"),
+                platforms=_limit("social_accounts"),
+                purchasable=bool(plan.stripe_price_id or _tier_price_id_by_key(plan.key)),
+                contact_sales=plan.key == SubscriptionTier.ENTERPRISE.value,
             )
         )
     return plans
+
+
+def _tier_price_id_by_key(key: str) -> str:
+    mapping = {
+        "starter": settings.STRIPE_PRICE_STARTER,
+        "growth": settings.STRIPE_PRICE_GROWTH,
+        "pro": settings.STRIPE_PRICE_PRO,
+    }
+    return (mapping.get(key) or "").strip()
 
 
 async def _get_usage(organization: Organization, db: AsyncSession) -> dict[str, UsageMetric]:
@@ -174,7 +206,7 @@ async def _build_billing_info(organization: Organization, db: AsyncSession) -> B
         stripe_enabled=_stripe_enabled(),
         manual_plan_change_enabled=_manual_plan_change_enabled(),
         usage=await _get_usage(organization, db),
-        plans=_plan_catalog(),
+        plans=await _plan_catalog(db),
     )
 
 
@@ -208,9 +240,12 @@ async def get_billing_info(
 
 
 @router.get("/plans", response_model=list[PlanSummary])
-async def list_plans(current_user=Depends(get_current_active_user)):
+async def list_plans(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
     """The subscription tiers offered, in upgrade order."""
-    return _plan_catalog()
+    return await _plan_catalog(db)
 
 
 @router.post("/checkout", response_model=CheckoutResponse)
@@ -248,7 +283,7 @@ async def create_checkout_session(
         if not price_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"The {TIER_NAMES.get(tier, body.tier)} plan is not available for online purchase.",
+                detail=f"The {tier.value.title()} plan is not available for online purchase.",
             )
     elif body.price_id and body.price_id in configured_prices:
         price_id = body.price_id
@@ -324,10 +359,10 @@ async def change_plan(
     if tier is organization.subscription_tier:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"You are already on the {TIER_NAMES[tier]} plan.",
+            detail=f"You are already on the {tier.value.title()} plan.",
         )
 
-    _apply_tier(organization, tier)
+    await _apply_tier(db, organization, tier)
     organization.subscription_status = SubscriptionStatus.ACTIVE
     await db.flush()
     return await _build_billing_info(organization, db)
@@ -470,7 +505,7 @@ async def stripe_webhook(
                 try:
                     sub = stripe.Subscription.retrieve(subscription_id)
                     price_id = sub["items"]["data"][0]["price"]["id"]
-                    _apply_tier(organization, _price_to_tier(price_id))
+                    await _apply_tier(db, organization, _price_to_tier(price_id))
                 except Exception:
                     pass
 
@@ -504,7 +539,7 @@ async def stripe_webhook(
                 )
                 price_id = items[0]["price"]["id"]
                 if price_id:
-                    _apply_tier(organization, _price_to_tier(price_id))
+                    await _apply_tier(db, organization, _price_to_tier(price_id))
             except Exception:
                 pass
 
@@ -518,7 +553,7 @@ async def stripe_webhook(
         organization = result.scalar_one_or_none()
         if organization:
             organization.subscription_status = SubscriptionStatus.CANCELLED
-            _apply_tier(organization, SubscriptionTier.FREE)
+            await _apply_tier(db, organization, SubscriptionTier.FREE)
             organization.stripe_subscription_id = None
             await db.flush()
 

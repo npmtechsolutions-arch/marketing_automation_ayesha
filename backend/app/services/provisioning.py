@@ -89,9 +89,8 @@ async def provision_organization_with_workspace(
         slug=generate_slug(org_name),
         owner_id=user.id,
     )
-    # Sets the tier and every derived limit, including max_workspaces, rather
-    # than leaning on column defaults that can drift from TIER_LIMITS.
-    apply_tier(organization, SubscriptionTier.FREE)
+    # Sets the tier; the limits themselves come from the plan's feature rows.
+    await apply_tier(db, organization, SubscriptionTier.FREE)
     db.add(organization)
     await db.flush()
 

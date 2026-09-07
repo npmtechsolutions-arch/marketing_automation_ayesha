@@ -50,3 +50,30 @@ class WorkspaceSummary(BaseModel):
     owner_id: UUID
     organization_id: UUID
     created_at: datetime
+
+
+class FeatureUsage(BaseModel):
+    """One feature's consumption against the plan's allowance.
+
+    ``limit`` is ``None`` for unlimited, which is why ``unlimited`` is sent
+    alongside it -- a client should not have to infer the difference between
+    "no cap" and "not sent".
+    """
+
+    key: str
+    name: str
+    description: str | None = None
+    unit: str
+    metered: bool
+    used: int
+    limit: int | None = None
+    unlimited: bool
+    enabled: bool
+
+
+class OrganizationUsageResponse(BaseModel):
+    organization_id: UUID
+    plan_key: str
+    plan_name: str
+    period_start: datetime
+    features: list[FeatureUsage]

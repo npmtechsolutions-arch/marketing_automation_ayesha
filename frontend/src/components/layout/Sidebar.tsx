@@ -22,6 +22,7 @@ import {
   CreditCard,
   HelpCircle,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
@@ -50,6 +51,7 @@ const secondaryNavItems = [
 
 const adminNavItems = [
   { label: "Admin Panel", icon: ShieldCheck, path: "/admin" },
+  { label: "Plans & Limits", icon: SlidersHorizontal, path: "/admin/plans" },
 ];
 
 const sidebarVariants = {
@@ -241,8 +243,9 @@ function SidebarContent({
   onToggleCollapse?: () => void;
   currentPath: string;
 }) {
-  const role = useAuthStore((s) => s.user?.role);
-  const isAdmin = role === "admin" || role === "super_admin" || role === "superadmin";
+  // `role` is not a field the API sends, so this guessed at three spellings of
+  // a value that was always undefined and the admin links never appeared.
+  const isAdmin = useAuthStore((s) => s.user?.is_superadmin === true);
 
   const renderItem = (
     item: { label: string; icon: typeof LayoutDashboard; path: string; badge?: string | null }

@@ -318,11 +318,14 @@ async def test_forgot_password_succeeds_when_the_provider_fails(
 
 
 async def test_invite_enqueues_a_send_with_the_accept_link(
-    client, auth_header, user_factory, account_factory, organization_factory, sendgrid
+    client, auth_header, user_factory, account_factory, organization_factory, sendgrid,
+    set_limit,
 ):
     """The teams.py TODO: inviting someone now actually emails them."""
     owner = await user_factory(full_name="Dana Owner")
-    organization = await organization_factory(owner, max_team_members=10)
+    organization = await organization_factory(owner)
+    # Seats are a plan limit now; the Free plan seats exactly one.
+    await set_limit(organization, "team_members", 10)
     account = await account_factory(
         owner, name="Acme Marketing", organization=organization
     )
@@ -345,10 +348,13 @@ async def test_invite_enqueues_a_send_with_the_accept_link(
 
 
 async def test_invite_does_not_log_the_invitation_token(
-    client, auth_header, user_factory, account_factory, organization_factory, sendgrid, caplog
+    client, auth_header, user_factory, account_factory, organization_factory, sendgrid,
+    caplog, set_limit,
 ):
     owner = await user_factory(full_name="Dana Owner")
-    organization = await organization_factory(owner, max_team_members=10)
+    organization = await organization_factory(owner)
+    # Seats are a plan limit now; the Free plan seats exactly one.
+    await set_limit(organization, "team_members", 10)
     account = await account_factory(
         owner, name="Acme Marketing", organization=organization
     )
