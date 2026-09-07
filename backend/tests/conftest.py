@@ -158,12 +158,15 @@ async def user_factory(db_session):
 async def account_factory(db_session):
     """Create an ``Account`` owned by ``owner``, plus the owner's ACCEPTED membership."""
 
-    async def _make(owner: User, *, name: str = "Test Account") -> Account:
+    async def _make(owner: User, *, name: str = "Test Account", **extra) -> Account:
+        """``extra`` overrides any Account column, e.g. ``max_team_members=10``
+        for tests that need to get past a plan entitlement."""
         account = Account(
             id=uuid.uuid4(),
             name=name,
             slug=f"acct-{uuid.uuid4().hex[:12]}",
             owner_id=owner.id,
+            **extra,
         )
         db_session.add(account)
         await db_session.flush()

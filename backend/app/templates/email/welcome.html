@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1 style="margin:0 0 16px 0; font-size:20px; line-height:1.3; color:#111827;">
+    Welcome to MarketEngine AI
+  </h1>
+  <p style="margin:0 0 16px 0;">Hi {{ name }},</p>
+  <p style="margin:0 0 16px 0;">
+    Your account is ready. Set up your business profile and MarketEngine will
+    turn your goals into a content plan you can schedule and publish.
+  </p>
+  {% with url=onboarding_url, label="Complete your setup" %}{% include "_button.html" %}{% endwith %}
+  <p style="margin:0;">
+    Any questions, just reply to this email.
+  </p>
+{% endblock %}

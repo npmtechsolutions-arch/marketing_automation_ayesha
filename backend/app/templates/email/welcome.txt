@@ -1,0 +1,14 @@
+Welcome to MarketEngine AI
+
+Hi {{ name }},
+
+Your account is ready. Set up your business profile and MarketEngine will turn
+your goals into a content plan you can schedule and publish.
+
+Complete your setup:
+
+{{ onboarding_url }}
+
+Any questions, just reply to this email.
+
+-- MarketEngine AI

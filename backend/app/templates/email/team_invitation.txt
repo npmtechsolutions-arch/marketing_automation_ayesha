@@ -1,0 +1,12 @@
+You have been invited to {{ account_name }}
+
+{{ inviter_name }} invited you to join {{ account_name }} on MarketEngine AI
+as {{ role_article }} {{ role }}.
+
+Accept the invitation here:
+
+{{ invite_url }}
+
+If you were not expecting this invitation you can ignore this email.
+
+-- MarketEngine AI

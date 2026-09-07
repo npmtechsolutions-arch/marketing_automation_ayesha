@@ -3,7 +3,14 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -440,6 +447,7 @@ async def logout():
 async def forgot_password(
     payload: PasswordReset,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """Request a password reset email."""
@@ -459,7 +467,13 @@ async def forgot_password(
 
     if user is not None and user.is_active:
         token = create_password_reset_token(user.email)
-        EmailService.send_password_reset_email(user.email, token)
+        # Queued rather than awaited: the response must not depend on the mail
+        # provider being reachable, and the timing must not differ between a
+        # known and an unknown address (which would undo the generic response
+        # below and turn this into an account-enumeration oracle).
+        background_tasks.add_task(
+            EmailService.send_password_reset_email, user.email, token
+        )
 
     return MessageResponse(
         message="If an account with that email exists, a reset link has been sent"

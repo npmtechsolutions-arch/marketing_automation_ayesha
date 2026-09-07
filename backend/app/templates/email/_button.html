@@ -1,0 +1,11 @@
+{# A link styled as a button. Kept as a table cell so Outlook renders the
+   background colour, which it will not do for a padded <a>. #}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">
+  <tr>
+    <td align="center" style="border-radius:6px; background-color:#4f46e5;">
+      <a href="{{ url }}"
+         style="display:inline-block; padding:12px 24px; font-size:15px; font-weight:600;
+                color:#ffffff; text-decoration:none; border-radius:6px;">{{ label }}</a>
+    </td>
+  </tr>
+</table>

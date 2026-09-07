@@ -5,7 +5,14 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    status,
+)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,6 +24,7 @@ from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.team import InviteInfoResponse, TeamInvite, TeamMemberResponse, TeamMemberUpdate
+from app.services.email_service import EmailService
 from app.services.entitlements import enforce_member_limit
 
 router = APIRouter(
@@ -106,6 +114,7 @@ async def list_team_members(
 async def invite_team_member(
     account_id: uuid.UUID,
     payload: TeamInvite,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -177,7 +186,17 @@ async def invite_team_member(
     await db.flush()
     await db.refresh(team_member)
 
-    # TODO: Send invitation email with the token
+    # Queued so a slow or failing mail provider cannot turn a successful
+    # invitation into a 500 -- the TeamMember row is already committed, and the
+    # invite can be resent.
+    background_tasks.add_task(
+        EmailService.send_invitation_email,
+        payload.email,
+        current_user.full_name or current_user.email,
+        account.name,
+        invitation_token,
+        role_enum.value,
+    )
 
     return TeamMemberResponse.model_validate(team_member)
 
