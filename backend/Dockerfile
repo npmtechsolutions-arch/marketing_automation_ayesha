@@ -14,4 +14,7 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Apply database migrations, then start the API. Using the shell form so
+# the two commands chain; the container exits if migrations fail rather
+# than serving against an out-of-date schema.
+CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000

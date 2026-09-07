@@ -1,4 +1,17 @@
-"""Seed script to create test users, platforms, accounts, and sample data."""
+"""Seed script to create test users, platforms, accounts, and sample data.
+
+Assumes the schema already exists. Run migrations first::
+
+    alembic upgrade head
+    python scripts/seed.py
+
+This script never creates or drops tables -- Alembic owns the schema. It only
+replaces data, deleting every row from the application tables (leaving
+``alembic_version`` untouched) before inserting the sample set, so it is safe to
+re-run.
+
+WARNING: this deletes all existing application data. Development use only.
+"""
 import sys
 from pathlib import Path
 
@@ -12,6 +25,8 @@ import asyncio
 import uuid
 import random
 from datetime import datetime, timezone, timedelta
+
+from sqlalchemy import inspect
 
 from app.core.database import engine, AsyncSessionLocal, Base
 from app.core.security import get_password_hash
@@ -27,12 +42,29 @@ from app.models.strategy import Strategy
 from app.models.audit_log import ActivityLog
 
 
+async def _require_migrated_schema(conn) -> None:
+    """Fail with a clear message if `alembic upgrade head` has not been run."""
+    existing = set(
+        await conn.run_sync(lambda sync_conn: inspect(sync_conn).get_table_names())
+    )
+    missing = {t.name for t in Base.metadata.sorted_tables} - existing
+    if missing:
+        raise SystemExit(
+            "Schema is not up to date -- "
+            f"{len(missing)} table(s) missing (e.g. {', '.join(sorted(missing)[:3])}).\n"
+            "Run migrations first:\n\n"
+            "    alembic upgrade head\n"
+        )
+
+
 async def seed():
-    # Drop and recreate all tables
+    # Alembic owns the schema; the seed only replaces data. Delete in reverse
+    # dependency order so foreign keys stay satisfied along the way.
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
-    print("✅ Database tables created")
+        await _require_migrated_schema(conn)
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
+    print("✅ Existing data cleared (schema left to Alembic)")
 
     async with AsyncSessionLocal() as session:
         now = datetime.now(timezone.utc)

@@ -1,3 +1,22 @@
+"""Bring a database up to date, optionally with sample data.
+
+A thin convenience wrapper around the real tooling::
+
+    alembic upgrade head          # apply migrations
+    python scripts/seed.py        # optional sample data
+
+Equivalent to running those directly -- use whichever you prefer.
+
+The database itself must already exist; migrations create tables, not
+databases. Under docker compose the ``postgres`` service creates it from
+``POSTGRES_DB``. Locally::
+
+    createdb marketengine
+
+Usage:
+    python scripts/setup_database.py              # migrate only
+    python scripts/setup_database.py --seed       # migrate, then seed
+"""
 import sys
 from pathlib import Path
 
@@ -6,54 +25,58 @@ from pathlib import Path
 # whether the script is run as `python scripts/<name>.py` or `python -m`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import asyncio
 import argparse
-import sys
-import os
+import asyncio
+import subprocess
 
-# The script's own directory, so sibling scripts (create_db, migrate_db) import.
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
-async def run_setup(seed_db=False):
-    print("=" * 60)
-    print("STARTING DATABASE SETUP PROCESS")
-    print("=" * 60)
 
-    # 1. Create database if it doesn't exist
-    from create_db import main as create_database
-    print("\n[Step 1/3] Ensuring PostgreSQL database exists...")
-    await create_database()
+def run_migrations() -> None:
+    """Run `alembic upgrade head` from the backend root."""
+    print("\n[1/2] Applying migrations (alembic upgrade head)...")
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=BACKEND_ROOT,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            "\nMigrations failed.\n"
+            "If this is an existing database created before Alembic was "
+            "introduced, its tables already exist. Record it as already at the "
+            "baseline instead of re-creating them:\n\n"
+            "    alembic stamp head\n"
+        )
+    print("Migrations applied.")
 
-    # 2. Initialize Base Tables and Run Migrations
-    from app.core.database import engine, Base
-    from migrate_db import migrate as run_migrations
 
-    print("\n[Step 2/3] Initializing base database tables...")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    print("Base database tables initialized successfully.")
-
-    print("\n[Step 3/3] Checking and applying platform-specific migrations...")
-    await run_migrations()
-
-    # 3. Optional Seeding
-    if seed_db:
-        print("\n[Optional Step] Seeding database with dummy data...")
-        from seed import seed as run_seed
-        await run_seed()
-        print("Database successfully seeded.")
-
-    print("\n" + "=" * 60)
-    print("DATABASE SETUP COMPLETED SUCCESSFULLY!")
-    print("=" * 60)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Setup and migrate database.")
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--seed", 
-        action="store_true", 
-        help="Seed the database with sample/test data (WARNING: drops existing data)"
+        "--seed",
+        action="store_true",
+        help="Seed sample data after migrating (WARNING: deletes existing data)",
     )
     args = parser.parse_args()
 
-    asyncio.run(run_setup(seed_db=args.seed))
+    print("=" * 60)
+    print("DATABASE SETUP")
+    print("=" * 60)
+
+    run_migrations()
+
+    if args.seed:
+        print("\n[2/2] Seeding sample data...")
+        from seed import seed as run_seed
+
+        asyncio.run(run_seed())
+    else:
+        print("\n[2/2] Skipping seed (pass --seed to load sample data).")
+
+    print("\n" + "=" * 60)
+    print("DATABASE SETUP COMPLETED")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()

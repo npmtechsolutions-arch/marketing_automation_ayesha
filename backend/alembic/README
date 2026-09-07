@@ -1,0 +1,20 @@
+Alembic migrations for MarketEngine AI.
+
+Generic single-database configuration with an async dbapi.
+
+The database URL is not configured here or in alembic.ini -- env.py reads
+DATABASE_URL from app.core.config.settings, the same value the application
+uses. Set it in the repository-root .env file.
+
+Run all commands from the backend/ directory:
+
+    alembic upgrade head                          # apply migrations
+    alembic revision --autogenerate -m "message"  # create one after a model change
+    alembic current                               # show the current revision
+    alembic check                                 # detect model/database drift
+
+For a database created before Alembic was introduced, see the "Existing
+database" section in the baseline migration's docstring
+(versions/63f75cc5fbb2_baseline.py) -- use `alembic stamp head`, not `upgrade`.
+
+Full documentation: the "Database migrations" section of the root README.md.

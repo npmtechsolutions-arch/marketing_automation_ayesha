@@ -50,7 +50,9 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # Apply migrations before serving. Only this service migrates; the celery
+    # services share the same database and must not race it.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   # ---------- Celery worker ----------
   celery_worker:

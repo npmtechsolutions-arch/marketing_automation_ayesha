@@ -47,57 +47,44 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Create all database tables with retry logic to wait for database service startup."""
+    """Verify the database is reachable, retrying while the service starts up.
+
+    This performs no DDL. The schema is owned entirely by Alembic --
+    run ``alembic upgrade head`` (the Docker/compose entrypoints do this before
+    starting the server). This function only waits for the database to accept
+    connections, which matters when the API container starts alongside a
+    Postgres container that is still initialising.
+
+    Historically this also ran ``Base.metadata.create_all()`` plus a handful of
+    ad-hoc ``ALTER TABLE ... IF NOT EXISTS`` statements. That was removed when
+    Alembic was introduced: with create_all running on every boot, a model
+    change could reach a database without a migration, leaving environments
+    silently drifted and Alembic unable to tell.
+    """
     from sqlalchemy import text
     import logging
     import asyncio
-    
+
     logger = logging.getLogger(__name__)
     max_retries = 5
     retry_delay = 3
-    
+
     for attempt in range(1, max_retries + 1):
         try:
-            logger.info("Initializing database (attempt %d/%d)...", attempt, max_retries)
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-                # Lightweight self-healing migrations for columns added after a table
-                # already exists (create_all does not ALTER existing tables).
-                await conn.execute(
-                    text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS instagram_music_url TEXT")
-                )
-                await conn.execute(
-                    text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS instagram_music_end_offset INTEGER")
-                )
-                # User settings: per-user preferences + two-factor auth columns.
-                for col_ddl in (
-                    "ADD COLUMN IF NOT EXISTS preferences JSON",
-                    "ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64)",
-                    "ADD COLUMN IF NOT EXISTS totp_pending_secret VARCHAR(64)",
-                    "ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE",
-                    "ADD COLUMN IF NOT EXISTS totp_recovery_codes JSON",
-                ):
-                    await conn.execute(text(f"ALTER TABLE users {col_ddl}"))
-                # Self-healing indexes for hot query paths. create_all() only adds
-                # indexes when it creates a table, so existing production tables
-                # need these explicitly. IF NOT EXISTS makes this idempotent.
-                await conn.execute(
-                    text(
-                        "CREATE INDEX IF NOT EXISTS ix_posts_account_created "
-                        "ON posts (account_id, created_at)"
-                    )
-                )
-                await conn.execute(
-                    text(
-                        "CREATE INDEX IF NOT EXISTS ix_posts_status_scheduled_at "
-                        "ON posts (status, scheduled_at)"
-                    )
-                )
-            logger.info("Database initialized successfully.")
+            logger.info("Connecting to database (attempt %d/%d)...", attempt, max_retries)
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            logger.info("Database connection established.")
             return
         except Exception as e:
             if attempt == max_retries:
-                logger.error("Failed to initialize database after %d attempts: %s", max_retries, e)
+                logger.error(
+                    "Could not connect to the database after %d attempts: %s",
+                    max_retries, e,
+                )
                 raise
-            logger.warning("Database connection failed on attempt %d. Retrying in %d seconds: %s", attempt, retry_delay, e)
+            logger.warning(
+                "Database connection failed on attempt %d. Retrying in %d seconds: %s",
+                attempt, retry_delay, e,
+            )
             await asyncio.sleep(retry_delay)
