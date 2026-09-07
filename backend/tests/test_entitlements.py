@@ -4,6 +4,11 @@ The monthly post allowance is what a paid tier actually buys, so the cap has to
 hold at the boundary: the last allowed post succeeds and the next one is
 refused, with an error that names the plan and the limit rather than failing
 opaquely.
+
+Limits belong to the **organization**, not the workspace, so these tests set
+them on an organization and create workspaces inside it. The allowance is spent
+across every workspace a company owns -- otherwise creating another workspace
+would reset it.
 """
 
 import uuid
@@ -30,11 +35,12 @@ async def _create_post(client, auth_header, user, account, content="A post"):
     )
 
 
-async def test_posts_allowed_up_to_the_cap(client, auth_header, user_factory, account_factory):
+async def test_posts_allowed_up_to_the_cap(client, auth_header, user_factory, account_factory, organization_factory):
     """A small explicit limit keeps this fast; the mechanism is the same one the
     Free tier's 10 uses."""
     user = await user_factory(password=PASSWORD)
-    account = await account_factory(user, monthly_post_limit=3)
+    organization = await organization_factory(user, monthly_post_limit=3)
+    account = await account_factory(user, organization=organization)
 
     for i in range(3):
         response = await _create_post(client, auth_header, user, account, f"Post {i}")
@@ -43,9 +49,10 @@ async def test_posts_allowed_up_to_the_cap(client, auth_header, user_factory, ac
         )
 
 
-async def test_post_over_the_cap_is_refused(client, auth_header, user_factory, account_factory):
+async def test_post_over_the_cap_is_refused(client, auth_header, user_factory, account_factory, organization_factory):
     user = await user_factory(password=PASSWORD)
-    account = await account_factory(user, monthly_post_limit=3)
+    organization = await organization_factory(user, monthly_post_limit=3)
+    account = await account_factory(user, organization=organization)
 
     for i in range(3):
         await _create_post(client, auth_header, user, account, f"Post {i}")
@@ -58,11 +65,12 @@ async def test_post_over_the_cap_is_refused(client, auth_header, user_factory, a
     assert "upgrade" in detail, f"the error should say how to fix it: {detail!r}"
 
 
-async def test_limit_error_names_the_plan(client, auth_header, user_factory, account_factory):
+async def test_limit_error_names_the_plan(client, auth_header, user_factory, account_factory, organization_factory):
     user = await user_factory(password=PASSWORD)
-    account = await account_factory(
+    organization = await organization_factory(
         user, monthly_post_limit=1, subscription_tier=SubscriptionTier.FREE
     )
+    account = await account_factory(user, organization=organization)
     await _create_post(client, auth_header, user, account)
 
     response = await _create_post(client, auth_header, user, account)
@@ -71,11 +79,12 @@ async def test_limit_error_names_the_plan(client, auth_header, user_factory, acc
 
 
 async def test_a_higher_tier_gets_a_higher_allowance(
-    client, auth_header, user_factory, account_factory
+    client, auth_header, user_factory, account_factory, organization_factory
 ):
     """The cap must follow the account's own limit, not a constant."""
     user = await user_factory(password=PASSWORD)
-    account = await account_factory(user, monthly_post_limit=5)
+    organization = await organization_factory(user, monthly_post_limit=5)
+    account = await account_factory(user, organization=organization)
 
     for i in range(5):
         assert (
@@ -86,13 +95,15 @@ async def test_a_higher_tier_gets_a_higher_allowance(
     ).status_code == 403
 
 
-async def test_each_account_has_its_own_allowance(
-    client, auth_header, user_factory, account_factory
+async def test_each_organization_has_its_own_allowance(
+    client, auth_header, user_factory, account_factory, organization_factory
 ):
-    """One account exhausting its quota must not spend another's."""
+    """One organization exhausting its quota must not spend another's."""
     user = await user_factory(password=PASSWORD)
-    first = await account_factory(user, name="First", monthly_post_limit=1)
-    second = await account_factory(user, name="Second", monthly_post_limit=1)
+    first_org = await organization_factory(user, name="First Org", monthly_post_limit=1)
+    second_org = await organization_factory(user, name="Second Org", monthly_post_limit=1)
+    first = await account_factory(user, name="First", organization=first_org)
+    second = await account_factory(user, name="Second", organization=second_org)
 
     assert (await _create_post(client, auth_header, user, first)).status_code == 201
     assert (await _create_post(client, auth_header, user, first)).status_code == 403
@@ -100,10 +111,11 @@ async def test_each_account_has_its_own_allowance(
 
 
 async def test_unlimited_is_expressed_as_a_negative_limit(
-    client, auth_header, user_factory, account_factory
+    client, auth_header, user_factory, account_factory, organization_factory
 ):
     user = await user_factory(password=PASSWORD)
-    account = await account_factory(user, monthly_post_limit=-1)
+    organization = await organization_factory(user, monthly_post_limit=-1)
+    account = await account_factory(user, organization=organization)
 
     for i in range(4):
         assert (
@@ -111,7 +123,7 @@ async def test_unlimited_is_expressed_as_a_negative_limit(
         ).status_code == 201
 
 
-def test_tier_limits_are_monotonic():
+async def test_tier_limits_are_monotonic():
     """A more expensive plan must never allow less than a cheaper one."""
     order = [
         SubscriptionTier.FREE,
@@ -120,18 +132,23 @@ def test_tier_limits_are_monotonic():
         SubscriptionTier.PRO,
         SubscriptionTier.ENTERPRISE,
     ]
-    for key in ("posts", "members", "platforms"):
+    for key in ("posts", "members", "platforms", "workspaces"):
         values = [TIER_LIMITS[tier][key] for tier in order]
-        assert values == sorted(values), f"{key} limits are not monotonic: {values}"
+        # -1 means unlimited and sorts wrong; treat it as the largest value.
+        comparable = [float("inf") if v < 0 else v for v in values]
+        assert comparable == sorted(comparable), (
+            f"{key} limits are not monotonic: {values}"
+        )
 
 
 async def test_member_limit_blocks_an_invitation_at_the_cap(
-    client, auth_header, user_factory, account_factory
+    client, auth_header, user_factory, account_factory, organization_factory
 ):
     """The same entitlement machinery guards seats, and the Free tier's single
     seat is already taken by the owner."""
     user = await user_factory(password=PASSWORD)
-    account = await account_factory(user, max_team_members=1)
+    organization = await organization_factory(user, max_team_members=1)
+    account = await account_factory(user, organization=organization)
 
     response = await client.post(
         f"/api/v1/accounts/{account.id}/team/invite",

@@ -60,6 +60,7 @@ from app.core.database import Base, get_db
 from app.core.security import create_access_token, get_password_hash
 from app.main import app as fastapi_app
 from app.models.account import Account
+from app.models.organization import Organization, OrganizationMember, OrgRole
 from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
 
@@ -155,17 +156,101 @@ async def user_factory(db_session):
 
 
 @pytest_asyncio.fixture
-async def account_factory(db_session):
-    """Create an ``Account`` owned by ``owner``, plus the owner's ACCEPTED membership."""
+async def organization_factory(db_session):
+    """Create an ``Organization`` owned by ``owner``, with an OWNER membership.
 
-    async def _make(owner: User, *, name: str = "Test Account", **extra) -> Account:
-        """``extra`` overrides any Account column, e.g. ``max_team_members=10``
-        for tests that need to get past a plan entitlement."""
+    ``extra`` overrides any column, e.g. ``monthly_post_limit=3``. Limits live
+    here now, so entitlement tests set them on the organization.
+    """
+
+    async def _make(owner: User, *, name: str = "Test Org", **extra) -> Organization:
+        organization = Organization(
+            id=uuid.uuid4(),
+            name=name,
+            slug=f"org-{uuid.uuid4().hex[:12]}",
+            owner_id=owner.id,
+            **extra,
+        )
+        db_session.add(organization)
+        await db_session.flush()
+
+        db_session.add(
+            OrganizationMember(
+                id=uuid.uuid4(),
+                user_id=owner.id,
+                organization_id=organization.id,
+                role=OrgRole.OWNER,
+                invitation_status=InvitationStatus.ACCEPTED,
+                accepted_at=datetime.now(timezone.utc),
+            )
+        )
+        await db_session.flush()
+        return organization
+
+    return _make
+
+
+@pytest_asyncio.fixture
+async def org_member_factory(db_session):
+    """Create an ``OrganizationMember`` at a given role and invitation status.
+
+    Defaults to PENDING, mirroring ``member_factory``: the unaccepted case is
+    what the authorization tests care about.
+    """
+
+    async def _make(
+        user: User,
+        organization: Organization,
+        *,
+        role: OrgRole = OrgRole.MEMBER,
+        invitation_status: InvitationStatus = InvitationStatus.PENDING,
+    ) -> OrganizationMember:
+        member = OrganizationMember(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            organization_id=organization.id,
+            role=role,
+            invitation_email=user.email,
+            invitation_token=uuid.uuid4().hex,
+            invitation_status=invitation_status,
+            accepted_at=(
+                datetime.now(timezone.utc)
+                if invitation_status is InvitationStatus.ACCEPTED
+                else None
+            ),
+        )
+        db_session.add(member)
+        await db_session.flush()
+        return member
+
+    return _make
+
+
+@pytest_asyncio.fixture
+async def account_factory(db_session, organization_factory):
+    """Create an ``Account`` (workspace) plus the owner's ACCEPTED membership.
+
+    Creates an owning Organization automatically unless one is passed as
+    ``organization=``, so the ~30 existing call sites keep working unchanged.
+    Tests that need to control a limit pass their own organization.
+    """
+
+    async def _make(
+        owner: User,
+        *,
+        name: str = "Test Account",
+        organization: Organization | None = None,
+        **extra,
+    ) -> Account:
+        """``extra`` overrides any Account column."""
+        if organization is None:
+            organization = await organization_factory(owner, name=f"{name} Org")
         account = Account(
             id=uuid.uuid4(),
             name=name,
             slug=f"acct-{uuid.uuid4().hex[:12]}",
             owner_id=owner.id,
+            organization_id=organization.id,
             **extra,
         )
         db_session.add(account)

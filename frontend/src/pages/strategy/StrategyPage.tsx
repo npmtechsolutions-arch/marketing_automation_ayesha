@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { formatDate } from "@/lib/utils";
-import api, { getAccountId } from "@/lib/api";
+import api, { getAccountId , getAccountIdSync } from "@/lib/api";
 import { showSuccess, showError } from "@/components/ui/Toast";
 
 // ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ export default function StrategyPage() {
   const [budget, setBudget] = useState("");
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["instagram", "facebook"]);
 
-  const accountId = localStorage.getItem("account_id");
+  const accountId = getAccountIdSync();
 
   // ---------------------------------------------------------------------------
   // Fetch strategies

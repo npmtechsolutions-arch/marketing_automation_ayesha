@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.account import Account, SubscriptionStatus, SubscriptionTier
+from app.models.organization import Organization
 from app.models.team_member import TeamRole
 from app.schemas.billing import (
     BillingInfo,
@@ -40,12 +41,23 @@ router = APIRouter()
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _get_account_or_404(account_id: uuid.UUID, db: AsyncSession) -> Account:
-    result = await db.execute(select(Account).where(Account.id == account_id))
-    account = result.scalar_one_or_none()
-    if not account:
+async def _get_organization_or_404(
+    account_id: uuid.UUID, db: AsyncSession
+) -> Organization:
+    """Resolve the billing entity from the workspace id in the path.
+
+    Billing lives on the Organization now, but the router is still mounted
+    under /accounts/{account_id}/billing so the frontend keeps working.
+    """
+    result = await db.execute(
+        select(Organization)
+        .join(Account, Account.organization_id == Organization.id)
+        .where(Account.id == account_id)
+    )
+    organization = result.scalar_one_or_none()
+    if not organization:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account
+    return organization
 
 
 def _get_stripe():
@@ -119,31 +131,31 @@ def _plan_catalog() -> list[PlanSummary]:
     return plans
 
 
-async def _get_usage(account: Account, db: AsyncSession) -> dict[str, UsageMetric]:
+async def _get_usage(organization: Organization, db: AsyncSession) -> dict[str, UsageMetric]:
     """Current-period consumption, counted exactly as the limits are enforced."""
     return {
         "posts": UsageMetric(
-            used=await count_posts_this_month(db, account.id),
-            limit=account.monthly_post_limit,
+            used=await count_posts_this_month(db, organization.id),
+            limit=organization.monthly_post_limit,
         ),
         "members": UsageMetric(
-            used=await count_team_members(db, account.id),
-            limit=account.max_team_members,
+            used=await count_team_members(db, organization.id),
+            limit=organization.max_team_members,
         ),
         "platforms": UsageMetric(
-            used=await count_connected_platforms(db, account.id),
-            limit=account.max_platforms,
+            used=await count_connected_platforms(db, organization.id),
+            limit=organization.max_platforms,
         ),
     }
 
 
-async def _build_billing_info(account: Account, db: AsyncSession) -> BillingInfo:
+async def _build_billing_info(organization: Organization, db: AsyncSession) -> BillingInfo:
     current_period_end = None
     cancel_at_period_end = False
-    if account.stripe_subscription_id and _stripe_enabled():
+    if organization.stripe_subscription_id and _stripe_enabled():
         try:
             stripe = _get_stripe()
-            subscription = stripe.Subscription.retrieve(account.stripe_subscription_id)
+            subscription = stripe.Subscription.retrieve(organization.stripe_subscription_id)
             current_period_end = datetime.fromtimestamp(
                 subscription.current_period_end, tz=timezone.utc
             )
@@ -152,14 +164,14 @@ async def _build_billing_info(account: Account, db: AsyncSession) -> BillingInfo
             pass  # Gracefully fall back
 
     return BillingInfo(
-        subscription_tier=account.subscription_tier.value,
-        subscription_status=account.subscription_status.value,
+        subscription_tier=organization.subscription_tier.value,
+        subscription_status=organization.subscription_status.value,
         current_period_end=current_period_end,
-        stripe_customer_id=account.stripe_customer_id,
+        stripe_customer_id=organization.stripe_customer_id,
         cancel_at_period_end=cancel_at_period_end,
         stripe_enabled=_stripe_enabled(),
         manual_plan_change_enabled=_manual_plan_change_enabled(),
-        usage=await _get_usage(account, db),
+        usage=await _get_usage(organization, db),
         plans=_plan_catalog(),
     )
 
@@ -187,10 +199,10 @@ async def get_billing_info(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):
-    """Get billing information, live usage and the plan catalog for the account."""
+    """Get billing information, live usage and the plan catalog for the organization."""
     await _verify_account_access(account_id, current_user, db)
-    account = await _get_account_or_404(account_id, db)
-    return await _build_billing_info(account, db)
+    organization = await _get_organization_or_404(account_id, db)
+    return await _build_billing_info(organization, db)
 
 
 @router.get("/plans", response_model=list[PlanSummary])
@@ -208,7 +220,7 @@ async def create_checkout_session(
 ):
     """Create a Stripe Checkout session for a subscription upgrade."""
     await _verify_account_access(account_id, current_user, db, min_role=TeamRole.ADMIN)
-    account = await _get_account_or_404(account_id, db)
+    organization = await _get_organization_or_404(account_id, db)
 
     if not _stripe_enabled():
         raise HTTPException(
@@ -218,7 +230,7 @@ async def create_checkout_session(
 
     # SECURITY: resolve the price server-side. A caller may name a tier, or pass
     # a price id only if it is one this deployment actually sells — otherwise a
-    # client could check out against any (e.g. $0) price in the Stripe account.
+    # client could check out against any (e.g. $0) price in the Stripe organization.
     configured_prices = {
         pid
         for pid in (
@@ -247,13 +259,13 @@ async def create_checkout_session(
     stripe = _get_stripe()
 
     # Create or retrieve Stripe customer
-    if not account.stripe_customer_id:
+    if not organization.stripe_customer_id:
         customer = stripe.Customer.create(
             email=current_user.email,
             name=current_user.full_name,
-            metadata={"account_id": str(account.id)},
+            metadata={"organization_id": str(organization.id)},
         )
-        account.stripe_customer_id = customer.id
+        organization.stripe_customer_id = customer.id
         await db.flush()
 
     success_url = body.success_url or f"{settings.FRONTEND_URL}/billing?checkout=success"
@@ -261,13 +273,13 @@ async def create_checkout_session(
 
     try:
         session = stripe.checkout.Session.create(
-            customer=account.stripe_customer_id,
+            customer=organization.stripe_customer_id,
             payment_method_types=["card"],
             mode="subscription",
             line_items=[{"price": price_id, "quantity": 1}],
             success_url=success_url,
             cancel_url=cancel_url,
-            metadata={"account_id": str(account.id)},
+            metadata={"organization_id": str(organization.id)},
         )
         return CheckoutResponse(checkout_url=session.url, session_id=session.id)
     except Exception as exc:
@@ -288,7 +300,7 @@ async def change_plan(
     is owned by Stripe and only the webhook may change it.
     """
     await _verify_account_access(account_id, current_user, db, min_role=TeamRole.ADMIN)
-    account = await _get_account_or_404(account_id, db)
+    organization = await _get_organization_or_404(account_id, db)
 
     if not _manual_plan_change_enabled():
         raise HTTPException(
@@ -307,16 +319,16 @@ async def change_plan(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The Enterprise plan is arranged with sales.",
         )
-    if tier is account.subscription_tier:
+    if tier is organization.subscription_tier:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"You are already on the {TIER_NAMES[tier]} plan.",
         )
 
-    _apply_tier(account, tier)
-    account.subscription_status = SubscriptionStatus.ACTIVE
+    _apply_tier(organization, tier)
+    organization.subscription_status = SubscriptionStatus.ACTIVE
     await db.flush()
-    return await _build_billing_info(account, db)
+    return await _build_billing_info(organization, db)
 
 
 @router.post("/portal", response_model=PortalResponse)
@@ -327,9 +339,9 @@ async def create_portal_session(
 ):
     """Create a Stripe Customer Portal session for managing subscriptions."""
     await _verify_account_access(account_id, current_user, db, min_role=TeamRole.ADMIN)
-    account = await _get_account_or_404(account_id, db)
+    organization = await _get_organization_or_404(account_id, db)
 
-    if not account.stripe_customer_id:
+    if not organization.stripe_customer_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No Stripe customer found for this account")
 
     if not settings.STRIPE_SECRET_KEY:
@@ -338,7 +350,7 @@ async def create_portal_session(
     stripe = _get_stripe()
     try:
         session = stripe.billing_portal.Session.create(
-            customer=account.stripe_customer_id,
+            customer=organization.stripe_customer_id,
             return_url=f"{settings.FRONTEND_URL}/billing",
         )
         return PortalResponse(portal_url=session.url)
@@ -354,14 +366,14 @@ async def list_invoices(
 ):
     """List invoices for the account from Stripe."""
     await _verify_account_access(account_id, current_user, db)
-    account = await _get_account_or_404(account_id, db)
+    organization = await _get_organization_or_404(account_id, db)
 
-    if not account.stripe_customer_id or not settings.STRIPE_SECRET_KEY:
+    if not organization.stripe_customer_id or not settings.STRIPE_SECRET_KEY:
         return []
 
     stripe = _get_stripe()
     try:
-        invoices = stripe.Invoice.list(customer=account.stripe_customer_id, limit=50)
+        invoices = stripe.Invoice.list(customer=organization.stripe_customer_id, limit=50)
         return [
             InvoiceResponse(
                 id=inv.id,
@@ -431,30 +443,32 @@ async def stripe_webhook(
 
     # Handle subscription events
     if event_type == "checkout.session.completed":
-        account_id_str = (
+        organization_id_str = (
             data_object.get("metadata", {}).get("account_id")
             if isinstance(data_object, dict)
-            else data_object.metadata.get("account_id")
+            else data_object.metadata.get("organization_id")
         )
         subscription_id = (
             data_object.get("subscription")
             if isinstance(data_object, dict)
             else data_object.subscription
         )
-        if account_id_str:
+        if organization_id_str:
             result = await db.execute(
-                select(Account).where(Account.id == uuid.UUID(account_id_str))
+                select(Organization).where(
+                    Organization.id == uuid.UUID(organization_id_str)
+                )
             )
-            account = result.scalar_one_or_none()
-            if account and subscription_id:
-                account.stripe_subscription_id = subscription_id
-                account.subscription_status = SubscriptionStatus.ACTIVE
+            organization = result.scalar_one_or_none()
+            if organization and subscription_id:
+                organization.stripe_subscription_id = subscription_id
+                organization.subscription_status = SubscriptionStatus.ACTIVE
 
                 # Determine tier from the subscription line items
                 try:
                     sub = stripe.Subscription.retrieve(subscription_id)
                     price_id = sub["items"]["data"][0]["price"]["id"]
-                    _apply_tier(account, _price_to_tier(price_id))
+                    _apply_tier(organization, _price_to_tier(price_id))
                 except Exception:
                     pass
 
@@ -465,17 +479,17 @@ async def stripe_webhook(
         sub_status = data_object.get("status") if isinstance(data_object, dict) else data_object.status
 
         result = await db.execute(
-            select(Account).where(Account.stripe_subscription_id == sub_id)
+            select(Organization).where(Organization.stripe_subscription_id == sub_id)
         )
-        account = result.scalar_one_or_none()
-        if account:
+        organization = result.scalar_one_or_none()
+        if organization:
             status_mapping = {
                 "active": SubscriptionStatus.ACTIVE,
                 "past_due": SubscriptionStatus.PAST_DUE,
                 "canceled": SubscriptionStatus.CANCELLED,
                 "trialing": SubscriptionStatus.TRIALING,
             }
-            account.subscription_status = status_mapping.get(sub_status, SubscriptionStatus.ACTIVE)
+            organization.subscription_status = status_mapping.get(sub_status, SubscriptionStatus.ACTIVE)
 
             # A plan switch made in the Stripe customer portal arrives as an
             # update, not a new checkout — re-read the tier from the line items
@@ -488,7 +502,7 @@ async def stripe_webhook(
                 )
                 price_id = items[0]["price"]["id"]
                 if price_id:
-                    _apply_tier(account, _price_to_tier(price_id))
+                    _apply_tier(organization, _price_to_tier(price_id))
             except Exception:
                 pass
 
@@ -497,23 +511,23 @@ async def stripe_webhook(
     elif event_type == "customer.subscription.deleted":
         sub_id = data_object.get("id") if isinstance(data_object, dict) else data_object.id
         result = await db.execute(
-            select(Account).where(Account.stripe_subscription_id == sub_id)
+            select(Organization).where(Organization.stripe_subscription_id == sub_id)
         )
-        account = result.scalar_one_or_none()
-        if account:
-            account.subscription_status = SubscriptionStatus.CANCELLED
-            _apply_tier(account, SubscriptionTier.FREE)
-            account.stripe_subscription_id = None
+        organization = result.scalar_one_or_none()
+        if organization:
+            organization.subscription_status = SubscriptionStatus.CANCELLED
+            _apply_tier(organization, SubscriptionTier.FREE)
+            organization.stripe_subscription_id = None
             await db.flush()
 
     elif event_type == "invoice.payment_failed":
         customer_id = data_object.get("customer") if isinstance(data_object, dict) else data_object.customer
         result = await db.execute(
-            select(Account).where(Account.stripe_customer_id == customer_id)
+            select(Organization).where(Organization.stripe_customer_id == customer_id)
         )
-        account = result.scalar_one_or_none()
-        if account:
-            account.subscription_status = SubscriptionStatus.PAST_DUE
+        organization = result.scalar_one_or_none()
+        if organization:
+            organization.subscription_status = SubscriptionStatus.PAST_DUE
             await db.flush()
 
     return {"status": "ok"}

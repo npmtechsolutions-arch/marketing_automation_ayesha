@@ -35,12 +35,12 @@ from app.core.security import (
     create_password_reset_token,
     verify_password_reset_token,
 )
-from app.models.account import Account, SubscriptionStatus, SubscriptionTier
-from app.models.team_member import InvitationStatus, TeamMember, TeamRole
+from app.models.team_member import TeamMember
 from app.models.user import User
 from app.models.user_session import UserSession
 from app.services import totp_service
 from app.services.email_service import EmailService
+from app.services.provisioning import provision_organization_with_workspace
 from app.services.firebase_auth import verify_firebase_id_token
 from app.schemas.common import MessageResponse
 from app.schemas.user import (
@@ -233,28 +233,11 @@ async def register(
     await db.flush()
 
     # Create default account
-    account = Account(
-        id=uuid.uuid4(),
-        name=f"{payload.full_name}'s Workspace",
-        slug=_generate_slug(payload.full_name),
-        owner_id=user.id,
-        subscription_tier=SubscriptionTier.FREE,
-        subscription_status=SubscriptionStatus.TRIALING,
+    # Organization -> Workspace -> owner memberships, in one place so the
+    # registration and OAuth paths cannot drift apart again.
+    _organization, account = await provision_organization_with_workspace(
+        db, user=user
     )
-    db.add(account)
-    await db.flush()
-
-    # Create owner team membership
-    team_member = TeamMember(
-        id=uuid.uuid4(),
-        user_id=user.id,
-        account_id=account.id,
-        role=TeamRole.OWNER,
-        invitation_status=InvitationStatus.ACCEPTED,
-        accepted_at=datetime.now(timezone.utc),
-    )
-    db.add(team_member)
-    await db.flush()
 
     # Generate tokens (register never requires 2FA — it's a brand new account)
     return await _issue_session_tokens(db, user, request, response)
@@ -815,27 +798,11 @@ async def google_auth_callback(
             select(TeamMember).where(TeamMember.user_id == user.id).limit(1)
         )
         if account_member.scalars().first() is None:
-            account = Account(
-                id=uuid.uuid4(),
-                name=f"{user.full_name}'s Workspace",
-                slug=_generate_slug(user.full_name),
-                owner_id=user.id,
-                subscription_tier=SubscriptionTier.FREE,
-                subscription_status=SubscriptionStatus.TRIALING,
+            # Organization -> Workspace -> owner memberships, in one place so the
+            # registration and OAuth paths cannot drift apart again.
+            _organization, account = await provision_organization_with_workspace(
+                db, user=user
             )
-            db.add(account)
-            await db.flush()
-
-            team_member = TeamMember(
-                id=uuid.uuid4(),
-                user_id=user.id,
-                account_id=account.id,
-                role=TeamRole.OWNER,
-                invitation_status=InvitationStatus.ACCEPTED,
-                accepted_at=datetime.now(timezone.utc),
-            )
-            db.add(team_member)
-            await db.flush()
     else:
         # Create brand new user via Google Sign-In
         user = User(
@@ -852,28 +819,11 @@ async def google_auth_callback(
         await db.flush()
 
         # Create default workspace
-        account = Account(
-            id=uuid.uuid4(),
-            name=f"{full_name}'s Workspace",
-            slug=_generate_slug(full_name),
-            owner_id=user.id,
-            subscription_tier=SubscriptionTier.FREE,
-            subscription_status=SubscriptionStatus.TRIALING,
+        # Organization -> Workspace -> owner memberships, in one place so the
+        # registration and OAuth paths cannot drift apart again.
+        _organization, account = await provision_organization_with_workspace(
+            db, user=user
         )
-        db.add(account)
-        await db.flush()
-
-        # Create owner team membership
-        team_member = TeamMember(
-            id=uuid.uuid4(),
-            user_id=user.id,
-            account_id=account.id,
-            role=TeamRole.OWNER,
-            invitation_status=InvitationStatus.ACCEPTED,
-            accepted_at=datetime.now(timezone.utc),
-        )
-        db.add(team_member)
-        await db.flush()
 
     return await _issue_session_tokens(db, user, request, response)
 
@@ -939,27 +889,11 @@ async def google_firebase_auth(
             select(TeamMember).where(TeamMember.user_id == user.id).limit(1)
         )
         if account_member.scalars().first() is None:
-            account = Account(
-                id=uuid.uuid4(),
-                name=f"{user.full_name}'s Workspace",
-                slug=_generate_slug(user.full_name),
-                owner_id=user.id,
-                subscription_tier=SubscriptionTier.FREE,
-                subscription_status=SubscriptionStatus.TRIALING,
+            # Organization -> Workspace -> owner memberships, in one place so the
+            # registration and OAuth paths cannot drift apart again.
+            _organization, account = await provision_organization_with_workspace(
+                db, user=user
             )
-            db.add(account)
-            await db.flush()
-
-            team_member = TeamMember(
-                id=uuid.uuid4(),
-                user_id=user.id,
-                account_id=account.id,
-                role=TeamRole.OWNER,
-                invitation_status=InvitationStatus.ACCEPTED,
-                accepted_at=datetime.now(timezone.utc),
-            )
-            db.add(team_member)
-            await db.flush()
     else:
         # Create new user via Firebase Google Sign-In
         user = User(
@@ -976,28 +910,11 @@ async def google_firebase_auth(
         await db.flush()
 
         # Create default workspace
-        account = Account(
-            id=uuid.uuid4(),
-            name=f"{full_name}'s Workspace",
-            slug=_generate_slug(full_name),
-            owner_id=user.id,
-            subscription_tier=SubscriptionTier.FREE,
-            subscription_status=SubscriptionStatus.TRIALING,
+        # Organization -> Workspace -> owner memberships, in one place so the
+        # registration and OAuth paths cannot drift apart again.
+        _organization, account = await provision_organization_with_workspace(
+            db, user=user
         )
-        db.add(account)
-        await db.flush()
-
-        # Create owner team membership
-        team_member = TeamMember(
-            id=uuid.uuid4(),
-            user_id=user.id,
-            account_id=account.id,
-            role=TeamRole.OWNER,
-            invitation_status=InvitationStatus.ACCEPTED,
-            accepted_at=datetime.now(timezone.utc),
-        )
-        db.add(team_member)
-        await db.flush()
 
     return await _issue_session_tokens(db, user, request, response)
 

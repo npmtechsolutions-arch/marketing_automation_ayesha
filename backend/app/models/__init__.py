@@ -6,6 +6,7 @@ from app.models.audit_log import ActivityLog
 from app.models.business import Business
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.notification import Notification
+from app.models.organization import OrgRole, Organization, OrganizationMember
 from app.models.permission import Permission, RolePermission, UserPermission
 from app.models.platform import SocialAccount, SocialPlatform
 from app.models.post import Post, PostStatus
@@ -32,6 +33,9 @@ __all__ = [
     "Campaign",
     # System
     "Notification",
+    # Organization (billing entity above a workspace)
+    "Organization",
+    "OrganizationMember",
     "UserSession",
     "ActivityLog",
     "AIGeneration",
@@ -45,6 +49,7 @@ __all__ = [
     "SubscriptionStatus",
     "TeamRole",
     "InvitationStatus",
+    "OrgRole",
     "PostStatus",
     "CampaignStatus",
     "GenerationType",

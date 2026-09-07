@@ -24,6 +24,28 @@ interface AuthState {
   // False until bootstrap() has had its turn, so guards can tell "signed out"
   // apart from "we have not asked yet" and avoid bouncing to /login on reload.
   isBootstrapped: boolean;
+
+  // The active tenant. Previously the workspace id lived only in localStorage,
+  // so nothing re-rendered when it changed and a switch was invisible to React.
+  organizations: Organization[];
+  workspaces: Workspace[];
+  activeOrgId: string | null;
+  activeWorkspaceId: string | null;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  subscription_tier: string;
+  max_workspaces: number;
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  organization_id: string;
 }
 
 export interface LoginResult {
@@ -41,6 +63,8 @@ interface AuthActions {
   clearSession: () => void;
   setUser: (user: User) => void;
   loadUser: () => Promise<void>;
+  loadTenants: () => Promise<void>;
+  switchWorkspace: (workspaceId: string) => void;
 }
 
 export function syncUserPreferences(user: User | null): void {
@@ -61,26 +85,34 @@ export function syncUserPreferences(user: User | null): void {
   }
 }
 
-// Resolve and persist the user's first account id after authentication.
-async function resolveAccountId(): Promise<void> {
+// The key the chosen workspace is remembered under. It is a preference, not a
+// credential: the backend authorises every request against the workspace in the
+// URL regardless of what is stored here.
+const ACTIVE_WORKSPACE_KEY = "account_id";
+const ACTIVE_ORG_KEY = "organization_id";
+
+function readStored(key: string): string | null {
   try {
-    const accountsResponse: any = await api.get("/accounts");
-    let accountId = null;
-    if (accountsResponse.items?.[0]?.id) {
-      accountId = accountsResponse.items[0].id;
-    } else if (accountsResponse.data?.items?.[0]?.id) {
-      accountId = accountsResponse.data.items[0].id;
-    } else if (Array.isArray(accountsResponse) && accountsResponse[0]?.id) {
-      accountId = accountsResponse[0].id;
-    }
-    if (accountId) {
-      localStorage.setItem("account_id", accountId);
-    } else {
-      console.warn("No account found in response:", accountsResponse);
-    }
-  } catch (err) {
-    console.warn("Could not fetch accounts:", err);
+    const value = localStorage.getItem(key);
+    return value && value !== "null" && value !== "undefined" ? value : null;
+  } catch {
+    return null; // private mode, or storage disabled
   }
+}
+
+function writeStored(key: string, value: string | null): void {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {
+    /* preference only -- losing it is not worth failing a sign-in over */
+  }
+}
+
+/** Unwrap the several response shapes the accounts endpoint has returned. */
+function itemsOf(response: any): any[] {
+  if (Array.isArray(response)) return response;
+  return response?.items ?? response?.data?.items ?? [];
 }
 
 export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
@@ -91,6 +123,10 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   isAuthenticated: false,
   isLoading: false,
   isBootstrapped: false,
+  organizations: [],
+  workspaces: [],
+  activeOrgId: null,
+  activeWorkspaceId: null,
 
   login: async (email: string, password: string) => {
     set({ isLoading: true });
@@ -107,7 +143,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       // The refresh token came back as an httpOnly cookie; the body copy is
       // ignored so it never lands anywhere a script can read.
       set({ user, accessToken: access_token, isAuthenticated: true, isBootstrapped: true });
-      await resolveAccountId();
+      await get().loadTenants();
 
       syncUserPreferences(user);
       set({ isLoading: false });
@@ -127,7 +163,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       });
       const { access_token, user } = data;
       set({ user, accessToken: access_token, isAuthenticated: true, isBootstrapped: true });
-      await resolveAccountId();
+      await get().loadTenants();
 
       syncUserPreferences(user);
       set({ isLoading: false });
@@ -204,12 +240,17 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   clearSession: () => {
-    localStorage.removeItem("account_id");
+    writeStored(ACTIVE_WORKSPACE_KEY, null);
+    writeStored(ACTIVE_ORG_KEY, null);
     set({
       user: null,
       accessToken: null,
       isAuthenticated: false,
       isBootstrapped: true,
+      organizations: [],
+      workspaces: [],
+      activeOrgId: null,
+      activeWorkspaceId: null,
     });
   },
 
@@ -224,12 +265,66 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       const accessToken = await refreshAccessToken();
       set({ accessToken, isAuthenticated: true });
       await get().loadUser();
-      await resolveAccountId();
+      await get().loadTenants();
     } catch {
       set({ user: null, accessToken: null, isAuthenticated: false });
     } finally {
       set({ isLoading: false, isBootstrapped: true });
     }
+  },
+
+  // Load the organizations and workspaces the user can reach, and settle on an
+  // active one.
+  //
+  // The stored choice is VALIDATED and kept rather than overwritten. The old
+  // resolveAccountId() unconditionally wrote items[0].id on every load, which
+  // would have silently undone a user's switch on every page refresh.
+  loadTenants: async () => {
+    try {
+      const [orgsResponse, workspacesResponse] = await Promise.all([
+        api.get("/organizations/"),
+        api.get("/accounts"),
+      ]);
+      const organizations = itemsOf(orgsResponse) as Organization[];
+      const workspaces = itemsOf(workspacesResponse) as Workspace[];
+
+      const stored = readStored(ACTIVE_WORKSPACE_KEY);
+      const active =
+        workspaces.find((w) => w.id === stored) ?? workspaces[0] ?? null;
+      const storedOrg = readStored(ACTIVE_ORG_KEY);
+      const activeOrg =
+        organizations.find((o) => o.id === (active?.organization_id ?? storedOrg)) ??
+        organizations[0] ??
+        null;
+
+      writeStored(ACTIVE_WORKSPACE_KEY, active?.id ?? null);
+      writeStored(ACTIVE_ORG_KEY, activeOrg?.id ?? null);
+      set({
+        organizations,
+        workspaces,
+        activeWorkspaceId: active?.id ?? null,
+        activeOrgId: activeOrg?.id ?? null,
+      });
+    } catch (err) {
+      console.warn("Could not load organizations/workspaces:", err);
+    }
+  },
+
+  switchWorkspace: (workspaceId: string) => {
+    const { workspaces, activeWorkspaceId } = get();
+    if (workspaceId === activeWorkspaceId) return;
+    const target = workspaces.find((w) => w.id === workspaceId);
+    if (!target) return;
+
+    writeStored(ACTIVE_WORKSPACE_KEY, target.id);
+    writeStored(ACTIVE_ORG_KEY, target.organization_id);
+    // Pages read the workspace id at mount and cache it in local state, so the
+    // router outlet is keyed on this value: changing it remounts them and every
+    // request goes to the new workspace. See App.tsx.
+    set({
+      activeWorkspaceId: target.id,
+      activeOrgId: target.organization_id,
+    });
   },
 
   setUser: (user: User) => {

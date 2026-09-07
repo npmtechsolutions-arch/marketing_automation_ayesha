@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { cn, formatDate, formatNumber } from "@/lib/utils";
-import api, { getAccountId } from "@/lib/api";
+import api, { getAccountId , getAccountIdSync } from "@/lib/api";
 import { showSuccess, showError } from "@/components/ui/Toast";
 
 /* ------------------------------------------------------------------ */
@@ -53,7 +53,7 @@ const getProxiedImageUrl = (url?: string) => {
   if (!url) return "";
   if (url.includes("/uploads/")) return url;
   if (url.includes("fbcdn.net") || url.includes("cdninstagram.com") || url.includes("instagram.com")) {
-    const accountId = localStorage.getItem("account_id");
+    const accountId = getAccountIdSync();
     if (accountId) {
       return `/api/v1/accounts/${accountId}/social-accounts/proxy-image?url=${encodeURIComponent(url)}`;
     }
@@ -89,22 +89,10 @@ export default function SocialAccountsPage() {
   const [formAccessToken, setFormAccessToken] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const accountId = localStorage.getItem("account_id");
-
   const fetchAccountsAndPlatforms = async () => {
-    let activeAccountId = localStorage.getItem("account_id");
-    if (!activeAccountId) {
-      try {
-        const accRes: any = await api.get("/accounts");
-        const items = accRes.items || accRes.data?.items || (Array.isArray(accRes) ? accRes : []);
-        if (items.length > 0 && items[0].id) {
-          activeAccountId = items[0].id;
-          localStorage.setItem("account_id", activeAccountId as string);
-        }
-      } catch (err) {
-        console.warn("Could not auto-resolve account_id:", err);
-      }
-    }
+    // getAccountId resolves through the store, loading the tenants if this is
+    // a cold entry into the page.
+    const activeAccountId = await getAccountId();
 
     if (!activeAccountId) return;
 

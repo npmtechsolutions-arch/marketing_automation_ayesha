@@ -11,7 +11,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
-from app.models.account import Account, SubscriptionTier
+from app.models.account import Account
+from app.models.organization import Organization, SubscriptionTier
 from app.models.audit_log import ActivityLog as AuditLog
 from app.models.post import Post
 from app.models.team_member import TeamMember
@@ -71,16 +72,17 @@ class AdminAccountResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def from_model(cls, a: Account) -> "AdminAccountResponse":
+    def from_model(cls, a: Account, organization: Organization) -> "AdminAccountResponse":
+        """Subscription fields come from the workspace's organization."""
         return cls(
             id=a.id,
             name=a.name,
             slug=a.slug,
             owner_id=a.owner_id,
-            subscription_tier=a.subscription_tier.value,
-            subscription_status=a.subscription_status.value,
-            monthly_post_limit=a.monthly_post_limit,
-            max_team_members=a.max_team_members,
+            subscription_tier=organization.subscription_tier.value,
+            subscription_status=organization.subscription_status.value,
+            monthly_post_limit=organization.monthly_post_limit,
+            max_team_members=organization.max_team_members,
             created_at=a.created_at,
         )
 
@@ -181,7 +183,11 @@ async def get_user_detail(
                 "account_id": str(acc.id),
                 "account_name": acc.name,
                 "role": membership.role.value,
-                "subscription_tier": acc.subscription_tier.value,
+                "subscription_tier": (
+                    acc.organization.subscription_tier.value
+                    if acc.organization is not None
+                    else None
+                ),
             })
 
     base = AdminUserResponse.model_validate(user)
@@ -244,22 +250,32 @@ async def list_accounts(
     """List all accounts with optional tier filter."""
     conditions = [Account.deleted_at.is_(None)]
     if tier:
-        conditions.append(Account.subscription_tier == tier)
+        # The tier lives on the workspace's organization now.
+        conditions.append(Organization.subscription_tier == tier)
 
     where = and_(*conditions)
-    total = (await db.execute(select(func.count(Account.id)).where(where))).scalar() or 0
+    total = (
+        await db.execute(
+            select(func.count(Account.id))
+            .join(Organization, Organization.id == Account.organization_id)
+            .where(where)
+        )
+    ).scalar() or 0
 
+    # Select both sides: the response needs the organization's subscription
+    # fields, which no longer exist on the workspace row.
     stmt = (
-        select(Account)
+        select(Account, Organization)
+        .join(Organization, Organization.id == Account.organization_id)
         .where(where)
         .order_by(Account.created_at.desc())
         .offset((page - 1) * per_page)
         .limit(per_page)
     )
-    accounts = (await db.execute(stmt)).scalars().all()
+    rows = (await db.execute(stmt)).all()
 
     return PaginatedResponse(
-        items=[AdminAccountResponse.from_model(a) for a in accounts],
+        items=[AdminAccountResponse.from_model(a, org) for a, org in rows],
         total=total,
         page=page,
         per_page=per_page,
@@ -306,10 +322,13 @@ async def platform_stats(
     )).scalar() or 0
 
     # Accounts by tier
+    # Grouped by the organization's tier, counting live organizations rather
+    # than workspaces -- one company on Growth is one Growth subscription
+    # however many workspaces it owns.
     tier_result = await db.execute(
-        select(Account.subscription_tier, func.count(Account.id))
-        .where(Account.deleted_at.is_(None))
-        .group_by(Account.subscription_tier)
+        select(Organization.subscription_tier, func.count(Organization.id))
+        .where(Organization.deleted_at.is_(None))
+        .group_by(Organization.subscription_tier)
     )
     accounts_by_tier = {row[0].value: row[1] for row in tier_result.all()}
 

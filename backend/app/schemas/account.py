@@ -21,12 +21,10 @@ class AccountResponse(AccountBase):
     id: UUID
     slug: str
     owner_id: UUID
-    subscription_tier: str
-    subscription_status: str
-    trial_ends_at: datetime | None = None
-    monthly_post_limit: int
-    max_team_members: int
-    max_platforms: int
+    # The workspace's billing entity. Subscription tier, limits and Stripe ids
+    # are the organization's -- read them from /organizations or /billing, not
+    # from a workspace.
+    organization_id: UUID
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -11,10 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
-from app.models.account import Account, SubscriptionStatus, SubscriptionTier
+from app.models.account import Account
+from app.models.organization import Organization, OrganizationMember
 from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
 from app.schemas.account import AccountCreate, AccountResponse, AccountUpdate
+from app.services.entitlements import enforce_workspace_limit
+from app.services.provisioning import create_workspace
 from app.schemas.common import PaginatedResponse
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
@@ -24,6 +27,39 @@ def _generate_slug(name: str) -> str:
     """Generate a URL-safe slug from a name."""
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return f"{slug}-{uuid.uuid4().hex[:8]}"
+
+
+async def _default_organization_for(db: AsyncSession, user: User) -> Organization:
+    """The organization to create a workspace in when none was named.
+
+    Prefers one the user owns, then any they are an accepted member of. A user
+    with no organization at all cannot reach this (registration provisions one),
+    so its absence is a 404 rather than an implicit create.
+    """
+    owned = (
+        await db.execute(
+            select(Organization)
+            .join(
+                OrganizationMember,
+                OrganizationMember.organization_id == Organization.id,
+            )
+            .where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.invitation_status == InvitationStatus.ACCEPTED,
+                Organization.deleted_at.is_(None),
+            )
+            .order_by(
+                (Organization.owner_id == user.id).desc(), Organization.created_at
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if owned is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You do not belong to an organization",
+        )
+    return owned
 
 
 async def _get_member_or_403(
@@ -104,29 +140,21 @@ async def create_account(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Create a new account. The current user becomes the owner."""
-    account = Account(
-        id=uuid.uuid4(),
-        name=payload.name,
-        slug=_generate_slug(payload.name),
-        owner_id=current_user.id,
-        subscription_tier=SubscriptionTier.FREE,
-        subscription_status=SubscriptionStatus.TRIALING,
-    )
-    db.add(account)
-    await db.flush()
+    """Create a workspace in the caller's organization.
 
-    # Automatically add the creator as an owner team member
-    team_member = TeamMember(
-        id=uuid.uuid4(),
-        user_id=current_user.id,
-        account_id=account.id,
-        role=TeamRole.OWNER,
-        invitation_status=InvitationStatus.ACCEPTED,
-        accepted_at=datetime.now(timezone.utc),
+    Delegates to the organization-scoped creation path so the tier's workspace
+    cap applies here too. Before organizations existed this endpoint created
+    unlimited free workspaces, each with its own subscription -- leaving it
+    unguarded would be a way around the cap.
+
+    Callers who belong to several organizations should use
+    ``POST /organizations/{organization_id}/workspaces`` to say which one.
+    """
+    organization = await _default_organization_for(db, current_user)
+    await enforce_workspace_limit(db, organization)
+    account = await create_workspace(
+        db, organization=organization, owner=current_user, name=payload.name
     )
-    db.add(team_member)
-    await db.flush()
     await db.refresh(account)
 
     return AccountResponse.model_validate(account)

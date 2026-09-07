@@ -83,8 +83,11 @@ export default function AcceptInvitePage() {
 
       await api.post(`/accounts/${accountId}/team/accept-invite?token=${encodeURIComponent(token)}`);
 
-      // Switch active workspace in localStorage to the accepted account
-      localStorage.setItem("account_id", accountId);
+      // Make the newly accepted workspace the active one. Going through the
+      // store (rather than writing localStorage directly) is what makes the
+      // rest of the app re-render against it.
+      await useAuthStore.getState().loadTenants();
+      useAuthStore.getState().switchWorkspace(accountId);
 
       setAccepted(true);
       showSuccess(`Welcome to ${inviteInfo?.workspace_name || "the team"}!`);
@@ -122,7 +125,6 @@ export default function AcceptInvitePage() {
       });
 
       const { access_token, user: loggedUser } = data;
-      localStorage.setItem("account_id", accountId!);
 
       syncUserPreferences(loggedUser);
 

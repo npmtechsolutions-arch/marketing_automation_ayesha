@@ -1,11 +1,20 @@
-"""Account model (multi-tenant)."""
+"""Account model — a **Workspace** in the Organization → Workspace hierarchy.
+
+The class name is retained deliberately: eleven foreign keys across ten models
+and most frontend URLs reference ``account_id``, so renaming would be churn
+without benefit. Read every ``Account`` below as "Workspace".
+
+An Account is the container for one client's content. The billing entity above
+it is :class:`~app.models.organization.Organization`, which owns the
+subscription and whose allowances are spent across all of its workspaces.
+"""
 
 import enum
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, String, func
+from sqlalchemy import DateTime, ForeignKey, JSON, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +22,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.business import Business
+    from app.models.organization import Organization
     from app.models.post import Post
     from app.models.team_member import TeamMember
     from app.models.user import User
@@ -44,30 +54,11 @@ class Account(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
-    subscription_tier: Mapped[SubscriptionTier] = mapped_column(
-        Enum(SubscriptionTier, name="subscription_tier_enum"),
-        default=SubscriptionTier.FREE,
-        nullable=False,
+    # The billing entity this workspace belongs to. Subscription tier, Stripe
+    # ids and every usage limit live on the Organization, not here.
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), index=True, nullable=False
     )
-    subscription_status: Mapped[SubscriptionStatus] = mapped_column(
-        Enum(SubscriptionStatus, name="subscription_status_enum"),
-        default=SubscriptionStatus.TRIALING,
-        nullable=False,
-    )
-    stripe_customer_id: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True
-    )
-    stripe_subscription_id: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True
-    )
-    trial_ends_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    monthly_post_limit: Mapped[int] = mapped_column(
-        Integer, default=10, nullable=False
-    )
-    max_team_members: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    max_platforms: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     settings: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -82,6 +73,9 @@ class Account(Base):
     # Relationships
     owner: Mapped["User"] = relationship(
         "User", back_populates="owned_accounts", foreign_keys=[owner_id]
+    )
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="workspaces", foreign_keys=[organization_id]
     )
     team_members: Mapped[list["TeamMember"]] = relationship(
         "TeamMember", back_populates="account", foreign_keys="TeamMember.account_id"

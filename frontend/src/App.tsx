@@ -143,6 +143,7 @@ import ArticlePage from '@/pages/help/ArticlePage';
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isBootstrapped = useAuthStore((s) => s.isBootstrapped);
+  const activeWorkspaceId = useAuthStore((s) => s.activeWorkspaceId);
   // Nothing is read from storage on load any more -- the session is restored by
   // an async call to /auth/refresh. Redirecting before that resolves would
   // bounce every signed-in user to /login on a page reload.
@@ -152,7 +153,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  return <>{children}</>;
+  // Keyed on the active workspace so switching remounts the page.
+  //
+  // Pages resolve the workspace id once at mount and cache it in local state or
+  // read it at render, across ~75 hand-written /accounts/${id}/... URLs with no
+  // request-level choke point. Remounting re-runs every effect against the new
+  // workspace, which is what makes a switch actually take effect without
+  // editing all of them.
+  return <React.Fragment key={activeWorkspaceId ?? "no-workspace"}>{children}</React.Fragment>;
 }
 
 /** Shown while the session is being restored from the refresh cookie. */
@@ -297,9 +305,8 @@ function App() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
 
   // Restore the session once on load. There is no token in storage to read;
-  // bootstrap() asks the API whether the httpOnly refresh cookie is still good
-  // and loads the user if it is. It also fetches the user, so the previous
-  // loadUser() effect is no longer needed.
+  // bootstrap() asks the API whether the httpOnly refresh cookie is still good,
+  // loads the user, and settles the active organization/workspace.
   useEffect(() => {
     bootstrap();
   }, [bootstrap]);

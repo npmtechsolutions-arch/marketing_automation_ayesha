@@ -48,23 +48,9 @@ export default function GoogleCallbackPage() {
         const { access_token, user } = data;
 
         // Fetch user's first account workspace
-        try {
-          const accountsResponse: any = await api.get("/accounts");
-          let accountId = null;
-          if (accountsResponse.items?.[0]?.id) {
-            accountId = accountsResponse.items[0].id;
-          } else if (accountsResponse.data?.items?.[0]?.id) {
-            accountId = accountsResponse.data.items[0].id;
-          } else if (Array.isArray(accountsResponse) && accountsResponse[0]?.id) {
-            accountId = accountsResponse[0].id;
-          }
-
-          if (accountId) {
-            localStorage.setItem("account_id", accountId);
-          }
-        } catch (err) {
-          console.warn("Could not fetch accounts:", err);
-        }
+      // The store owns the active tenant: it loads the organizations and
+      // workspaces and validates any previously chosen one.
+      await useAuthStore.getState().loadTenants();
 
         syncUserPreferences(user);
 

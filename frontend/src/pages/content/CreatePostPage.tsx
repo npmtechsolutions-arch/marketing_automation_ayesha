@@ -41,7 +41,7 @@ import { Badge } from "@/components/ui/Badge";
 import PlatformIcon from "@/components/shared/PlatformIcon";
 import DevicePreview from "@/components/shared/DevicePreview";
 import { cn } from "@/lib/utils";
-import api, { getAccountId } from "@/lib/api";
+import api, { getAccountId , getAccountIdSync } from "@/lib/api";
 import { showSuccess, showError, showWarning } from "@/components/ui/Toast";
 
 // ────────────────────────────────────────────────────────
@@ -553,7 +553,7 @@ export default function CreatePostPage() {
   const handleGenerateContent = useCallback(async () => {
     if (!aiPrompt.trim()) return;
 
-    const accountId = localStorage.getItem("account_id");
+    const accountId = getAccountIdSync();
     if (!accountId) {
       showError("Account ID not found");
       return;
@@ -648,7 +648,7 @@ export default function CreatePostPage() {
       return;
     }
 
-    const accountId = localStorage.getItem("account_id");
+    const accountId = getAccountIdSync();
     if (!accountId) {
       showError("Account ID not found");
       return;
@@ -719,7 +719,7 @@ export default function CreatePostPage() {
   );
 
   const handleConfirmPost = useCallback(async () => {
-    const accountId = localStorage.getItem("account_id");
+    const accountId = getAccountIdSync();
     if (!accountId) {
       showError("Account ID not found");
       return;
@@ -808,7 +808,7 @@ export default function CreatePostPage() {
   ]);
 
   const handleQuickPublish = useCallback(async () => {
-    const accountId = localStorage.getItem("account_id");
+    const accountId = getAccountIdSync();
     if (!accountId) {
       showError("Account ID not found");
       return;

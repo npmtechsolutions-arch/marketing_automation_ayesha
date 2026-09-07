@@ -151,27 +151,22 @@ export async function del<T>(url: string, config?: AxiosRequestConfig): Promise<
   return response.data;
 }
 
-// account_id is not a credential -- it is an identifier the UI caches to avoid
-// refetching, and it stays in localStorage deliberately.
+// The active workspace comes from the auth store, which is the single source of
+// truth. It used to be read straight from localStorage in seven different
+// places, each of which could disagree with the others after a switch.
+//
+// The async signature is kept so the ~40 existing call sites need no change.
 export async function getAccountId(): Promise<string | null> {
-  let accountId = localStorage.getItem("account_id");
-  if (!accountId) {
-    try {
-      const accRes: any = await api.get("/accounts");
-      const items = accRes.items || accRes.data?.items || (Array.isArray(accRes) ? accRes : []);
-      if (items.length > 0 && items[0].id) {
-        accountId = items[0].id;
-        localStorage.setItem("account_id", accountId as string);
-      }
-    } catch (err) {
-      console.warn("Could not auto-resolve account_id:", err);
-    }
-  }
-  return accountId;
+  const { activeWorkspaceId, loadTenants } = useAuthStore.getState();
+  if (activeWorkspaceId) return activeWorkspaceId;
+
+  // Not loaded yet (a deep link straight into a page, say).
+  await loadTenants();
+  return useAuthStore.getState().activeWorkspaceId;
 }
 
 export function getAccountIdSync(): string | null {
-  return localStorage.getItem("account_id");
+  return useAuthStore.getState().activeWorkspaceId;
 }
 
 export default api;

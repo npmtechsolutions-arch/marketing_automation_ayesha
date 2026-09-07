@@ -18,6 +18,9 @@ import {
   BarChart3,
   Lightbulb,
   Sparkles,
+  Building2,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import { useUIStore } from "@/stores/uiStore";
@@ -54,13 +57,20 @@ export default function TopBar() {
   const { setSidebarOpen, toggleNotifications, notificationsOpen, unreadCount, theme, toggleTheme } =
     useUIStore();
   const { user, logout } = useAuthStore();
+  const organizations = useAuthStore((s) => s.organizations);
+  const workspaces = useAuthStore((s) => s.workspaces);
+  const activeWorkspaceId = useAuthStore((s) => s.activeWorkspaceId);
+  const switchWorkspace = useAuthStore((s) => s.switchWorkspace);
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   const navigate = useNavigate();
   const location = useLocation();
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
   // Close menus on outside click
@@ -122,6 +132,111 @@ export default function TopBar() {
         >
           <Menu className="h-5 w-5" />
         </button>
+
+        {/* Workspace switcher.
+            Hand-rolled to match the user menu below (useRef + outside-click +
+            AnimatePresence + CSS theme tokens) rather than ui/Dropdown, which is
+            unused, hardcoded dark, and unreadable in light mode. */}
+        {activeWorkspace && (
+          <div ref={workspaceMenuRef} className="relative">
+            <button
+              onClick={() => setWorkspaceMenuOpen(!workspaceMenuOpen)}
+              className="flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm font-semibold transition-colors cursor-pointer hover:bg-[var(--sidebar-hover-bg)]"
+              style={{ color: "var(--page-heading)" }}
+              aria-haspopup="menu"
+              aria-expanded={workspaceMenuOpen}
+            >
+              <Building2 className="h-4 w-4 text-purple-400" />
+              <span className="max-w-[10rem] truncate">{activeWorkspace.name}</span>
+              <ChevronDown
+                className={cn("h-3.5 w-3.5 transition-transform", workspaceMenuOpen && "rotate-180")}
+                style={{ color: "var(--page-text-muted)" }}
+              />
+            </button>
+
+            <AnimatePresence>
+              {workspaceMenuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  style={{
+                    backgroundColor: "var(--dropdown-bg)",
+                    borderColor: "var(--dropdown-border)",
+                    boxShadow: "var(--dropdown-shadow)",
+                  }}
+                  className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border p-1.5 backdrop-blur-xl"
+                  role="menu"
+                >
+                  {/* Grouped by organization: which company a workspace belongs
+                      to is the thing the hierarchy exists to make visible. */}
+                  {organizations.map((org) => {
+                    const owned = workspaces.filter((w) => w.organization_id === org.id);
+                    if (owned.length === 0) return null;
+                    return (
+                      <div key={org.id} className="py-1">
+                        <div className="flex items-center justify-between px-3 py-1.5">
+                          <p
+                            className="text-xs font-semibold uppercase tracking-wide truncate"
+                            style={{ color: "var(--page-text-muted)" }}
+                          >
+                            {org.name}
+                          </p>
+                          <span
+                            className="ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase"
+                            style={{
+                              backgroundColor: "var(--sidebar-hover-bg)",
+                              color: "var(--page-text-secondary)",
+                            }}
+                          >
+                            {org.subscription_tier}
+                          </span>
+                        </div>
+                        {owned.map((workspace) => (
+                          <button
+                            key={workspace.id}
+                            role="menuitem"
+                            onClick={() => {
+                              setWorkspaceMenuOpen(false);
+                              switchWorkspace(workspace.id);
+                            }}
+                            className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors cursor-pointer"
+                            style={{ color: "var(--page-text)" }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--sidebar-hover-bg)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                          >
+                            <span className="truncate">{workspace.name}</span>
+                            {workspace.id === activeWorkspaceId && (
+                              <Check className="h-4 w-4 shrink-0 text-purple-400" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+
+                  <div className="border-t pt-1" style={{ borderColor: "var(--surface-border)" }}>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setWorkspaceMenuOpen(false);
+                        navigate("/settings");
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-colors cursor-pointer"
+                      style={{ color: "var(--page-text)" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--sidebar-hover-bg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                    >
+                      <Settings className="h-4 w-4 text-purple-400" />
+                      Manage workspaces
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* Breadcrumbs */}
         <nav className="hidden items-center gap-1.5 text-sm font-medium lg:flex">

@@ -1,20 +1,23 @@
 """Account settings and usage endpoints."""
 
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import extract, func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.account import Account
-from app.models.platform import SocialPlatform
-from app.models.post import Post
-from app.models.team_member import TeamMember, TeamRole
+from app.models.team_member import TeamRole
 from app.core.authz import verify_account_access as _verify_account_access
+from app.services.entitlements import (
+    count_connected_platforms,
+    count_posts_this_month,
+    count_team_members,
+    get_organization_for_account,
+)
 
 router = APIRouter()
 
@@ -75,16 +78,19 @@ async def get_account_settings(
     """Get account settings."""
     await _verify_account_access(account_id, current_user, db)
     account = await _get_account_or_404(account_id, db)
+    organization = await get_organization_for_account(db, account_id)
 
     return AccountSettingsResponse(
         id=account.id,
         name=account.name,
         slug=account.slug,
-        subscription_tier=account.subscription_tier.value,
-        subscription_status=account.subscription_status.value,
-        monthly_post_limit=account.monthly_post_limit,
-        max_team_members=account.max_team_members,
-        max_platforms=account.max_platforms,
+        # Subscription fields belong to the organization; the workspace only
+        # carries its own name, slug and settings blob.
+        subscription_tier=organization.subscription_tier.value,
+        subscription_status=organization.subscription_status.value,
+        monthly_post_limit=organization.monthly_post_limit,
+        max_team_members=organization.max_team_members,
+        max_platforms=organization.max_platforms,
         settings=account.settings,
     )
 
@@ -130,44 +136,29 @@ async def get_usage(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):
-    """Get current usage stats for the account."""
+    """Current usage for the workspace's organization.
+
+    Delegates to app.services.entitlements rather than counting here. This
+    endpoint used to reimplement all three counters and disagreed with the
+    enforcement code -- it bucketed posts by calendar year/month instead of the
+    month-start cutoff, and counted SocialPlatform rows where enforcement counts
+    distinct connected SocialAccount platforms. Users saw one number and hit a
+    limit computed from another. Now that allowances are organization-wide the
+    two would have diverged further still.
+    """
     await _verify_account_access(account_id, current_user, db)
-    account = await _get_account_or_404(account_id, db)
+    organization = await get_organization_for_account(db, account_id)
 
-    now = datetime.now(timezone.utc)
-
-    # Posts created this month
-    posts_count_result = await db.execute(
-        select(func.count(Post.id)).where(
-            Post.account_id == account_id,
-            Post.deleted_at.is_(None),
-            extract("year", Post.created_at) == now.year,
-            extract("month", Post.created_at) == now.month,
-        )
-    )
-    posts_this_month = posts_count_result.scalar() or 0
-
-    # Team members
-    members_count_result = await db.execute(
-        select(func.count(TeamMember.id)).where(TeamMember.account_id == account_id)
-    )
-    team_members = members_count_result.scalar() or 0
-
-    # Connected platforms
-    platforms_count_result = await db.execute(
-        select(func.count(SocialPlatform.id)).where(
-            SocialPlatform.account_id == account_id,
-            SocialPlatform.is_active.is_(True),
-        )
-    )
-    connected_platforms = platforms_count_result.scalar() or 0
+    posts_this_month = await count_posts_this_month(db, organization.id)
+    team_members = await count_team_members(db, organization.id)
+    connected_platforms = await count_connected_platforms(db, organization.id)
 
     return UsageResponse(
         posts_this_month=posts_this_month,
-        posts_limit=account.monthly_post_limit,
-        posts_remaining=max(0, account.monthly_post_limit - posts_this_month),
+        posts_limit=organization.monthly_post_limit,
+        posts_remaining=max(0, organization.monthly_post_limit - posts_this_month),
         team_members=team_members,
-        team_members_limit=account.max_team_members,
+        team_members_limit=organization.max_team_members,
         connected_platforms=connected_platforms,
-        platforms_limit=account.max_platforms,
+        platforms_limit=organization.max_platforms,
     )
