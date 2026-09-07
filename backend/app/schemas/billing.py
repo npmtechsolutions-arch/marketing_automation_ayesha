@@ -25,7 +25,10 @@ class PlanChange(BaseModel):
 
 class UsageMetric(BaseModel):
     used: int
-    limit: int  # -1 means unlimited
+    # None is unlimited. This was `int` with -1 standing in for unlimited,
+    # which could not be told apart from a genuine cap of -1 and did not match
+    # what the entitlement tables store.
+    limit: int | None = None
 
 
 class PlanSummary(BaseModel):

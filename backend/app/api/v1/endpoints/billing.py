@@ -22,12 +22,8 @@ from app.schemas.billing import (
     UsageMetric,
 )
 from app.models.plan import Plan, PlanFeature
-from app.services.entitlements import (
-    apply_tier as _apply_tier,
-    count_connected_platforms,
-    count_posts_this_month,
-    count_team_members,
-)
+from app.services import entitlement_service as ent
+from app.services.entitlements import apply_tier as _apply_tier
 from app.core.authz import verify_account_access as _verify_account_access
 from app.core.permissions import (
     BILLING_MANAGE,
@@ -166,19 +162,26 @@ def _tier_price_id_by_key(key: str) -> str:
 
 
 async def _get_usage(organization: Organization, db: AsyncSession) -> dict[str, UsageMetric]:
-    """Current-period consumption, counted exactly as the limits are enforced."""
+    """Current-period consumption, counted exactly as the limits are enforced.
+
+    Both halves come from the entitlement service. The limits used to be read
+    off denormalised columns on the organization, which stopped being the
+    source of truth and could show a customer a cap that enforcement would not
+    honour. GET /organizations/{id}/usage reports all nine features; this keeps
+    the three the billing page has always shown.
+    """
     return {
         "posts": UsageMetric(
-            used=await count_posts_this_month(db, organization.id),
-            limit=organization.monthly_post_limit,
+            used=await ent.current_usage(db, organization, ent.POSTS_PER_MONTH),
+            limit=await ent.get_limit(db, organization, ent.POSTS_PER_MONTH),
         ),
         "members": UsageMetric(
-            used=await count_team_members(db, organization.id),
-            limit=organization.max_team_members,
+            used=await ent.current_usage(db, organization, ent.TEAM_MEMBERS),
+            limit=await ent.get_limit(db, organization, ent.TEAM_MEMBERS),
         ),
         "platforms": UsageMetric(
-            used=await count_connected_platforms(db, organization.id),
-            limit=organization.max_platforms,
+            used=await ent.current_usage(db, organization, ent.SOCIAL_ACCOUNTS),
+            limit=await ent.get_limit(db, organization, ent.SOCIAL_ACCOUNTS),
         ),
     }
 

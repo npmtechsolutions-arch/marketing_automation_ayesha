@@ -30,13 +30,14 @@ class OrganizationResponse(BaseModel):
     owner_id: UUID
     subscription_tier: str
     subscription_status: str
-    monthly_post_limit: int
-    max_team_members: int
-    max_platforms: int
-    max_workspaces: int
     trial_ends_at: datetime | None = None
     created_at: datetime
     # Stripe identifiers are internal billing plumbing and are never serialized.
+    #
+    # Neither are limits. They used to be copied onto this row and served from
+    # here, which meant a client could read a cap that no longer matched what
+    # enforcement would do. GET /organizations/{id}/usage is the one place that
+    # reports limits, and it resolves them the same way enforcement does.
 
 
 class WorkspaceSummary(BaseModel):

@@ -20,7 +20,6 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
-    Integer,
     String,
     UniqueConstraint,
     func,
@@ -89,14 +88,10 @@ class Organization(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    # Denormalised from TIER_LIMITS by entitlements.apply_tier(). Enforcement
-    # reads these, never the tier itself.
-    monthly_post_limit: Mapped[int] = mapped_column(
-        Integer, default=10, nullable=False
-    )
-    max_team_members: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    max_platforms: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
-    max_workspaces: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # No limit columns live here. They were denormalised from TIER_LIMITS and
+    # are now plan_features rows, resolved through EntitlementService -- a copy
+    # on this table would go stale the moment a superadmin edits a plan, and
+    # would then contradict the usage endpoint and enforcement itself.
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

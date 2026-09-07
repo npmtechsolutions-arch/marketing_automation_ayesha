@@ -302,6 +302,8 @@ Superadmins manage plans and limits at `/admin/plans` in the SPA, backed by `GET
 
 Customers see the same numbers on the billing page, from `GET /api/v1/organizations/{id}/usage`. Usage is organization-wide: one allowance shared across every workspace.
 
+**Limits are never stored on the organization row.** `organizations` carried `monthly_post_limit`, `max_team_members`, `max_platforms` and `max_workspaces`, denormalised from `TIER_LIMITS`. Migration `f2a90c4d7b18` drops them. They had stopped driving enforcement but were still being served — so a superadmin raising a cap would change `plan_features` while those columns kept the old number, and the UI would show a limit that disagreed with what enforcement did. Every endpoint that reports a limit (`/organizations/{id}/usage`, `/accounts/{id}/settings/`, `/accounts/{id}/settings/usage`, `/accounts/{id}/billing/`) now resolves it through `EntitlementService`, so there is one answer rather than four.
+
 ## Running the tests
 
 ```bash

@@ -41,7 +41,9 @@ export interface Organization {
   name: string;
   slug: string;
   subscription_tier: string;
-  max_workspaces: number;
+  // No limits here. They are not serialized on the organization any more --
+  // GET /organizations/{id}/usage reports them, resolved the same way
+  // enforcement resolves them.
 }
 
 export interface Workspace {

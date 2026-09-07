@@ -387,7 +387,8 @@ async def test_registration_provisions_an_organization(client):
     organization = orgs.json()[0]
     # apply_tier ran, rather than leaning on column defaults.
     assert organization["subscription_tier"] == "free"
-    assert organization["max_workspaces"] == 1
+    # Limits are not serialized here; they are resolved from the plan.
+    assert "max_workspaces" not in organization
 
     workspaces = await client.get(
         _org_url(organization["id"], "/workspaces"), headers=headers

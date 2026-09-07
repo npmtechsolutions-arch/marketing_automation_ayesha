@@ -159,8 +159,8 @@ async def user_factory(db_session):
 async def organization_factory(db_session):
     """Create an ``Organization`` owned by ``owner``, with an OWNER membership.
 
-    ``extra`` overrides any column, e.g. ``monthly_post_limit=3``. Limits live
-    here now, so entitlement tests set them on the organization.
+    ``extra`` overrides any column. Limits are not among them -- they live in
+    plan_features; use the ``set_limit`` fixture to change one.
     """
 
     async def _make(owner: User, *, name: str = "Test Org", **extra) -> Organization:

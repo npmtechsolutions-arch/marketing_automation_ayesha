@@ -68,14 +68,19 @@ class AdminAccountResponse(BaseModel):
     owner_id: uuid.UUID
     subscription_tier: str
     subscription_status: str
-    monthly_post_limit: int
-    max_team_members: int
+    # Resolved from the plan, not copied off the organization row. None is
+    # unlimited. An operator looking at this list has to see the number
+    # enforcement would actually apply.
+    monthly_post_limit: int | None = None
+    max_team_members: int | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def from_model(cls, a: Account, organization: Organization) -> "AdminAccountResponse":
+    async def from_model(
+        cls, db: AsyncSession, a: Account, organization: Organization
+    ) -> "AdminAccountResponse":
         """Subscription fields come from the workspace's organization."""
         return cls(
             id=a.id,
@@ -84,8 +89,12 @@ class AdminAccountResponse(BaseModel):
             owner_id=a.owner_id,
             subscription_tier=organization.subscription_tier.value,
             subscription_status=organization.subscription_status.value,
-            monthly_post_limit=organization.monthly_post_limit,
-            max_team_members=organization.max_team_members,
+            monthly_post_limit=await entitlement_service.get_limit(
+                db, organization, entitlement_service.POSTS_PER_MONTH
+            ),
+            max_team_members=await entitlement_service.get_limit(
+                db, organization, entitlement_service.TEAM_MEMBERS
+            ),
             created_at=a.created_at,
         )
 
@@ -278,7 +287,7 @@ async def list_accounts(
     rows = (await db.execute(stmt)).all()
 
     return PaginatedResponse(
-        items=[AdminAccountResponse.from_model(a, org) for a, org in rows],
+        items=[await AdminAccountResponse.from_model(db, a, org) for a, org in rows],
         total=total,
         page=page,
         per_page=per_page,

@@ -32,6 +32,7 @@ from app.core.database import engine, AsyncSessionLocal, Base
 from app.core.security import get_password_hash
 from app.models.user import User
 from app.models.account import Account, SubscriptionTier, SubscriptionStatus
+from app.models.organization import Organization, OrganizationMember, OrgRole
 from app.models.team_member import TeamMember, TeamRole, InvitationStatus
 from app.models.business import Business
 from app.models.platform import SocialPlatform, SocialAccount
@@ -99,18 +100,31 @@ async def seed():
         print("✅ Admin created: admin@gmail.com / admin123")
 
         # ── Accounts (Agency) ────────────────────────────────────
+        # The subscription lives on the Organization, and limits come from its
+        # plan -- neither is a column on Account any more.
+        user_org_id = uuid.uuid4()
+        session.add(Organization(
+            id=user_org_id,
+            name="Digital Spark Agency",
+            slug="digital-spark-agency",
+            owner_id=user_id,
+            subscription_tier=SubscriptionTier.GROWTH,
+            subscription_status=SubscriptionStatus.ACTIVE,
+            trial_ends_at=now + timedelta(days=14),
+        ))
+        session.add(OrganizationMember(
+            id=uuid.uuid4(), user_id=user_id, organization_id=user_org_id,
+            role=OrgRole.OWNER, invitation_status=InvitationStatus.ACCEPTED,
+            accepted_at=now,
+        ))
+
         user_account_id = uuid.uuid4()
         user_account = Account(
             id=user_account_id,
             name="Digital Spark Agency",
             slug="digital-spark-agency",
             owner_id=user_id,
-            subscription_tier=SubscriptionTier.GROWTH,
-            subscription_status=SubscriptionStatus.ACTIVE,
-            monthly_post_limit=100,
-            max_team_members=10,
-            max_platforms=20,
-            trial_ends_at=now + timedelta(days=14),
+            organization_id=user_org_id,
         )
         session.add(user_account)
         session.add(TeamMember(
@@ -120,17 +134,28 @@ async def seed():
         ))
         print("✅ Agency created: Digital Spark Agency (Growth plan)")
 
+        admin_org_id = uuid.uuid4()
+        session.add(Organization(
+            id=admin_org_id,
+            name="MarketEngine Admin",
+            slug="marketengine-admin",
+            owner_id=admin_id,
+            subscription_tier=SubscriptionTier.PRO,
+            subscription_status=SubscriptionStatus.ACTIVE,
+        ))
+        session.add(OrganizationMember(
+            id=uuid.uuid4(), user_id=admin_id, organization_id=admin_org_id,
+            role=OrgRole.OWNER, invitation_status=InvitationStatus.ACCEPTED,
+            accepted_at=now,
+        ))
+
         admin_account_id = uuid.uuid4()
         admin_account = Account(
             id=admin_account_id,
             name="MarketEngine Admin",
             slug="marketengine-admin",
             owner_id=admin_id,
-            subscription_tier=SubscriptionTier.PRO,
-            subscription_status=SubscriptionStatus.ACTIVE,
-            monthly_post_limit=999999,
-            max_team_members=50,
-            max_platforms=100,
+            organization_id=admin_org_id,
         )
         session.add(admin_account)
         session.add(TeamMember(

@@ -29,9 +29,11 @@ PASSWORD = "hunter2-correct-horse"
 
 
 @pytest.fixture
-async def workspace(user_factory, account_factory, organization_factory):
+async def workspace(user_factory, account_factory, organization_factory, set_limit):
     owner = await user_factory(password=PASSWORD)
-    organization = await organization_factory(owner, monthly_post_limit=500)
+    organization = await organization_factory(owner)
+    # Headroom, so a permission test never fails for want of quota.
+    await set_limit(organization, "posts_per_month", 500)
     account = await account_factory(owner, organization=organization)
     return {"owner": owner, "organization": organization, "account": account}
 

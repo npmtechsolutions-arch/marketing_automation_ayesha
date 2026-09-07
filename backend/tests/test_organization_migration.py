@@ -99,9 +99,37 @@ CREATE TABLE accounts (
 """
 
 
+# `organizations` as this migration creates it. The four limit columns were
+# dropped again in f2a90c4d7b18, so `create_all` no longer builds them -- but
+# this migration's backfill writes them, and a migration is frozen at the shape
+# of the schema it ran against. Rebuilding here keeps the test about the
+# backfill's logic rather than about today's models.
+_LEGACY_ORGANIZATIONS_DDL = """
+CREATE TABLE organizations (
+    id CHAR(32) NOT NULL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) NOT NULL,
+    owner_id CHAR(32) NOT NULL,
+    subscription_tier VARCHAR(20),
+    subscription_status VARCHAR(20),
+    stripe_customer_id VARCHAR(255),
+    stripe_subscription_id VARCHAR(255),
+    trial_ends_at TIMESTAMP,
+    monthly_post_limit INTEGER,
+    max_team_members INTEGER,
+    max_platforms INTEGER,
+    max_workspaces INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP,
+    deleted_at TIMESTAMP
+)
+"""
+
+
 @pytest.fixture
 async def legacy_schema(db_session):
-    """Replace `accounts` with its pre-migration definition.
+    """Replace `accounts` and `organizations` with their definitions as of this
+    migration.
 
     A rebuild rather than ALTER: SQLite cannot drop a NOT NULL constraint, and
     the current schema makes organization_id NOT NULL -- which is precisely what
@@ -109,6 +137,8 @@ async def legacy_schema(db_session):
     """
     await db_session.execute(sa.text("DROP TABLE accounts"))
     await db_session.execute(sa.text(_LEGACY_ACCOUNTS_DDL))
+    await db_session.execute(sa.text("DROP TABLE organizations"))
+    await db_session.execute(sa.text(_LEGACY_ORGANIZATIONS_DDL))
     await db_session.flush()
     yield
 
@@ -146,12 +176,24 @@ async def test_backfill_creates_one_organization_per_account(
     assert organization.subscription_status.name == "ACTIVE"
     assert organization.stripe_customer_id == "cus_123"
     assert organization.stripe_subscription_id == "sub_456"
-    assert organization.monthly_post_limit == 200
-    assert organization.max_team_members == 10
-    assert organization.max_platforms == 8
-    # Derived from the tier, since accounts never had this column.
-    assert organization.max_workspaces == 10
     assert organization.owner_id == owner.id
+
+    # The limit columns are read with raw SQL: f2a90c4d7b18 dropped them from
+    # the model, but this migration still writes them and is judged against the
+    # schema it ran against, not against today's.
+    limits = (
+        await db_session.execute(
+            sa.text(
+                "SELECT monthly_post_limit, max_team_members, max_platforms,"
+                " max_workspaces FROM organizations WHERE id = :id"
+            ).bindparams(id=organization.id)
+        )
+    ).one()
+    assert limits.monthly_post_limit == 200
+    assert limits.max_team_members == 10
+    assert limits.max_platforms == 8
+    # Derived from the tier, since accounts never had this column.
+    assert limits.max_workspaces == 10
 
 
 def select_org_for(account_id):
