@@ -28,6 +28,7 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    get_password_hash,
     get_password_hash_async,
     verify_2fa_challenge_token,
     verify_password_async,
@@ -59,6 +60,14 @@ import httpx
 from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
+
+# Deliberately identical for an unknown address and a bad password.
+INVALID_CREDENTIALS_DETAIL = "Invalid email or password"
+
+# A real bcrypt hash of a value nobody can supply, used to spend the same work
+# on a login for an address that does not exist. Computed once at import so the
+# cost lands at startup rather than on the first probe.
+_DUMMY_PASSWORD_HASH = get_password_hash(uuid.uuid4().hex)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -278,16 +287,24 @@ async def login(
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
 
+    # One message for both "no such account" and "wrong password". Separate
+    # errors let anyone test an address and learn whether it is registered,
+    # which turns a login form into a membership oracle -- worth more to an
+    # attacker than it sounds when the answer is "this person banks here".
     if user is None:
+        # Hash anyway. Returning immediately would make the unknown-email case
+        # measurably faster than the wrong-password one and hand back the same
+        # answer through timing.
+        await verify_password_async(payload.password, _DUMMY_PASSWORD_HASH)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User ID / Email was not found. Please check your email or sign up.",
+            detail=INVALID_CREDENTIALS_DETAIL,
         )
 
     if not await verify_password_async(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect password. Please verify your password and try again.",
+            detail=INVALID_CREDENTIALS_DETAIL,
         )
 
     if not user.is_active:

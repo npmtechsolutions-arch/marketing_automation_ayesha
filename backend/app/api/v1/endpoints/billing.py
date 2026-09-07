@@ -88,13 +88,14 @@ def _stripe_enabled() -> bool:
 def _manual_plan_change_enabled() -> bool:
     """Whether a tier may be switched without a Stripe payment.
 
-    Explicitly opt-in via BILLING_ALLOW_MANUAL_PLAN_CHANGE, or implicitly for a
-    local DEBUG run that has no Stripe credentials at all (so the plan flow is
-    usable in development). Never true for a production deployment.
+    Explicit opt-in only. This used to also turn itself on for any run with
+    DEBUG set and no Stripe key -- two settings that are easy to end up with by
+    accident, and the result hands out paid tiers for free. Granting that
+    quietly, from a combination nobody chose, is not something a billing
+    control should do; it now requires BILLING_ALLOW_MANUAL_PLAN_CHANGE to be
+    set explicitly.
     """
-    if settings.BILLING_ALLOW_MANUAL_PLAN_CHANGE:
-        return True
-    return settings.DEBUG and not _stripe_enabled()
+    return settings.BILLING_ALLOW_MANUAL_PLAN_CHANGE is True
 
 
 def _plan_catalog() -> list[PlanSummary]:

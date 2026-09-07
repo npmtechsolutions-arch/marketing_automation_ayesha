@@ -32,7 +32,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:MyNewPassword123@localhost:5432/marketing_automation"
+    # Matches the docker-compose postgres service. A default that names a
+    # real-looking password invites someone to reuse it.
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/marketengine"
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # Concurrency / performance
@@ -62,8 +64,8 @@ class Settings(BaseSettings):
     # Allows an account admin to switch subscription tier directly, without a
     # Stripe payment. Intended for development/demo deployments that have no
     # Stripe keys — never enable this in production, it hands out paid tiers
-    # for free. When left false it is still implicitly on for DEBUG runs that
-    # have no STRIPE_SECRET_KEY configured.
+    # for free. Must be set explicitly: there is no longer any combination of
+    # other settings that turns it on by itself.
     BILLING_ALLOW_MANUAL_PLAN_CHANGE: bool = False
 
     # Social OAuth & AI Keys
@@ -143,12 +145,13 @@ class Settings(BaseSettings):
             self.DATABASE_URL = self.DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
         # Build list of allowed origins
+        # Production origins come from CORS_ORIGINS / FRONTEND_URL in the
+        # environment. Nothing is hardcoded here: an origin baked into the
+        # source is one nobody remembers to remove when it stops being ours.
         allowed_set = set(self.CORS_ORIGINS)
         allowed_set.add("http://localhost:5173")
         allowed_set.add("http://localhost:3000")
         allowed_set.add("http://127.0.0.1:5173")
-        allowed_set.add("https://marketing-automation-ayesha-1.onrender.com")
-        allowed_set.add("https://marketing-automation-ayesha.onrender.com")
         
         if self.FRONTEND_URL:
             allowed_set.add(self.FRONTEND_URL)

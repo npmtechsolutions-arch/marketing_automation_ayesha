@@ -1,6 +1,10 @@
+import hashlib
+import hmac
+import json
 import logging
 from typing import Any
-from fastapi import APIRouter, Depends, Query, status, HTTPException
+
+from fastapi import APIRouter, Depends, Query, Request, status, HTTPException
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,27 +25,79 @@ async def verify_meta_webhook(
     Handle Meta's GET verification request.
     Meta sends this to confirm ownership of the endpoint.
     """
-    logger.info("Received Meta webhook verification request. Mode: %s, Token: %s", hub_mode, hub_verify_token)
+    logger.info("Received Meta webhook verification request. Mode: %s", hub_mode)
     
     if hub_mode == "subscribe" and hub_verify_token == settings.META_WEBHOOK_VERIFY_TOKEN:
         return hub_challenge
         
-    logger.warning("Meta webhook verification failed. Expected token: %s, received: %s", settings.META_WEBHOOK_VERIFY_TOKEN, hub_verify_token)
+    # Never log the expected token: it is the shared secret that authorises
+    # the handshake, and a failed attempt is exactly when an attacker is
+    # watching for it to appear in a log.
+    logger.warning("Meta webhook verification failed for mode %s", hub_mode)
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Verification token mismatch"
     )
 
+SIGNATURE_HEADER = "X-Hub-Signature-256"
+
+
+def _verify_meta_signature(raw_body: bytes, header_value: str | None) -> bool:
+    """Check Meta's HMAC-SHA256 over the exact bytes received.
+
+    The digest must be computed on the raw body: re-serialising the parsed JSON
+    changes whitespace and key order and would never match.
+    """
+    secret = (settings.META_APP_SECRET or "").strip()
+    if not secret:
+        # Unverifiable. An unauthenticated endpoint that writes to the database
+        # is worth more to an attacker than the events are to us, so absence of
+        # a secret means "reject", not "trust".
+        logger.error(
+            "META_APP_SECRET is not configured; rejecting Meta webhook because "
+            "its signature cannot be verified."
+        )
+        return False
+
+    if not header_value or not header_value.startswith("sha256="):
+        return False
+
+    expected = hmac.new(
+        secret.encode(), raw_body, hashlib.sha256
+    ).hexdigest()
+    # Constant-time: a plain == leaks how much of the digest matched.
+    return hmac.compare_digest(expected, header_value.split("=", 1)[1])
+
+
 @router.post("/meta")
 async def receive_meta_webhook(
-    payload: dict[str, Any],
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Handle Meta's POST event webhook notification.
-    Saves the received event to the database.
+    Saves the received event to the database, but only once the payload is
+    proven to have come from Meta.
     """
-    logger.info("Received Meta webhook payload: %s", payload)
+    raw_body = await request.body()
+    if not _verify_meta_signature(raw_body, request.headers.get(SIGNATURE_HEADER)):
+        logger.warning("Rejected Meta webhook with an invalid or missing signature")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid webhook signature",
+        )
+
+    try:
+        payload: dict[str, Any] = json.loads(raw_body)
+        if not isinstance(payload, dict):
+            raise ValueError("payload is not an object")
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed webhook payload",
+        )
+
+    logger.info("Received verified Meta webhook: object=%s", payload.get("object"))
     
     # Identify event source and type
     source = "meta"

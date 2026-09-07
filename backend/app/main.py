@@ -80,12 +80,12 @@ app.add_middleware(
 # so its response bypasses CORSMiddleware and would otherwise ship WITHOUT the
 # Access-Control-Allow-Origin header — making every 500 look like a CORS failure
 # in the browser. Echo the CORS headers here so the frontend sees the real error.
-_ONRENDER_ORIGIN_RE = re.compile(r"https://.*\.onrender\.com")
+
 
 
 def _cors_headers_for(request: Request) -> dict[str, str]:
     origin = request.headers.get("origin")
-    if origin and (origin in settings.CORS_ORIGINS or _ONRENDER_ORIGIN_RE.fullmatch(origin)):
+    if origin and origin in settings.CORS_ORIGINS:
         return {
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Credentials": "true",

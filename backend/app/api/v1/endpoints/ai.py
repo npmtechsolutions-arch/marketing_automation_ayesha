@@ -138,7 +138,10 @@ async def _call_gemini(prompt: str, system_prompt: str, model: str = "gemini-3.6
     """Call Google Gemini API via httpx and return (response_text, input_tokens, output_tokens)."""
     import httpx
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.GEMINI_API_KEY.strip()}"
+    # The key goes in a header, not the query string: URLs end up in access
+    # logs, proxy logs, and error reports, and a leaked key there is a
+    # billable credential.
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     payload = {
         "system_instruction": {
             "parts": [{"text": system_prompt}]
@@ -156,7 +159,12 @@ async def _call_gemini(prompt: str, system_prompt: str, model: str = "gemini-3.6
         }
     }
     async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=payload, timeout=60.0)
+        response = await client.post(
+            url,
+            json=payload,
+            timeout=60.0,
+            headers={"x-goog-api-key": settings.GEMINI_API_KEY.strip()},
+        )
         if response.status_code != 200:
             raise HTTPException(
                 status_code=response.status_code,
@@ -348,11 +356,15 @@ async def _generate_gemini_image(
         },
     }
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    # Key in a header, not the query string -- URLs are logged by proxies and
+    # error reporters, and this one is billable.
+    async with httpx.AsyncClient(
+        timeout=120.0, headers={"x-goog-api-key": key}
+    ) as client:
         for model in _GEMINI_IMAGE_MODELS:
             url = (
                 "https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{model}:generateContent?key={key}"
+                f"{model}:generateContent"
             )
             try:
                 response = await client.post(url, json=payload)
