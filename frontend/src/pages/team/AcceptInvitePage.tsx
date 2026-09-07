@@ -151,6 +151,11 @@ export default function AcceptInvitePage() {
         setGoogleLoading(false);
         return;
       }
+      if (err?.code === "auth/unauthorized-domain") {
+        showError("Domain unauthorized in Firebase. Please add this domain under Firebase Console -> Authentication -> Settings -> Authorized Domains.");
+        setGoogleLoading(false);
+        return;
+      }
       const msg = err?.response?.data?.detail || err?.message || "Authentication failed.";
       setError(msg);
       showError(msg);

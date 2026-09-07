@@ -115,6 +115,11 @@ export default function RegisterPage() {
         setGoogleLoading(false);
         return;
       }
+      if (err?.code === "auth/unauthorized-domain") {
+        showError("Domain unauthorized in Firebase. Please add this domain under Firebase Console -> Authentication -> Settings -> Authorized Domains.");
+        setGoogleLoading(false);
+        return;
+      }
       const msg = err?.response?.data?.detail || err?.message || "Google Sign-In failed. Please try again.";
       showError(msg);
     } finally {
