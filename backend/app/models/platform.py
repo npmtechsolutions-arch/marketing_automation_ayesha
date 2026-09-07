@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.db_types import EncryptedText
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -89,11 +90,13 @@ class SocialAccount(Base):
     profile_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     profile_image_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
-    # API credentials (encrypted in production)
-    api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    api_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # API credentials. Encrypted at rest via EncryptedText: the ORM sees
+    # plaintext, the database only ever holds ciphertext. Being ciphertext,
+    # these columns cannot be filtered or indexed on in SQL.
+    api_key: Mapped[Optional[str]] = mapped_column(EncryptedText, nullable=True)
+    api_secret: Mapped[Optional[str]] = mapped_column(EncryptedText, nullable=True)
+    access_token: Mapped[Optional[str]] = mapped_column(EncryptedText, nullable=True)
+    refresh_token: Mapped[Optional[str]] = mapped_column(EncryptedText, nullable=True)
     token_expires_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

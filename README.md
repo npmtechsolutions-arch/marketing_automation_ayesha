@@ -85,7 +85,7 @@ To stop and remove the Postgres/Redis volumes:
 docker compose down -v
 ```
 
-> **Note:** `docker-compose.yml` sets `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, `JWT_SECRET_KEY` and `FRONTEND_URL` inline for the backend services, so the stack boots without a `.env`. Those inline values are development placeholders. Any other variable — AI provider keys, Stripe, OAuth credentials — must be added to the compose environment or the service will run with that feature disabled.
+> **Note:** `docker-compose.yml` sets `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, `JWT_SECRET_KEY`, `DEBUG`, `TOKEN_ENCRYPTION_KEY` and `FRONTEND_URL` inline for the backend services, so the stack boots without a `.env`. Those inline values are development placeholders — in particular `DEBUG=true`, which is what allows the placeholder secrets to be used at all. Any other variable — AI provider keys, Stripe, OAuth credentials — must be added to the compose environment or the service will run with that feature disabled.
 
 ---
 
@@ -150,10 +150,31 @@ Only four variables are needed for a local run:
 | `DATABASE_URL` | Postgres connection string; must use the `postgresql+asyncpg://` driver. |
 | `SECRET_KEY` | Application signing secret. |
 | `JWT_SECRET_KEY` | Signs access and refresh tokens. |
+| `TOKEN_ENCRYPTION_KEY` | Fernet key encrypting stored platform credentials. Required when `DEBUG=false`; derived from `SECRET_KEY` in development if unset. |
 
 Everything else is optional — an unset AI, Stripe, S3, email, or OAuth variable disables that feature rather than breaking startup.
 
 Frontend variables are separate: Vite reads `VITE_`-prefixed values from `frontend/.env` at build time. Only `VITE_API_URL` is currently used.
+
+---
+
+## Credential encryption
+
+Social-platform credentials (`api_key`, `api_secret`, `access_token`, `refresh_token` on `social_accounts`) are encrypted at rest with Fernet, so a database dump or replica does not expose every connected account's tokens.
+
+This is transparent to application code: the columns use an `EncryptedText` type that encrypts on write and decrypts on read, so the ORM only ever sees plaintext. Because the stored form is ciphertext, these columns **cannot be filtered, sorted, or indexed on in SQL** — anything needing that must load the row and compare in Python.
+
+Generate a key per environment:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Set it as `TOKEN_ENCRYPTION_KEY`. Production (`DEBUG=false`) refuses to boot without one. In development it may be left blank, in which case a key is derived from `SECRET_KEY` — a convenience for local work, never a security control.
+
+> **Treat the key as long-lived and back it up with your other secrets.** Changing it makes every stored credential undecryptable and the affected accounts must reconnect. There is no automatic re-encryption path.
+
+Databases that predate this feature are converted by migration `aeed3c1c5c4e`, which encrypts existing plaintext rows. It is idempotent — values that already decrypt cleanly are skipped — so re-running it is safe.
 
 ---
 

@@ -13,6 +13,14 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     DEBUG: bool = False
 
+    # Encryption at rest for third-party credentials (social platform tokens).
+    # A urlsafe-base64 32-byte Fernet key. Generate one with:
+    #     python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Required when DEBUG=false; see the boot guard at the bottom of this class.
+    # Rotating this value makes every stored token undecryptable, so the
+    # affected accounts must reconnect.
+    TOKEN_ENCRYPTION_KEY: str = ""
+
     # Auth / JWT
     SECRET_KEY: str = "change-me-in-production"
     JWT_SECRET_KEY: str = "change-me-jwt-secret"
@@ -163,6 +171,19 @@ class Settings(BaseSettings):
                 "SECRET_KEY and JWT_SECRET_KEY must be set to strong, unique "
                 "values in production (DEBUG=false). Refusing to start with a "
                 "known placeholder secret."
+            )
+
+        # SECURITY: third-party access/refresh tokens are encrypted at rest with
+        # TOKEN_ENCRYPTION_KEY. Without it a production instance would fall back
+        # to a key derived from SECRET_KEY, which is a development convenience
+        # and must never guard real users' platform credentials.
+        if not self.DEBUG and not self.TOKEN_ENCRYPTION_KEY.strip():
+            raise RuntimeError(
+                "TOKEN_ENCRYPTION_KEY must be set in production (DEBUG=false). "
+                "It encrypts stored social-platform credentials at rest. "
+                "Generate one with:\n"
+                '    python -c "from cryptography.fernet import Fernet; '
+                "print(Fernet.generate_key().decode())\""
             )
 
 

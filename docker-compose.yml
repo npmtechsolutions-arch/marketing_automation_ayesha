@@ -42,6 +42,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: dev-secret-key-change-in-production
       JWT_SECRET_KEY: dev-jwt-secret-change-in-production
+      # Required: without it the placeholder secrets above are treated as a
+      # production misconfiguration and the service refuses to start.
+      DEBUG: "true"
+      # Development-only Fernet key for encrypting stored platform credentials.
+      # Generate a real one per environment with:
+      #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      TOKEN_ENCRYPTION_KEY: fdWd56g7RVBIwHV0Vje69Z2NGGBroRXNXmxYwzy7XZQ=
       FRONTEND_URL: http://localhost:5173
     depends_on:
       postgres:
@@ -64,6 +71,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: dev-secret-key-change-in-production
       JWT_SECRET_KEY: dev-jwt-secret-change-in-production
+      # Required: without it the placeholder secrets above are treated as a
+      # production misconfiguration and the service refuses to start.
+      DEBUG: "true"
+      # Development-only Fernet key for encrypting stored platform credentials.
+      # Generate a real one per environment with:
+      #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      TOKEN_ENCRYPTION_KEY: fdWd56g7RVBIwHV0Vje69Z2NGGBroRXNXmxYwzy7XZQ=
     depends_on:
       postgres:
         condition: service_healthy
@@ -83,6 +97,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: dev-secret-key-change-in-production
       JWT_SECRET_KEY: dev-jwt-secret-change-in-production
+      # Required: without it the placeholder secrets above are treated as a
+      # production misconfiguration and the service refuses to start.
+      DEBUG: "true"
+      # Development-only Fernet key for encrypting stored platform credentials.
+      # Generate a real one per environment with:
+      #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      TOKEN_ENCRYPTION_KEY: fdWd56g7RVBIwHV0Vje69Z2NGGBroRXNXmxYwzy7XZQ=
     depends_on:
       postgres:
         condition: service_healthy
