@@ -25,10 +25,15 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     # Startup
     # Blocking work (bcrypt password hashing, ffmpeg video rendering, blocking
-    # platform HTTP calls) runs via asyncio.to_thread on the loop's default
-    # executor. Python's default pool is only ~min(32, cpu+4) threads — on a
-    # small instance that's ~5, which a publish burst can exhaust and starve
-    # logins. Give the loop an explicit, roomier pool sized from settings.
+    # disk I/O around the ffmpeg render) runs via asyncio.to_thread on the
+    # loop's default executor. Python's default pool is only ~min(32, cpu+4)
+    # threads — on a small instance that's ~5, which bcrypt alone can saturate.
+    # Give the loop an explicit, roomier pool sized from settings.
+    #
+    # Platform HTTP used to land here too, which was the original reason for
+    # the size: an Instagram poll or a YouTube upload could hold a thread for
+    # minutes. The connectors now await their requests, so that pressure is
+    # gone; the pool is kept roomy for hashing.
     loop = asyncio.get_running_loop()
     loop.set_default_executor(
         ThreadPoolExecutor(

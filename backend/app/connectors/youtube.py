@@ -1,13 +1,12 @@
 """The YouTube connector.
 
-Publishing and metrics moved verbatim from ``app/services/platform_service.py``
-(publish :1021-1138, metrics :1367-1427). The bodies are unchanged, including their quirks -- this was a move,
-not a rewrite. They stay synchronous (blocking ``httpx.Client``) and the async
-methods below hand them to ``asyncio.to_thread``, which is exactly what the old
-dispatch in posts.py did around each call.
+Publishing and metrics moved verbatim from the old ``platform_service.py``
+(publish :1021-1138, metrics :1367-1427), then converted from blocking ``httpx.Client`` to
+``httpx.AsyncClient``. Nothing waits on a thread here: the requests are
+awaited, so a slow platform costs a coroutine rather than one of the process's
+shared worker threads.
 """
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -19,12 +18,11 @@ from app.connectors.base import (
     PublishResult,
     SocialProvider,
     OAuthTokens,
-    exchange_code_async,
     tokens_from,
     ProviderAPIError,
     TokenRefreshResult,
     expires_at_from,
-    refresh_sync,
+    provider_request,
     require_refresh_token,
     classify_retryable,
     is_mock_token,
@@ -42,7 +40,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:
+async def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:
     """Upload a video to the connected YouTube channel (videos.insert).
 
     "Posting" to YouTube means uploading a video, so a video attachment is
@@ -90,7 +88,7 @@ def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:
             if not music_url:
                 music_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
             try:
-                video_url = _render_image_audio_to_video(
+                video_url = await _render_image_audio_to_video(
                     candidate, music_url, start_offset=0, duration=15
                 )
             except Exception as render_err:
@@ -104,7 +102,7 @@ def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:
     logger.info(
         "Uploading video to YouTube channel %s", getattr(platform, "account_name", "unknown")
     )
-    video_bytes = _download_media_bytes(video_url)
+    video_bytes = await _download_media_bytes(video_url)
 
     title = (getattr(post, "title", None) or (post.content or "")[:90] or "New video").strip()
     description = _content_with_hashtags(post)
@@ -117,8 +115,8 @@ def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:
         "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False},
     }
 
-    with httpx.Client() as client:
-        init = client.post(
+    async with httpx.AsyncClient() as client:
+        init = await client.post(
             "https://www.googleapis.com/upload/youtube/v3/videos"
             "?uploadType=resumable&part=snippet,status",
             headers={
@@ -136,7 +134,7 @@ def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:
         if not upload_url:
             raise ValueError("YouTube did not return a resumable upload URL.")
 
-        put = client.put(
+        put = await client.put(
             upload_url,
             headers={
                 "Authorization": f"Bearer {access_token}",
@@ -162,7 +160,7 @@ def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:
 
 
 
-def _fetch_metrics_sync(post_id: str, platform: Any) -> dict[str, Any]:
+async def _fetch_metrics(post_id: str, platform: Any) -> dict[str, Any]:
     """Moved from the ``youtube`` branch of PlatformService.fetch_performance.
 
     The no-token short-circuit that guarded the whole if/elif chain is
@@ -179,8 +177,8 @@ def _fetch_metrics_sync(post_id: str, platform: Any) -> dict[str, Any]:
 
     import httpx
     try:
-        with httpx.Client() as client:
-            res = client.get(
+        async with httpx.AsyncClient() as client:
+            res = await client.get(
                 "https://www.googleapis.com/youtube/v3/videos",
                 params={
                     "part": "statistics,snippet",
@@ -263,9 +261,7 @@ class YouTubeProvider(SocialProvider):
         social_account: Any,
     ) -> PublishResult:
         try:
-            result = await asyncio.to_thread(
-                publish_to_youtube, variant.post, social_account
-            )
+            result = await publish_to_youtube(variant.post, social_account)
         except Exception as exc:  # noqa: BLE001 - every failure becomes a result
             message = str(exc)
             # YouTube Community posts have no API. The publisher signals that by
@@ -291,16 +287,13 @@ class YouTubeProvider(SocialProvider):
     async def get_post_metrics(
         self, external_post_id: str, social_account: Any
     ) -> dict[str, Any]:
-        return await asyncio.to_thread(
-            _fetch_metrics_sync, external_post_id, social_account
-        )
+        return await _fetch_metrics(external_post_id, social_account)
 
     async def refresh_token(self, social_account: Any) -> TokenRefreshResult:
         """Moved from social_accounts.py:870-919 (and posts.py:253-283, which
         was a second copy of the same grant)."""
         token = require_refresh_token(self.slug, social_account)
-        payload = await asyncio.to_thread(
-            refresh_sync,
+        payload = await provider_request(
             self.slug,
             "https://oauth2.googleapis.com/token",
             data={
@@ -352,7 +345,7 @@ class YouTubeProvider(SocialProvider):
         })
 
     async def exchange_code(self, code: str) -> OAuthTokens:
-        payload = await exchange_code_async(
+        payload = await provider_request(
             self.slug,
             self.TOKEN_URL,
             data={

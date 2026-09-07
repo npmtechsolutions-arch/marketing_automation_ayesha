@@ -1,10 +1,10 @@
 """The Instagram connector.
 
-Publishing and metrics moved verbatim from ``app/services/platform_service.py``
-(publish :560-779, metrics :1171-1266). The bodies are unchanged, including their quirks -- this was a move,
-not a rewrite. They stay synchronous (blocking ``httpx.Client``) and the async
-methods below hand them to ``asyncio.to_thread``, which is exactly what the old
-dispatch in posts.py did around each call.
+Publishing and metrics moved verbatim from the old ``platform_service.py``
+(publish :560-779, metrics :1171-1266), then converted from blocking ``httpx.Client`` to
+``httpx.AsyncClient``. Nothing waits on a thread here: the requests are
+awaited, so a slow platform costs a coroutine rather than one of the process's
+shared worker threads.
 """
 
 import asyncio
@@ -19,7 +19,7 @@ from app.connectors.base import (
     PublishResult,
     SocialProvider,
     OAuthTokens,
-    exchange_code_async,
+    provider_request,
     tokens_from,
     TokenRefreshResult,
     classify_retryable,
@@ -39,14 +39,13 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
+async def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
     """Publish a post to Instagram via the Graph API (requires media URL)."""
     logger.info(
         "Publishing to Instagram account %s",
         getattr(platform, "account_name", "unknown"),
     )
     import httpx
-    import time
     import uuid
 
     access_token = getattr(platform, "access_token", None)
@@ -79,8 +78,8 @@ def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
                 "fields": "id,username",
                 "access_token": access_token
             }
-            with httpx.Client() as client:
-                res_me = client.get(url_me, params=params_me, timeout=15.0)
+            async with httpx.AsyncClient() as client:
+                res_me = await client.get(url_me, params=params_me, timeout=15.0)
                 if res_me.status_code == 200:
                     ig_user_id = res_me.json().get("id")
                 else:
@@ -92,8 +91,8 @@ def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
                 "fields": "instagram_business_account,name",
                 "access_token": access_token
             }
-            with httpx.Client() as client:
-                res_me = client.get(url_me, params=params_me, timeout=15.0)
+            async with httpx.AsyncClient() as client:
+                res_me = await client.get(url_me, params=params_me, timeout=15.0)
                 if res_me.status_code == 200:
                     pages = res_me.json().get("data", [])
                     for page in pages:
@@ -149,7 +148,7 @@ def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
 
     # Instagram fetches the media itself, so base64 and locally-hosted URLs
     # (e.g. AI images saved under /uploads) have to be re-hosted publicly.
-    media_url = _ensure_public_media_url(media_url)
+    media_url = await _ensure_public_media_url(media_url)
     if not _is_public_media_url(media_url):
         raise ValueError("Failed to upload post media to a public host. Instagram Graph API requires public media URLs.")
 
@@ -169,7 +168,7 @@ def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
         else:
             duration = 15
         duration = max(1, min(duration, 60))
-        media_url = _render_image_audio_to_video(
+        media_url = await _render_image_audio_to_video(
             media_url, music_url, start_offset=start_offset, duration=duration
         )
         is_reel = True
@@ -188,8 +187,8 @@ def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
     else:
         payload["image_url"] = media_url
 
-    with httpx.Client() as client:
-        res = client.post(container_url, data=payload, timeout=20.0)
+    async with httpx.AsyncClient() as client:
+        res = await client.post(container_url, data=payload, timeout=20.0)
         if res.status_code != 200:
             raise ValueError(f"Instagram Graph API container creation failed: {res.text}")
         container_id = res.json().get("id")
@@ -204,10 +203,18 @@ def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
         "access_token": access_token
     }
     processed = False
-    # Poll for up to 120 seconds (24 * 5s) for video encoding/processing time
-    for _ in range(24):
-        with httpx.Client() as client:
-            res_status = client.get(status_url, params=params_status, timeout=10.0)
+    # Wait for encoding: 24 attempts, 5s apart. The stated ceiling is ~120s of
+    # waiting, though the true worst case is 24 * (10s request timeout + 5s
+    # sleep) if every poll times out.
+    #
+    # The client is opened once around the loop rather than per attempt: this
+    # used to build a fresh TCP+TLS connection on each of the 24 iterations and
+    # then hold it open, idle, across the sleep. The sleep is awaited, so a
+    # publish waiting on Instagram's encoder now occupies nothing at all -- it
+    # previously parked a pool thread for the entire wait.
+    async with httpx.AsyncClient() as client:
+        for _ in range(24):
+            res_status = await client.get(status_url, params=params_status, timeout=10.0)
             if res_status.status_code == 200:
                 status_code = res_status.json().get("status_code")
                 if status_code == "FINISHED":
@@ -215,7 +222,7 @@ def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
                     break
                 elif status_code == "ERROR":
                     raise ValueError(f"Instagram media container processing failed: {res_status.text}")
-            time.sleep(5)
+            await asyncio.sleep(5)
 
     if not processed:
         raise TimeoutError("Timeout waiting for Instagram media container to finish processing.")
@@ -226,8 +233,8 @@ def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
         "creation_id": container_id,
         "access_token": access_token
     }
-    with httpx.Client() as client:
-        res_pub = client.post(publish_url, data=payload_pub, timeout=20.0)
+    async with httpx.AsyncClient() as client:
+        res_pub = await client.post(publish_url, data=payload_pub, timeout=20.0)
         if res_pub.status_code != 200:
             raise ValueError(f"Instagram Graph API publish failed: {res_pub.text}")
         published_id = res_pub.json().get("id")
@@ -241,8 +248,8 @@ def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
             "access_token": access_token
         }
         try:
-            with httpx.Client() as client:
-                res_info = client.get(info_url, params=params_info, timeout=10.0)
+            async with httpx.AsyncClient() as client:
+                res_info = await client.get(info_url, params=params_info, timeout=10.0)
                 if res_info.status_code == 200:
                     post_url = res_info.json().get("permalink")
         except Exception:
@@ -261,7 +268,7 @@ def publish_to_instagram(post: Any, platform: Any) -> dict[str, Any]:
 
 
 
-def _fetch_metrics_sync(post_id: str, platform: Any) -> dict[str, Any]:
+async def _fetch_metrics(post_id: str, platform: Any) -> dict[str, Any]:
     """Moved from the ``instagram`` branch of PlatformService.fetch_performance.
 
     The no-token short-circuit that guarded the whole if/elif chain is
@@ -282,8 +289,8 @@ def _fetch_metrics_sync(post_id: str, platform: Any) -> dict[str, Any]:
     import httpx
     fields = "like_count,comments_count,media_product_type,media_type,permalink"
     try:
-        with httpx.Client() as client:
-            res = client.get(
+        async with httpx.AsyncClient() as client:
+            res = await client.get(
                 f"{base_url}/{post_id}",
                 params={"fields": fields, "access_token": access_token},
                 timeout=15.0
@@ -312,7 +319,7 @@ def _fetch_metrics_sync(post_id: str, platform: Any) -> dict[str, Any]:
                 metrics_list = ["impressions", "reach", "saved"]
         
             try:
-                res_insights = client.get(
+                res_insights = await client.get(
                     f"{base_url}/{post_id}/insights",
                     params={"metric": ",".join(metrics_list), "access_token": access_token},
                     timeout=15.0
@@ -399,9 +406,7 @@ class InstagramProvider(SocialProvider):
         social_account: Any,
     ) -> PublishResult:
         try:
-            result = await asyncio.to_thread(
-                publish_to_instagram, variant.post, social_account
-            )
+            result = await publish_to_instagram(variant.post, social_account)
         except Exception as exc:  # noqa: BLE001 - every failure becomes a result
             message = str(exc)
             # YouTube Community posts have no API. The publisher signals that by
@@ -427,9 +432,7 @@ class InstagramProvider(SocialProvider):
     async def get_post_metrics(
         self, external_post_id: str, social_account: Any
     ) -> dict[str, Any]:
-        return await asyncio.to_thread(
-            _fetch_metrics_sync, external_post_id, social_account
-        )
+        return await _fetch_metrics(external_post_id, social_account)
 
     async def refresh_token(self, social_account: Any) -> TokenRefreshResult:
         """Instagram authenticates through Facebook Login, so the same
@@ -475,7 +478,7 @@ class InstagramProvider(SocialProvider):
         return f"{self.AUTH_URL}?{urlencode(params)}"
 
     async def exchange_code(self, code: str) -> OAuthTokens:
-        payload = await exchange_code_async(
+        payload = await provider_request(
             self.slug,
             self.TOKEN_URL,
             method="get",

@@ -278,7 +278,9 @@ app/connectors/
 
 `get_provider(slug)` is the only dispatch. It keeps the substring matching the old code used (`"insta"`, `slug == "x"`) so no existing `social_platforms` row stops resolving.
 
-**Provider methods are `async`; their bodies are synchronous.** The publishing code uses blocking `httpx.Client` and, for some platforms, ffmpeg, so the async methods hand it to `asyncio.to_thread` — which is what the old dispatch did around each call. Converting the HTTP layer to `httpx.AsyncClient` is a separate change.
+**Every platform call is awaited.** Providers use `httpx.AsyncClient`, and even the ffmpeg render in `media.py` runs through `asyncio.create_subprocess_exec`. `asyncio.to_thread` survives only around the small disk operations that have no async equivalent — reading and writing the render's temporary files.
+
+This matters because the thread pool is shared with bcrypt password hashing ([main.py](backend/app/main.py) sizes it so a publish burst cannot starve logins). Waiting on Instagram's encoder (up to two minutes of polling) or a YouTube resumable upload (a 600-second timeout) used to occupy one of sixteen threads for the whole duration. Two structural tests keep it that way: one asserts no `httpx.Client` remains under `app/connectors/`, the other that `to_thread` appears only in `media.py`.
 
 A method a platform has no API for raises `NotSupportedError`, which is deliberately distinct from "not built yet": a caller that sees it should stop asking rather than retry.
 

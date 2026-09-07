@@ -7,9 +7,16 @@ re-hosts media at a publicly reachable URL, guards against SSRF, normalises
 hashtags, and renders an image+audio pair into a video for the platforms that
 only accept one.
 
-These are synchronous and blocking on purpose -- ``_render_image_audio_to_video``
-shells out to ffmpeg and ``_fetch_to_file`` streams whole files. Providers call
-them from inside ``asyncio.to_thread``.
+The HTTP and subprocess work here is awaited: downloads and uploads use
+``httpx.AsyncClient``, and the ffmpeg render uses
+``asyncio.create_subprocess_exec`` so a 180-second encode holds no thread.
+``asyncio.to_thread`` survives only around the small blocking primitives that
+have no async equivalent -- ``_read_bytes``, ``_write_bytes``, ``mkdtemp`` and
+``rmtree``.
+
+The pure helpers (``_normalize_hashtags``, ``_content_with_hashtags``,
+``_first_media_url``, the two URL predicates) stay synchronous because they do
+no I/O, and are safe to call directly from a coroutine.
 """
 
 import logging
@@ -19,14 +26,14 @@ logger = logging.getLogger(__name__)
 
 
 
-def _upload_bytes_to_public_url(data: bytes, filename: str, content_type: str) -> str:
+async def _upload_bytes_to_public_url(data: bytes, filename: str, content_type: str) -> str:
     """Upload raw bytes to a public host (tmpfiles.org). Returns the public URL, or
     an empty string on failure."""
     try:
         import httpx
         import re
-        with httpx.Client() as client:
-            res = client.post(
+        async with httpx.AsyncClient() as client:
+            res = await client.post(
                 "https://tmpfiles.org/api/v1/upload",
                 files={"file": (filename, data, content_type)},
                 timeout=60.0,
@@ -36,7 +43,7 @@ def _upload_bytes_to_public_url(data: bytes, filename: str, content_type: str) -
                 if resp_json.get("status") == "success":
                     url = resp_json["data"]["url"]
                     # Fetch the HTML page to parse the new signed direct download URL
-                    page_res = client.get(url, timeout=30.0)
+                    page_res = await client.get(url, timeout=30.0)
                     if page_res.status_code == 200:
                         match = re.search(r'href="(https://tmpfiles\.org/dl/[^"]+)"', page_res.text)
                         if match:
@@ -53,7 +60,7 @@ def _upload_bytes_to_public_url(data: bytes, filename: str, content_type: str) -
     return ""
 
 
-def _upload_base64_to_public_url(base64_str: str) -> str:
+async def _upload_base64_to_public_url(base64_str: str) -> str:
     try:
         import base64
         if "," in base64_str:
@@ -87,7 +94,7 @@ def _upload_base64_to_public_url(base64_str: str) -> str:
         if ext == "quicktime":
             ext = "mov"
 
-        url = _upload_bytes_to_public_url(data, f"file.{ext}", content_type)
+        url = await _upload_bytes_to_public_url(data, f"file.{ext}", content_type)
         if url:
             return url
     except Exception as e:
@@ -95,15 +102,15 @@ def _upload_base64_to_public_url(base64_str: str) -> str:
     return base64_str # Fallback to original
 
 
-def _download_media_bytes(url: str) -> bytes:
+async def _download_media_bytes(url: str) -> bytes:
     """Return the raw bytes of a media URL, decoding base64 data URLs directly."""
     if url.startswith("data:"):
         import base64
         encoded = url.split(",", 1)[1] if "," in url else url
         return base64.b64decode(encoded)
     import httpx
-    with httpx.Client(follow_redirects=True) as client:
-        r = client.get(url, timeout=60.0)
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        r = await client.get(url, timeout=60.0)
         r.raise_for_status()
         return r.content
 
@@ -132,16 +139,16 @@ def _is_private_host_url(url: str) -> bool:
     return ip.is_loopback or ip.is_private or ip.is_link_local
 
 
-def _ensure_public_media_url(url: str) -> str:
+async def _ensure_public_media_url(url: str) -> str:
     """Return a URL that Meta's servers can fetch, re-hosting the media if needed."""
     if url.startswith("data:"):
         logger.info("Converting base64 media data to a public URL...")
-        return _upload_base64_to_public_url(url)
+        return await _upload_base64_to_public_url(url)
 
     if _is_private_host_url(url):
         logger.info("Media URL %s is not publicly reachable — re-hosting it.", url)
         try:
-            data = _download_media_bytes(url)
+            data = await _download_media_bytes(url)
             filename = url.rsplit("/", 1)[-1].split("?")[0] or "file.png"
             ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
             content_type = {
@@ -153,7 +160,7 @@ def _ensure_public_media_url(url: str) -> str:
                 "mp4": "video/mp4",
                 "mov": "video/quicktime",
             }.get(ext, "image/png")
-            public_url = _upload_bytes_to_public_url(data, filename, content_type)
+            public_url = await _upload_bytes_to_public_url(data, filename, content_type)
             if public_url:
                 return public_url
         except Exception as e:
@@ -246,7 +253,7 @@ def _content_with_hashtags(post: Any, limit: int | None = None) -> str:
     return f"{content}{sep}{tag_str}" if content else tag_str
 
 
-def _assert_public_http_url(url: str) -> None:
+async def _assert_public_http_url(url: str) -> None:
     """Guard against SSRF.
 
     ``media_urls`` / ``*_music_url`` are user-supplied and fetched server-side,
@@ -254,6 +261,7 @@ def _assert_public_http_url(url: str) -> None:
     metadata endpoint (``169.254.169.254``). Allow only http(s) URLs whose host
     resolves exclusively to public IP addresses.
     """
+    import asyncio
     import ipaddress
     import socket
     from urllib.parse import urlparse
@@ -267,7 +275,13 @@ def _assert_public_http_url(url: str) -> None:
 
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     try:
-        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+        # socket.getaddrinfo blocks. The loop's own resolver runs it in an
+        # executor, which matters here because this guard runs on
+        # attacker-influenced hostnames -- a slow or hostile resolver would
+        # otherwise stall every other request in the process.
+        infos = await asyncio.get_running_loop().getaddrinfo(
+            host, port, proto=socket.IPPROTO_TCP
+        )
     except socket.gaierror as e:
         raise ValueError(f"Could not resolve host: {host}") from e
 
@@ -285,13 +299,26 @@ def _assert_public_http_url(url: str) -> None:
             raise ValueError(f"Refusing to fetch internal/non-public address for host: {host}")
 
 
-def _fetch_to_file(url: str, path: str) -> None:
+def _write_bytes(path: str, data: bytes) -> None:
+    """Blocking disk write, called via asyncio.to_thread."""
+    with open(path, "wb") as f:
+        f.write(data)
+
+
+def _read_bytes(path: str) -> bytes:
+    """Blocking disk read, called via asyncio.to_thread."""
+    with open(path, "rb") as f:
+        return f.read()
+
+
+async def _fetch_to_file(url: str, path: str) -> None:
     """Download a URL (or decode a base64 data URL) to a local file path."""
+    import asyncio
+
     if url.startswith("data:"):
         import base64
         encoded = url.split(",", 1)[1] if "," in url else url
-        with open(path, "wb") as f:
-            f.write(base64.b64decode(encoded))
+        await asyncio.to_thread(_write_bytes, path, base64.b64decode(encoded))
         return
 
     import httpx
@@ -299,26 +326,25 @@ def _fetch_to_file(url: str, path: str) -> None:
     # SSRF protection: validate the target (and every redirect hop) resolves to
     # a public address before we connect. Redirects are followed manually so an
     # attacker-controlled 3xx cannot bounce us into internal space.
-    _assert_public_http_url(url)
+    await _assert_public_http_url(url)
     current = url
-    with httpx.Client(follow_redirects=False) as client:
+    async with httpx.AsyncClient(follow_redirects=False) as client:
         for _ in range(5):
-            r = client.get(current, timeout=30.0)
+            r = await client.get(current, timeout=30.0)
             if r.is_redirect:
                 location = r.headers.get("location")
                 if not location:
                     break
                 current = str(httpx.URL(str(r.url)).join(location))
-                _assert_public_http_url(current)
+                await _assert_public_http_url(current)
                 continue
             r.raise_for_status()
-            with open(path, "wb") as f:
-                f.write(r.content)
+            await asyncio.to_thread(_write_bytes, path, r.content)
             return
     raise ValueError("Too many redirects while fetching media URL")
 
 
-def _render_image_audio_to_video(
+async def _render_image_audio_to_video(
     image_url: str, audio_url: str, start_offset: float = 0, duration: float = 15
 ) -> str:
     """Render a still image + a trimmed audio clip into a vertical MP4 and upload
@@ -327,12 +353,12 @@ def _render_image_audio_to_video(
     Instagram feed photos cannot carry audio, so the only way to publish a photo
     *with* the user's selected track is to turn it into a short video (Reel).
     """
+    import asyncio
     import os
     import shutil
-    import subprocess
     import tempfile
 
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = await asyncio.to_thread(shutil.which, "ffmpeg")
     if not ffmpeg:
         raise ValueError(
             "Cannot attach audio to a photo: the server has no ffmpeg "
@@ -372,13 +398,13 @@ def _render_image_audio_to_video(
     img_ext = get_extension(image_url, ".jpg")
     audio_ext = get_extension(audio_url, ".mp3")
 
-    tmpdir = tempfile.mkdtemp(prefix="ig_reel_")
+    tmpdir = await asyncio.to_thread(tempfile.mkdtemp, prefix="ig_reel_")
     img_path = os.path.join(tmpdir, f"image{img_ext}")
     audio_path = os.path.join(tmpdir, f"audio{audio_ext}")
     out_path = os.path.join(tmpdir, "out.mp4")
     try:
-        _fetch_to_file(image_url, img_path)
-        _fetch_to_file(audio_url, audio_path)
+        await _fetch_to_file(image_url, img_path)
+        await _fetch_to_file(audio_url, audio_path)
 
         cmd = [
             ffmpeg, "-y",
@@ -395,17 +421,29 @@ def _render_image_audio_to_video(
             out_path,
         ]
         logger.info("Rendering image + audio into a Reel video (start=%ss, dur=%ss)", start, dur)
-        proc = subprocess.run(cmd, capture_output=True, timeout=180)
+        # asyncio's own subprocess API: ffmpeg runs for up to 180s and awaiting
+        # it holds no thread, where subprocess.run would have pinned one for the
+        # whole render.
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        try:
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=180)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise ValueError(
+                "Timed out rendering image + audio into a video (180s)."
+            ) from None
         if proc.returncode != 0 or not os.path.exists(out_path):
-            err = proc.stderr.decode("utf-8", "ignore")[-800:]
+            err = (stderr or b"").decode("utf-8", "ignore")[-800:]
             raise ValueError(f"Failed to render image + audio into a video: {err}")
 
-        with open(out_path, "rb") as f:
-            video_bytes = f.read()
-        url = _upload_bytes_to_public_url(video_bytes, "reel.mp4", "video/mp4")
+        video_bytes = await asyncio.to_thread(_read_bytes, out_path)
+        url = await _upload_bytes_to_public_url(video_bytes, "reel.mp4", "video/mp4")
         if not url.startswith("http"):
             raise ValueError("Failed to upload the rendered Reel video to a public host.")
         return url
     finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        await asyncio.to_thread(shutil.rmtree, tmpdir, ignore_errors=True)
 

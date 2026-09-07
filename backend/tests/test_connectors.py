@@ -11,6 +11,7 @@ platforms' HTTP quirks.
 """
 
 import uuid
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -554,3 +555,127 @@ async def test_mock_tokens_never_reach_the_platform(
     )
     assert response.status_code == 200
     assert "mocked" in response.json()["message"]
+
+
+# ---------------------------------------------------------------------------
+# The point of native async: waiting must not occupy anything
+# ---------------------------------------------------------------------------
+
+async def test_instagram_poll_yields_to_the_event_loop(monkeypatch):
+    """Instagram's container poll waits without holding a thread.
+
+    It polls up to 24 times with a 5s gap while Instagram encodes the video.
+    That wait used to be ``time.sleep`` inside ``asyncio.to_thread``, so a
+    single Reel publish parked one of the 16 pool threads -- shared with bcrypt
+    password hashing -- for up to two minutes. The wait is now awaited, so
+    other work runs during it.
+
+    Real sleeps would make this test take minutes, so asyncio.sleep is replaced
+    with one that yields but returns immediately. What is under test is that
+    control reaches the loop at all, which a blocking sleep would never do.
+    """
+    import asyncio
+
+    import httpx
+
+    from app.connectors import instagram
+
+    slept: list[float] = []
+    # instagram.asyncio is the global module, so hold the real sleep before
+    # patching -- otherwise the replacement calls itself.
+    real_sleep = asyncio.sleep
+
+    async def _fast_sleep(delay, *args, **kwargs):
+        slept.append(delay)
+        await real_sleep(0)  # yield, but do not actually wait
+
+    monkeypatch.setattr(instagram.asyncio, "sleep", _fast_sleep)
+
+    # IN_PROGRESS twice, then FINISHED -- so the loop sleeps before succeeding.
+    statuses = iter(["IN_PROGRESS", "IN_PROGRESS", "FINISHED"])
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/media"):
+            return httpx.Response(200, json={"id": "container_1"})
+        if path.endswith("/media_publish"):
+            return httpx.Response(200, json={"id": "published_1"})
+        if "fields=status_code" in str(request.url):
+            return httpx.Response(200, json={"status_code": next(statuses)})
+        if "permalink" in str(request.url):
+            return httpx.Response(200, json={"permalink": "https://instagram.com/p/x/"})
+        return httpx.Response(200, json={"id": "17841400000000000"})
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx, "AsyncClient",
+        lambda *a, **k: real_client(*a, **{**k, "transport": httpx.MockTransport(handler)}),
+    )
+
+    post = MagicMock()
+    post.content = "A reel"
+    post.media_urls = ["https://cdn.example.com/photo.jpg"]
+    post.hashtags = None
+    post.instagram_post_type = "feed"
+    post.instagram_video_url = None
+    post.instagram_music_url = None
+
+    account = MagicMock()
+    account.access_token = "IGreal_token_value"
+    account.config = {"instagram_business_account_id": "17841400000000000"}
+
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            ticks += 1
+            await real_sleep(0)
+
+    tick_task = asyncio.create_task(ticker())
+    try:
+        await instagram.publish_to_instagram(post, account)
+    finally:
+        tick_task.cancel()
+
+    assert slept == [5, 5], f"expected two 5s waits between polls, got {slept}"
+    assert ticks > 0, (
+        "nothing else ran while the poll waited -- the wait is still blocking"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Structural: nothing in the package may block the loop
+# ---------------------------------------------------------------------------
+
+async def test_no_synchronous_httpx_client_remains():
+    """A single `httpx.Client` here stalls the event loop for every request in
+    the process, and nothing in a test would catch it."""
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parent.parent / "app" / "connectors"
+    offenders = [
+        f"{path.name}:{n}"
+        for path in sorted(package.glob("*.py"))
+        for n, line in enumerate(path.read_text().splitlines(), 1)
+        if "httpx.Client(" in line
+    ]
+    assert offenders == [], f"synchronous httpx client(s) at {offenders}"
+
+
+async def test_only_disk_work_runs_in_a_thread():
+    """asyncio.to_thread should survive only where the work is genuinely
+    blocking -- file reads and writes, and the temp-directory handling around
+    the ffmpeg render. HTTP must never be among them."""
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parent.parent / "app" / "connectors"
+    hops = {
+        f"{path.name}"
+        for path in sorted(package.glob("*.py"))
+        for line in path.read_text().splitlines()
+        if "asyncio.to_thread(" in line and not line.strip().startswith(("#", '"'))
+    }
+    assert hops <= {"media.py"}, (
+        f"to_thread outside the disk helpers in media.py: {sorted(hops)}"
+    )

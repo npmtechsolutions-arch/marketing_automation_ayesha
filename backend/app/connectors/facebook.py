@@ -1,13 +1,12 @@
 """The Facebook connector.
 
-Publishing and metrics moved verbatim from ``app/services/platform_service.py``
-(publish :412-558, metrics :1269-1364). The bodies are unchanged, including their quirks -- this was a move,
-not a rewrite. They stay synchronous (blocking ``httpx.Client``) and the async
-methods below hand them to ``asyncio.to_thread``, which is exactly what the old
-dispatch in posts.py did around each call.
+Publishing and metrics moved verbatim from the old ``platform_service.py``
+(publish :412-558, metrics :1269-1364), then converted from blocking ``httpx.Client`` to
+``httpx.AsyncClient``. Nothing waits on a thread here: the requests are
+awaited, so a slow platform costs a coroutine rather than one of the process's
+shared worker threads.
 """
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -19,13 +18,12 @@ from app.connectors.base import (
     PublishResult,
     SocialProvider,
     OAuthTokens,
-    exchange_code_async,
     tokens_from,
     ProviderAPIError,
     ProviderNotConfigured,
     TokenRefreshResult,
     expires_at_from,
-    refresh_sync,
+    provider_request,
     classify_retryable,
     is_mock_token,
     mock_metrics_untokened,
@@ -42,7 +40,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def publish_to_facebook(post: Any, platform: Any) -> dict[str, Any]:
+async def publish_to_facebook(post: Any, platform: Any) -> dict[str, Any]:
     """Publish a post to a Facebook Page via the Graph API."""
     logger.info(
         "Publishing to Facebook page %s", getattr(platform, "account_name", "unknown")
@@ -76,8 +74,8 @@ def publish_to_facebook(post: Any, platform: Any) -> dict[str, Any]:
     if not page_id:
         url_me = "https://graph.facebook.com/v18.0/me/accounts"
         params_me = {"access_token": access_token}
-        with httpx.Client() as client:
-            res_me = client.get(url_me, params=params_me, timeout=15.0)
+        async with httpx.AsyncClient() as client:
+            res_me = await client.get(url_me, params=params_me, timeout=15.0)
             if res_me.status_code == 200:
                 pages = res_me.json().get("data", [])
                 if pages:
@@ -107,7 +105,7 @@ def publish_to_facebook(post: Any, platform: Any) -> dict[str, Any]:
     # Facebook fetches the media itself, so base64 and locally-hosted URLs
     # (e.g. AI images saved under /uploads) have to be re-hosted publicly.
     if media_url:
-        media_url = _ensure_public_media_url(media_url)
+        media_url = await _ensure_public_media_url(media_url)
         if not _is_public_media_url(media_url):
             raise ValueError("Failed to upload post media to a public host. Facebook Graph API requires public media URLs.")
 
@@ -129,7 +127,7 @@ def publish_to_facebook(post: Any, platform: Any) -> dict[str, Any]:
             duration = 15
         duration = max(1, min(duration, 60))
         try:
-            media_url = _render_image_audio_to_video(
+            media_url = await _render_image_audio_to_video(
                 media_url, music_url, start_offset=start_offset, duration=duration
             )
             is_video = True
@@ -147,8 +145,8 @@ def publish_to_facebook(post: Any, platform: Any) -> dict[str, Any]:
             "description": _content_with_hashtags(post),
             "access_token": page_access_token,
         }
-        with httpx.Client() as client:
-            res = client.post(url, data=payload, timeout=30.0)
+        async with httpx.AsyncClient() as client:
+            res = await client.post(url, data=payload, timeout=30.0)
             if res.status_code != 200:
                 raise ValueError(f"Facebook Graph API video publishing failed: {res.text}")
             published_id = res.json().get("id")
@@ -160,8 +158,8 @@ def publish_to_facebook(post: Any, platform: Any) -> dict[str, Any]:
             "caption": _content_with_hashtags(post),
             "access_token": page_access_token,
         }
-        with httpx.Client() as client:
-            res = client.post(url, data=payload, timeout=20.0)
+        async with httpx.AsyncClient() as client:
+            res = await client.post(url, data=payload, timeout=20.0)
             if res.status_code != 200:
                 raise ValueError(f"Facebook Graph API photo publishing failed: {res.text}")
             published_id = res.json().get("id")
@@ -172,8 +170,8 @@ def publish_to_facebook(post: Any, platform: Any) -> dict[str, Any]:
             "message": _content_with_hashtags(post),
             "access_token": page_access_token,
         }
-        with httpx.Client() as client:
-            res = client.post(url, data=payload, timeout=20.0)
+        async with httpx.AsyncClient() as client:
+            res = await client.post(url, data=payload, timeout=20.0)
             if res.status_code != 200:
                 raise ValueError(f"Facebook Graph API text feed publishing failed: {res.text}")
             published_id = res.json().get("id")
@@ -191,7 +189,7 @@ def publish_to_facebook(post: Any, platform: Any) -> dict[str, Any]:
 
 
 
-def _fetch_metrics_sync(post_id: str, platform: Any) -> dict[str, Any]:
+async def _fetch_metrics(post_id: str, platform: Any) -> dict[str, Any]:
     """Moved from the ``facebook`` branch of PlatformService.fetch_performance.
 
     The no-token short-circuit that guarded the whole if/elif chain is
@@ -225,8 +223,8 @@ def _fetch_metrics_sync(post_id: str, platform: Any) -> dict[str, Any]:
         comments = 0
         shares = 0
     
-        with httpx.Client() as client:
-            res_basic = client.get(url_basic, params=params_basic, timeout=15.0)
+        async with httpx.AsyncClient() as client:
+            res_basic = await client.get(url_basic, params=params_basic, timeout=15.0)
             if res_basic.status_code == 200:
                 basic_data = res_basic.json()
                 likes = basic_data.get("likes", {}).get("summary", {}).get("total_count", 0)
@@ -248,8 +246,8 @@ def _fetch_metrics_sync(post_id: str, platform: Any) -> dict[str, Any]:
                 "metric": "post_impressions,post_impressions_unique,post_clicks_by_type",
                 "access_token": page_access_token,
             }
-            with httpx.Client() as client:
-                res_insights = client.get(url_insights, params=params_insights, timeout=15.0)
+            async with httpx.AsyncClient() as client:
+                res_insights = await client.get(url_insights, params=params_insights, timeout=15.0)
                 if res_insights.status_code == 200:
                     insights_data = res_insights.json().get("data", [])
                     for metric in insights_data:
@@ -327,9 +325,7 @@ class FacebookProvider(SocialProvider):
         social_account: Any,
     ) -> PublishResult:
         try:
-            result = await asyncio.to_thread(
-                publish_to_facebook, variant.post, social_account
-            )
+            result = await publish_to_facebook(variant.post, social_account)
         except Exception as exc:  # noqa: BLE001 - every failure becomes a result
             message = str(exc)
             # YouTube Community posts have no API. The publisher signals that by
@@ -355,9 +351,7 @@ class FacebookProvider(SocialProvider):
     async def get_post_metrics(
         self, external_post_id: str, social_account: Any
     ) -> dict[str, Any]:
-        return await asyncio.to_thread(
-            _fetch_metrics_sync, external_post_id, social_account
-        )
+        return await _fetch_metrics(external_post_id, social_account)
 
     async def refresh_token(self, social_account: Any) -> TokenRefreshResult:
         """Exchange a short-lived Page/user token for a long-lived one.
@@ -372,8 +366,7 @@ class FacebookProvider(SocialProvider):
                 self.slug,
                 "Meta App ID or Secret is not configured in the environment settings",
             )
-        payload = await asyncio.to_thread(
-            refresh_sync,
+        payload = await provider_request(
             self.slug,
             "https://graph.facebook.com/v18.0/oauth/access_token",
             method="get",
@@ -427,7 +420,7 @@ class FacebookProvider(SocialProvider):
 
     async def exchange_code(self, code: str) -> OAuthTokens:
         """Meta exchanges via GET with query params and no grant_type."""
-        payload = await exchange_code_async(
+        payload = await provider_request(
             self.slug,
             self.TOKEN_URL,
             method="get",

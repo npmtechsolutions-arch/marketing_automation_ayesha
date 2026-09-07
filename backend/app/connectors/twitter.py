@@ -1,13 +1,12 @@
 """The X (Twitter) connector.
 
-Publishing and metrics moved verbatim from ``app/services/platform_service.py``
-(publish :937-1019). The bodies are unchanged, including their quirks -- this was a move,
-not a rewrite. They stay synchronous (blocking ``httpx.Client``) and the async
-methods below hand them to ``asyncio.to_thread``, which is exactly what the old
-dispatch in posts.py did around each call.
+Publishing and metrics moved verbatim from the old ``platform_service.py``
+(publish :937-1019), then converted from blocking ``httpx.Client`` to
+``httpx.AsyncClient``. Nothing waits on a thread here: the requests are
+awaited, so a slow platform costs a coroutine rather than one of the process's
+shared worker threads.
 """
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -19,12 +18,11 @@ from app.connectors.base import (
     PublishResult,
     SocialProvider,
     OAuthTokens,
-    exchange_code_async,
     tokens_from,
     ProviderAPIError,
     TokenRefreshResult,
     expires_at_from,
-    refresh_sync,
+    provider_request,
     require_refresh_token,
     classify_retryable,
     mock_metrics_fallback,
@@ -39,7 +37,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def publish_to_twitter(post: Any, platform: Any) -> dict[str, Any]:
+async def publish_to_twitter(post: Any, platform: Any) -> dict[str, Any]:
     """Publish a text tweet via the X (Twitter) API v2.
 
     Note: media (image/video) upload uses X's separate chunked-upload API
@@ -87,8 +85,8 @@ def publish_to_twitter(post: Any, platform: Any) -> dict[str, Any]:
         "Content-Type": "application/json",
     }
 
-    with httpx.Client() as client:
-        res = client.post(
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
             "https://api.twitter.com/2/tweets",
             headers=headers,
             json={"text": text},
@@ -151,9 +149,7 @@ class TwitterProvider(SocialProvider):
         social_account: Any,
     ) -> PublishResult:
         try:
-            result = await asyncio.to_thread(
-                publish_to_twitter, variant.post, social_account
-            )
+            result = await publish_to_twitter(variant.post, social_account)
         except Exception as exc:  # noqa: BLE001 - every failure becomes a result
             message = str(exc)
             # YouTube Community posts have no API. The publisher signals that by
@@ -198,8 +194,7 @@ class TwitterProvider(SocialProvider):
             if settings.TWITTER_CLIENT_SECRET
             else None
         )
-        payload = await asyncio.to_thread(
-            refresh_sync,
+        payload = await provider_request(
             self.slug,
             "https://api.twitter.com/2/oauth2/token",
             data={
@@ -267,7 +262,7 @@ class TwitterProvider(SocialProvider):
             if settings.TWITTER_CLIENT_SECRET
             else None
         )
-        payload = await exchange_code_async(
+        payload = await provider_request(
             self.slug,
             self.TOKEN_URL,
             data={

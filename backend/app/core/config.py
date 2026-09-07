@@ -41,9 +41,10 @@ class Settings(BaseSettings):
     # same time. Keeps a spike of simultaneous publishes (e.g. many users firing
     # scheduled posts at once) from saturating CPU, threads and DB connections.
     MAX_CONCURRENT_PUBLISHES: int = 5
-    # Size of the thread pool used for blocking work (bcrypt hashing, ffmpeg
-    # rendering, blocking platform HTTP calls). Must comfortably exceed
-    # MAX_CONCURRENT_PUBLISHES so password hashing/login is never starved.
+    # Size of the thread pool used for blocking work: bcrypt hashing, and the
+    # small disk operations around the ffmpeg render. Platform HTTP no longer
+    # runs here -- the connectors await it -- so this pool is far less
+    # contended than it was, but it is still shared with password hashing.
     PUBLISH_THREAD_POOL_SIZE: int = 16
 
     # Data retention: number of days a soft-deleted user is kept before the

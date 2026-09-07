@@ -1,13 +1,12 @@
 """The LinkedIn connector.
 
-Publishing and metrics moved verbatim from ``app/services/platform_service.py``
-(publish :831-935, image upload :781-829). The bodies are unchanged, including their quirks -- this was a move,
-not a rewrite. They stay synchronous (blocking ``httpx.Client``) and the async
-methods below hand them to ``asyncio.to_thread``, which is exactly what the old
-dispatch in posts.py did around each call.
+Publishing and metrics moved verbatim from the old ``platform_service.py``
+(publish :831-935, image upload :781-829), then converted from blocking ``httpx.Client`` to
+``httpx.AsyncClient``. Nothing waits on a thread here: the requests are
+awaited, so a slow platform costs a coroutine rather than one of the process's
+shared worker threads.
 """
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -19,12 +18,11 @@ from app.connectors.base import (
     PublishResult,
     SocialProvider,
     OAuthTokens,
-    exchange_code_async,
     tokens_from,
     ProviderAPIError,
     TokenRefreshResult,
     expires_at_from,
-    refresh_sync,
+    provider_request,
     require_refresh_token,
     classify_retryable,
     mock_metrics_fallback,
@@ -40,7 +38,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _linkedin_upload_image(author_urn: str, media_url: str, access_token: str) -> str:
+async def _linkedin_upload_image(author_urn: str, media_url: str, access_token: str) -> str:
     """Register + upload an image to LinkedIn and return its asset URN."""
     import httpx
 
@@ -61,8 +59,8 @@ def _linkedin_upload_image(author_urn: str, media_url: str, access_token: str) -
             ],
         }
     }
-    with httpx.Client() as client:
-        reg = client.post(
+    async with httpx.AsyncClient() as client:
+        reg = await client.post(
             "https://api.linkedin.com/v2/assets?action=registerUpload",
             headers=headers,
             json=register_payload,
@@ -76,8 +74,8 @@ def _linkedin_upload_image(author_urn: str, media_url: str, access_token: str) -
             "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
         ]["uploadUrl"]
 
-        image_bytes = _download_media_bytes(media_url)
-        up = client.put(
+        image_bytes = await _download_media_bytes(media_url)
+        up = await client.put(
             upload_url,
             headers={"Authorization": f"Bearer {access_token}"},
             content=image_bytes,
@@ -90,7 +88,7 @@ def _linkedin_upload_image(author_urn: str, media_url: str, access_token: str) -
     return asset_urn
 
 
-def publish_to_linkedin(post: Any, platform: Any) -> dict[str, Any]:
+async def publish_to_linkedin(post: Any, platform: Any) -> dict[str, Any]:
     """Publish a post to LinkedIn (personal profile or organization page).
 
     Supports text and single-image posts via the UGC Posts API. The author
@@ -148,7 +146,7 @@ def publish_to_linkedin(post: Any, platform: Any) -> dict[str, Any]:
                 "LinkedIn video publishing is not supported yet. Post text or "
                 "an image, or remove the video attachment."
             )
-        asset_urn = _linkedin_upload_image(
+        asset_urn = await _linkedin_upload_image(
             author_urn, media_url, access_token
         )
         share_media = [{"status": "READY", "media": asset_urn}]
@@ -173,8 +171,8 @@ def publish_to_linkedin(post: Any, platform: Any) -> dict[str, Any]:
         "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
     }
 
-    with httpx.Client() as client:
-        res = client.post(
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
             "https://api.linkedin.com/v2/ugcPosts",
             headers=headers,
             json=ugc_payload,
@@ -222,9 +220,7 @@ class LinkedInProvider(SocialProvider):
         social_account: Any,
     ) -> PublishResult:
         try:
-            result = await asyncio.to_thread(
-                publish_to_linkedin, variant.post, social_account
-            )
+            result = await publish_to_linkedin(variant.post, social_account)
         except Exception as exc:  # noqa: BLE001 - every failure becomes a result
             message = str(exc)
             # YouTube Community posts have no API. The publisher signals that by
@@ -260,8 +256,7 @@ class LinkedInProvider(SocialProvider):
     async def refresh_token(self, social_account: Any) -> TokenRefreshResult:
         """Moved from social_accounts.py:754-810."""
         token = require_refresh_token(self.slug, social_account)
-        payload = await asyncio.to_thread(
-            refresh_sync,
+        payload = await provider_request(
             self.slug,
             "https://www.linkedin.com/oauth/v2/accessToken",
             data={
@@ -312,7 +307,7 @@ class LinkedInProvider(SocialProvider):
         })
 
     async def exchange_code(self, code: str) -> OAuthTokens:
-        payload = await exchange_code_async(
+        payload = await provider_request(
             self.slug,
             self.TOKEN_URL,
             data={

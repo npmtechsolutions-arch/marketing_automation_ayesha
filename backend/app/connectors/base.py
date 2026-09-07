@@ -9,13 +9,16 @@ shape. Adding a platform meant finding all four.
 A provider owns one platform. The registry resolves a slug to one, and callers
 stop branching.
 
-**Sync bodies, async surface.** The moved publishing code uses blocking
-``httpx.Client`` and, for some platforms, ffmpeg. The methods here are ``async``
-so callers can await them, and the implementations delegate to
-``asyncio.to_thread`` -- which is exactly what the old dispatch in posts.py did
-around each ``PlatformService`` call. Converting the HTTP layer to
-``httpx.AsyncClient`` is a separate change; doing it here would have made a pure
-refactor a behavioural one.
+**Async all the way down.** Every platform call is awaited: the providers use
+``httpx.AsyncClient`` and ``media.py`` awaits even the ffmpeg render, via
+``asyncio.create_subprocess_exec``. Only genuine disk work -- reading and
+writing the render's temporary files -- still goes through
+``asyncio.to_thread``.
+
+That matters because the thread pool is shared with bcrypt password hashing.
+Waiting on Instagram's encoder (up to two minutes) or a YouTube upload (up to
+ten) used to occupy one of sixteen threads for the duration, so a publish burst
+could slow logins.
 """
 
 from __future__ import annotations
@@ -395,7 +398,7 @@ class SocialProvider:
 # Shared OAuth refresh plumbing
 # ---------------------------------------------------------------------------
 
-def refresh_sync(
+async def provider_request(
     slug: str,
     url: str,
     *,
@@ -403,21 +406,29 @@ def refresh_sync(
     data: dict[str, Any] | None = None,
     params: dict[str, Any] | None = None,
     auth: tuple[str, str] | None = None,
+    timeout: float = 20.0,
+    operation: str = "Request",
 ) -> dict[str, Any]:
-    """One OAuth refresh round-trip.
+    """One HTTP round-trip to a platform's OAuth endpoint.
 
-    The four platform branches this replaces were the same twenty lines four
-    times over, differing only in URL, verb, and whether credentials travel in
-    the body or in HTTP Basic. Blocking ``httpx`` on purpose -- callers hand it
-    to ``asyncio.to_thread``. The originals used a blocking client directly
-    inside ``async def`` (social_accounts.py:708-919), stalling the event loop.
+    ``operation`` names the caller in the error detail, which reaches the user
+    for a manual refresh -- "Token refresh failed: ..." rather than a bare
+    "Request failed".
+
+    Used by both token refresh and the authorization-code exchange. They were
+    two near-identical functions -- one blocking, one async -- which differed
+    only in their default timeout and would have drifted apart.
+
+    The platform branches this replaces were the same twenty lines four times
+    over, differing only in URL, verb, and whether credentials travel in the
+    body or in HTTP Basic.
     """
     import httpx
 
     try:
-        with httpx.Client() as client:
+        async with httpx.AsyncClient() as client:
             request = client.get if method == "get" else client.post
-            kwargs: dict[str, Any] = {"timeout": 15.0}
+            kwargs: dict[str, Any] = {"timeout": timeout}
             if data is not None:
                 kwargs["data"] = data
                 kwargs["headers"] = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -425,14 +436,14 @@ def refresh_sync(
                 kwargs["params"] = params
             if auth is not None:
                 kwargs["auth"] = auth
-            response = request(url, **kwargs)
+            response = await request(url, **kwargs)
     except Exception as exc:  # noqa: BLE001 - a network failure is a provider error
-        raise ProviderAPIError(slug, f"Token refresh call failed: {exc}") from exc
+        raise ProviderAPIError(slug, f"{operation} call failed: {exc}") from exc
 
     if response.status_code != 200:
         raise ProviderAPIError(
             slug,
-            f"Token refresh failed: {response.text}",
+            f"{operation} failed: {response.text}",
             status_code=response.status_code,
         )
     return response.json()
@@ -476,48 +487,6 @@ class OAuthTokens:
     refresh_token: Optional[str] = None
     expires_at: Optional[datetime] = None
     raw: dict[str, Any] = field(default_factory=dict)
-
-
-async def exchange_code_async(
-    slug: str,
-    url: str,
-    *,
-    method: str = "post",
-    data: dict[str, Any] | None = None,
-    params: dict[str, Any] | None = None,
-    auth: tuple[str, str] | None = None,
-    timeout: float = 20.0,
-) -> dict[str, Any]:
-    """One authorization-code exchange.
-
-    Async here, unlike :func:`refresh_sync`, because the OAuth callbacks were
-    already using ``httpx.AsyncClient`` -- keeping that means the moved code
-    behaves identically.
-    """
-    import httpx
-
-    try:
-        async with httpx.AsyncClient() as client:
-            request = client.get if method == "get" else client.post
-            kwargs: dict[str, Any] = {"timeout": timeout}
-            if data is not None:
-                kwargs["data"] = data
-                kwargs["headers"] = {"Content-Type": "application/x-www-form-urlencoded"}
-            if params is not None:
-                kwargs["params"] = params
-            if auth is not None:
-                kwargs["auth"] = auth
-            response = await request(url, **kwargs)
-    except Exception as exc:  # noqa: BLE001
-        raise ProviderAPIError(slug, f"token_exchange_error: {exc}") from exc
-
-    if response.status_code != 200:
-        raise ProviderAPIError(
-            slug,
-            f"token_exchange_failed: {response.text}",
-            status_code=response.status_code,
-        )
-    return response.json()
 
 
 def tokens_from(payload: dict[str, Any]) -> OAuthTokens:
