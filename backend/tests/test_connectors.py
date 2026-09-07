@@ -11,6 +11,7 @@ platforms' HTTP quirks.
 """
 
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -204,7 +205,7 @@ def fake_provider(monkeypatch):
 def publish_uses_the_test_session(monkeypatch, db_session):
     """Point the publish worker at the test database.
 
-    ``_do_publish_to_platforms`` takes only a post id and opens its own
+    ``execute_job`` takes only a job id and opens its own
     ``AsyncSessionLocal()`` -- it never sees the ``get_db`` override in
     conftest, so without this it would talk to the real Postgres while the test
     wrote to in-memory SQLite. Committing is suppressed for the same reason the
@@ -212,7 +213,7 @@ def publish_uses_the_test_session(monkeypatch, db_session):
     """
     from contextlib import asynccontextmanager
 
-    from app.api.v1.endpoints import posts as posts_module
+    from app.services import publishing as publishing_module
 
     @asynccontextmanager
     async def _session():
@@ -221,7 +222,7 @@ def publish_uses_the_test_session(monkeypatch, db_session):
     def _factory():
         return _session()
 
-    monkeypatch.setattr(posts_module, "AsyncSessionLocal", _factory)
+    monkeypatch.setattr(publishing_module, "AsyncSessionLocal", _factory)
     monkeypatch.setattr(db_session, "commit", db_session.flush)
 
 
@@ -259,10 +260,35 @@ async def publishable(user_factory, account_factory, social_account_factory, db_
     return _make
 
 
-async def _publish(post_id):
-    from app.api.v1.endpoints.posts import _do_publish_to_platforms
+async def _publish(post_id, db_session=None):
+    """Run a post's publishing the way the worker does: jobs, then execute.
 
-    await _do_publish_to_platforms(post_id)
+    Publishing is no longer a single call -- create_jobs_for_post fans the post
+    out into one job per target and each is executed independently. These tests
+    drive that directly rather than waiting on the worker loop.
+    """
+    from sqlalchemy import select
+
+    from app.models.post import Post
+    from app.models.publishing_job import PublishingJob
+    from app.services import publishing
+
+    session = db_session
+    post = (
+        await session.execute(select(Post).where(Post.id == post_id))
+    ).scalar_one()
+    await publishing.create_jobs_for_post(session, post)
+    await session.flush()
+
+    job_ids = [
+        j.id for j in (
+            await session.execute(
+                select(PublishingJob).where(PublishingJob.post_id == post_id)
+            )
+        ).scalars().all()
+    ]
+    for job_id in job_ids:
+        await publishing.execute_job(job_id)
 
 
 async def _reload(db_session, post_id):
@@ -282,7 +308,7 @@ async def test_all_targets_succeed(db_session, publishable, fake_provider):
     ctx = await publishable()
     provider = fake_provider({})
 
-    await _publish(ctx["post"].id)
+    await _publish(ctx["post"].id, db_session)
     post = await _reload(db_session, ctx["post"].id)
 
     assert post.status is PostStatus.PUBLISHED
@@ -307,7 +333,7 @@ async def test_partial_failure_across_targets(db_session, publishable, fake_prov
         ),
     })
 
-    await _publish(post_id)
+    await _publish(post_id, db_session)
     post = await _reload(db_session, post_id)
 
     assert post.status is PostStatus.PARTIALLY_PUBLISHED
@@ -329,7 +355,7 @@ async def test_all_targets_fail(db_session, publishable, fake_provider):
         for i, sa in enumerate(ctx["accounts"])
     })
 
-    await _publish(ctx["post"].id)
+    await _publish(ctx["post"].id, db_session)
     post = await _reload(db_session, ctx["post"].id)
 
     assert post.status is PostStatus.FAILED
@@ -354,7 +380,7 @@ async def test_manual_required_keeps_its_own_status(
         ),
     })
 
-    await _publish(post_id)
+    await _publish(post_id, db_session)
     post = await _reload(db_session, post_id)
 
     assert post.status is PostStatus.PARTIALLY_PUBLISHED
@@ -363,7 +389,19 @@ async def test_manual_required_keeps_its_own_status(
     assert by_account[manual_id]["error"] == "Post this one by hand"
 
 
-async def test_retryable_failures_are_marked(db_session, publishable, fake_provider):
+async def test_a_retryable_failure_is_requeued_not_reported(
+    db_session, publishable, fake_provider
+):
+    """Retryable failures now retry instead of being reported.
+
+    This used to assert a ``retryable: true`` flag in posting_results, because
+    a single attempt was all a target ever got. With jobs, a 429 or a 5xx sends
+    the job back to QUEUED with a future run_at, and only a permanent error --
+    or running out of attempts -- is terminal.
+    """
+    from app.models.publishing_job import JobStatus, PublishingJob
+    from sqlalchemy import select
+
     ctx = await publishable()
     limited_id, revoked_id = (str(sa.id) for sa in ctx["accounts"])
     post_id = ctx["post"].id
@@ -376,14 +414,34 @@ async def test_retryable_failures_are_marked(db_session, publishable, fake_provi
         ),
     })
 
-    await _publish(post_id)
-    post = await _reload(db_session, post_id)
+    await _publish(post_id, db_session)
 
-    by_account = {r["social_account_id"]: r for r in post.posting_results}
-    assert by_account[limited_id]["retryable"] is True
-    # Absent rather than False, so consumers of posting_results see the shape
-    # they always have.
-    assert "retryable" not in by_account[revoked_id]
+    db_session.expire_all()
+    jobs = {
+        str(j.social_account_id): j
+        for j in (
+            await db_session.execute(
+                select(PublishingJob).where(PublishingJob.post_id == post_id)
+            )
+        ).scalars().all()
+    }
+
+    # The rate-limited one waits and will run again.
+    assert jobs[limited_id].status is JobStatus.QUEUED
+    assert jobs[limited_id].attempts == 1
+    # SQLite drops tzinfo on read where Postgres keeps it; the comparison the
+    # worker actually makes happens in SQL, so normalising here is safe.
+    run_at = jobs[limited_id].run_at
+    if run_at.tzinfo is None:
+        run_at = run_at.replace(tzinfo=timezone.utc)
+    assert run_at > datetime.now(timezone.utc), (
+        "a retry must be scheduled in the future, not run immediately"
+    )
+    # The revoked token cannot be fixed by waiting.
+    assert jobs[revoked_id].status is JobStatus.FAILED
+    assert jobs[revoked_id].attempts == 1, (
+        "a permanent error must not burn the remaining attempts"
+    )
 
 
 async def test_the_provider_receives_the_resolved_variant(
@@ -393,7 +451,7 @@ async def test_the_provider_receives_the_resolved_variant(
     expected_id = ctx["accounts"][0].id
     provider = fake_provider({})
 
-    await _publish(ctx["post"].id)
+    await _publish(ctx["post"].id, db_session)
 
     variant, media, social_account = provider.calls[0]
     assert variant.platform == "instagram"
@@ -415,7 +473,7 @@ async def test_performance_rows_are_seeded_for_successes_only(
     post_id = ctx["post"].id
     fake_provider({bad_id: PublishResult(status="failed", error="nope")})
 
-    await _publish(post_id)
+    await _publish(post_id, db_session)
 
     rows = (
         await db_session.execute(

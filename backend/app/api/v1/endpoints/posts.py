@@ -1,17 +1,15 @@
 """Post management endpoints."""
 
-import asyncio
 import uuid
 from datetime import datetime, timezone
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
-from app.core.database import get_db, AsyncSessionLocal
+from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.platform import SocialAccount
 from app.models.post import Post, PostStatus
@@ -20,8 +18,21 @@ from app.schemas.post import PostCreate, PostResponse, PostUpdate, PostWithPerfo
 from app.services.activity_service import log_activity
 from app.services.entitlements import enforce_post_limit
 from app.core.authz import verify_account_access as _verify_account_access
-from app.connectors.base import MediaRef, NotSupportedError, variant_for
+from app.connectors.base import NotSupportedError
 from app.connectors.registry import get_provider
+from app.models.platform import SocialAccount
+from app.models.publishing_job import (
+    JobStatus,
+    LogLevel,
+    PublishingJob,
+    PublishingLog,
+)
+from app.schemas.publishing_job import (
+    PublishingJobList,
+    PublishingJobResponse,
+    PublishingLogEntry,
+)
+from app.services import publishing
 from app.core.permissions import (  # noqa: F401
     CONTENT_APPROVE,
     CONTENT_CREATE,
@@ -44,12 +55,6 @@ def _post_label(post: Post) -> str:
         return content[:60] + ("…" if len(content) > 60 else "")
     return "Untitled post"
 
-# Caps how many posts publish to the social platforms at the same time across the
-# whole process. Both the immediate-publish endpoint and the scheduled-post
-# worker funnel through publish_to_platforms(), so this single semaphore bounds
-# total publish concurrency and protects CPU, the thread pool and DB connections
-# during a burst (e.g. many users' scheduled posts firing at once).
-_PUBLISH_SEMAPHORE = asyncio.Semaphore(settings.MAX_CONCURRENT_PUBLISHES)
 
 
 # ---------------------------------------------------------------------------
@@ -489,220 +494,21 @@ async def delete_post(
     return MessageResponse(message="Post deleted successfully")
 
 
-async def publish_to_platforms(post_id: uuid.UUID):
-    """Publish a post to all its target platforms, bounded by a global
-    concurrency limit.
-
-    A burst of simultaneous publishes (many scheduled posts becoming due at the
-    same time, or several users hitting publish at once) would otherwise spawn
-    unbounded blocking work — ffmpeg renders, platform HTTP calls, one DB session
-    each — and saturate the single web process. The semaphore is acquired BEFORE
-    opening a DB session so queued publishes wait without holding a connection.
-    """
-    async with _PUBLISH_SEMAPHORE:
-        await _do_publish_to_platforms(post_id)
-
-
-async def _do_publish_to_platforms(post_id: uuid.UUID):
-    from app.models.platform import SocialAccount
-    import logging
-
-    async with AsyncSessionLocal() as session:
-        try:
-            # Fetch post
-            result = await session.execute(
-                select(Post).where(Post.id == post_id, Post.deleted_at.is_(None))
-            )
-            post = result.scalar_one_or_none()
-            if not post:
-                return
-
-            targets = post.target_accounts or []
-            if not targets:
-                post.status = PostStatus.PUBLISHED
-                post.published_at = datetime.now(timezone.utc)
-                from app.models.post_performance import PostPerformance
-                session.add(PostPerformance(
-                    id=uuid.uuid4(),
-                    post_id=post.id,
-                    platform_type="instagram",
-                    impressions=0,
-                    reach=0,
-                    likes=0,
-                    comments=0,
-                    shares=0,
-                    saves=0,
-                    clicks=0,
-                    video_views=0,
-                    engagement_rate=0.0,
-                    click_through_rate=0.0,
-                ))
-                await session.flush()
-                await session.commit()
-                return
-
-            success_count = 0
-            failed_count = 0
-            posting_results = []
-
-            for target in targets:
-                sa_id = target.get("social_account_id")
-                if not sa_id:
-                    continue
-
-                try:
-                    sa_uuid = uuid.UUID(sa_id)
-                except ValueError:
-                    failed_count += 1
-                    continue
-
-                sa_result = await session.execute(
-                    select(SocialAccount)
-                    .options(selectinload(SocialAccount.platform))
-                    .where(SocialAccount.id == sa_uuid)
-                )
-                sa = sa_result.scalar_one_or_none()
-                if not sa:
-                    failed_count += 1
-                    posting_results.append({
-                        "social_account_id": sa_id,
-                        "status": "failed",
-                        "error": "Social account not found",
-                    })
-                    continue
-
-                platform_name = (sa.platform.name if sa.platform else "").lower()
-                platform_slug = (sa.platform.slug if sa.platform else "").lower() or platform_name
-
-                # Auto-refresh OAuth tokens if expired/expiring
-                await _ensure_valid_token(sa, session)
-
-                # One registry lookup replaces the if/elif chain that used to
-                # live here. The provider owns the platform's quirks, including
-                # turning an exception into a result -- so this loop no longer
-                # needs its own try/except around the publish itself.
-                provider = get_provider(platform_slug)
-                variant = variant_for(post, provider.slug)
-                media = [MediaRef(url=u) for u in variant.media_urls]
-                result = await provider.publish_post(variant, media, sa)
-
-                if result.succeeded:
-                    success_count += 1
-                    posting_results.append({
-                        "social_account_id": sa_id,
-                        "status": "published",
-                        "external_post_id": result.external_post_id,
-                        "post_url": result.post_url or f"https://mock-{platform_slug}.com/posts/{result.external_post_id}",
-                    })
-                else:
-                    failed_count += 1
-                    entry = {
-                        "social_account_id": sa_id,
-                        "status": result.status,
-                        "error": result.error,
-                    }
-                    # Kept out of the payload when false so existing consumers
-                    # of posting_results see the shape they always have.
-                    if result.retryable:
-                        entry["retryable"] = True
-                    posting_results.append(entry)
-
-            if success_count > 0 and failed_count == 0:
-                post.status = PostStatus.PUBLISHED
-                post.published_at = datetime.now(timezone.utc)
-                post.error_message = None
-            elif success_count > 0 and failed_count > 0:
-                post.status = PostStatus.PARTIALLY_PUBLISHED
-                post.published_at = datetime.now(timezone.utc)
-                failed_item = next((r for r in posting_results if r.get("status") in ("failed", "manual_required")), None)
-                post.error_message = failed_item.get("error") if failed_item else "Some account postings failed"
-            else:
-                post.status = PostStatus.FAILED
-                failed_item = next((r for r in posting_results if r.get("status") in ("failed", "manual_required")), None)
-                post.error_message = failed_item.get("error") if failed_item else "Publishing failed"
-
-            if success_count > 0:
-                from app.models.post_performance import PostPerformance
-                for res_item in posting_results:
-                    if res_item["status"] == "published":
-                        sa_id = res_item["social_account_id"]
-                        try:
-                            sa_uuid = uuid.UUID(sa_id)
-                            sa_result = await session.execute(
-                                select(SocialAccount).where(SocialAccount.id == sa_uuid)
-                            )
-                            sa = sa_result.scalar_one_or_none()
-                            platform_type = (sa.platform.slug if sa and sa.platform else "instagram").lower()
-                        except Exception:
-                            platform_type = "instagram"
-                        
-                        session.add(PostPerformance(
-                            id=uuid.uuid4(),
-                            post_id=post.id,
-                            platform_type=platform_type,
-                            impressions=0,
-                            reach=0,
-                            likes=0,
-                            comments=0,
-                            shares=0,
-                            saves=0,
-                            clicks=0,
-                            video_views=0,
-                            engagement_rate=0.0,
-                            click_through_rate=0.0,
-                        ))
-
-            post.posting_results = posting_results
-
-            if post.status == PostStatus.PUBLISHED:
-                activity_status, verb = "success", "Published"
-            elif post.status == PostStatus.PARTIALLY_PUBLISHED:
-                activity_status, verb = "warning", "Partially published"
-            else:
-                activity_status, verb = "failed", "Failed to publish"
-            total_targets = success_count + failed_count
-            await log_activity(
-                session,
-                user_id=post.user_id,
-                account_id=post.account_id,
-                action="post.published",
-                category="post",
-                description=(
-                    f"{verb} post '{_post_label(post)}' "
-                    f"({success_count}/{total_targets} account(s) succeeded)"
-                ),
-                resource_type="post",
-                resource_id=str(post.id),
-                resource_name=_post_label(post),
-                status=activity_status,
-            )
-
-            await session.flush()
-            await session.commit()
-
-        except Exception as e:
-            await session.rollback()
-            logging.getLogger(__name__).exception("Failed to run publish background task: %s", e)
-            try:
-                async with AsyncSessionLocal() as fail_session:
-                    db_post = await fail_session.get(Post, post_id)
-                    if db_post:
-                        db_post.status = PostStatus.FAILED
-                        db_post.error_message = f"Failed to run publish background task: {str(e)}"
-                        await fail_session.commit()
-            except Exception as final_err:
-                logging.getLogger(__name__).error("Failed to mark post as failed in DB: %s", final_err)
-
-
 @router.post("/{post_id}/publish", response_model=PostResponse)
 async def publish_post(
     account_id: uuid.UUID,
     post_id: uuid.UUID,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):
-    """Publish a post immediately. Sets status to 'publishing' and triggers a background task."""
+    """Publish a post now.
+
+    Creates one job per target account with ``run_at`` set to now; the worker
+    picks them up on its next pass. Publishing used to happen in a background
+    task inside this process, which meant a restart between the response and
+    the platform call lost the publish with no record that it had been asked
+    for.
+    """
     await _verify_account_access(account_id, current_user, db, permission=CONTENT_PUBLISH)
     post = await _get_post_or_404(post_id, account_id, db)
 
@@ -711,14 +517,16 @@ async def publish_post(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot publish a post with status '{post.status.value}'",
         )
+    if not (post.target_accounts or []):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This post has no target accounts to publish to.",
+        )
 
+    await publishing.create_jobs_for_post(db, post, run_at=datetime.now(timezone.utc))
     post.status = PostStatus.PUBLISHING
-    post.published_at = datetime.now(timezone.utc)
     await db.flush()
     await db.refresh(post)
-    await db.commit()
-
-    background_tasks.add_task(publish_to_platforms, post.id)
 
     return PostResponse.model_validate(post)
 
@@ -750,6 +558,17 @@ async def schedule_post(
             detail="scheduled_at must be in the future",
         )
 
+    if not (post.target_accounts or []):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This post has no target accounts to publish to.",
+        )
+
+    # Jobs are created now with run_at in the future rather than when the time
+    # arrives, so a scheduled post's pending work is visible (and cancellable)
+    # before it runs. create_jobs_for_post cancels any superseded jobs, so
+    # rescheduling cannot leave an older run pending.
+    await publishing.create_jobs_for_post(db, post, run_at=target)
     post.status = PostStatus.SCHEDULED
     post.scheduled_at = target
     await db.flush()
@@ -895,3 +714,166 @@ async def reject_post(
     )
 
     return PostResponse.model_validate(post)
+
+
+# ---------------------------------------------------------------------------
+# Publishing jobs
+#
+# A post's publishing used to be a JSON blob with a status string per target
+# and nothing else. These expose the jobs behind it: how many attempts each
+# has had, when the next one is due, and what the platform actually said.
+# ---------------------------------------------------------------------------
+
+def _job_response(job) -> PublishingJobResponse:
+    account = job.social_account
+    platform = account.platform if account else None
+    return PublishingJobResponse(
+        id=job.id,
+        post_id=job.post_id,
+        social_account_id=job.social_account_id,
+        platform_slug=(platform.slug if platform else None),
+        account_name=(account.account_name if account else None),
+        status=job.status.value,
+        run_at=job.run_at,
+        attempts=job.attempts,
+        max_attempts=job.max_attempts,
+        attempts_remaining=job.attempts_remaining,
+        last_error=job.last_error,
+        claimed_by=job.claimed_by,
+        claimed_at=job.claimed_at,
+        manual_required=job.manual_required,
+        external_post_id=job.external_post_id,
+        post_url=job.post_url,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        logs=[PublishingLogEntry.model_validate(entry) for entry in job.logs],
+    )
+
+
+@router.get("/{post_id}/jobs", response_model=PublishingJobList)
+async def list_publishing_jobs(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Every publishing job for a post, with its full log.
+
+    Readable by anyone who can view the post: knowing why a post did not go out
+    is not privileged, and gating it behind publish rights is how a client ends
+    up asking their agency to check.
+    """
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_VIEW)
+    post = await _get_post_or_404(post_id, account_id, db)
+
+    jobs = (
+        await db.execute(
+            select(PublishingJob)
+            .options(
+                selectinload(PublishingJob.logs),
+                selectinload(PublishingJob.social_account).selectinload(
+                    SocialAccount.platform
+                ),
+            )
+            .where(PublishingJob.post_id == post_id)
+            .order_by(PublishingJob.created_at)
+        )
+    ).scalars().all()
+
+    return PublishingJobList(
+        post_id=post.id,
+        post_status=post.status.value,
+        jobs=[_job_response(job) for job in jobs],
+    )
+
+
+@router.post("/{post_id}/jobs/{job_id}/retry", response_model=PublishingJobResponse)
+async def retry_publishing_job(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Requeue one failed job.
+
+    Only that job runs again -- the accounts that already succeeded are not
+    republished. That is the whole reason publishing is per-target: the old
+    recovery path reset the entire post and reposted everything.
+
+    Attempts are reset so a manual retry gets a full allowance; the operator
+    has presumably fixed whatever caused the failure, and making them click
+    three times to get one real attempt helps nobody.
+    """
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_PUBLISH)
+    await _get_post_or_404(post_id, account_id, db)
+
+    job = (
+        await db.execute(
+            select(PublishingJob)
+            .options(
+                selectinload(PublishingJob.logs),
+                selectinload(PublishingJob.social_account).selectinload(
+                    SocialAccount.platform
+                ),
+            )
+            .where(PublishingJob.id == job_id, PublishingJob.post_id == post_id)
+        )
+    ).scalar_one_or_none()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Publishing job not found"
+        )
+
+    if job.status in (JobStatus.QUEUED, JobStatus.CLAIMED, JobStatus.RUNNING):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This job is already {job.status.value}; nothing to retry.",
+        )
+    if job.status is JobStatus.SUCCEEDED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This job already published successfully. Retrying it would "
+                "post the content a second time."
+            ),
+        )
+
+    job.status = JobStatus.QUEUED
+    job.attempts = 0
+    job.claimed_by = None
+    job.claimed_at = None
+    job.run_at = datetime.now(timezone.utc)
+    job.last_error = None
+    db.add(
+        PublishingLog(
+            id=uuid.uuid4(),
+            job_id=job.id,
+            level=LogLevel.INFO,
+            message=f"Requeued manually by {current_user.email}",
+        )
+    )
+    await db.flush()
+
+    await publishing.derive_post_status(db, post_id)
+
+    # Re-query rather than refresh(): refresh drops the eager loads, and
+    # touching job.logs afterwards would be a lazy load -- which raises under
+    # async SQLAlchemy rather than quietly issuing a query.
+    job = (
+        await db.execute(
+            select(PublishingJob)
+            .options(
+                selectinload(PublishingJob.logs),
+                selectinload(PublishingJob.social_account).selectinload(
+                    SocialAccount.platform
+                ),
+            )
+            .where(PublishingJob.id == job_id)
+            # Without this the identity map hands back the collection as it was
+            # loaded a moment ago, and the "requeued" line we just wrote is
+            # missing from the response.
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    return _job_response(job)

@@ -11,6 +11,12 @@ from app.models.permission import Permission, RolePermission, UserPermission
 from app.models.plan import Feature, FeatureUnit, Plan, PlanFeature, UsageRecord
 from app.models.platform import SocialAccount, SocialPlatform
 from app.models.post import Post, PostStatus
+from app.models.publishing_job import (
+    JobStatus,
+    LogLevel,
+    PublishingJob,
+    PublishingLog,
+)
 from app.models.post_performance import PostPerformance
 from app.models.strategy import Strategy
 from app.models.team_member import InvitationStatus, TeamMember, TeamRole
@@ -41,6 +47,11 @@ __all__ = [
     "ActivityLog",
     "AIGeneration",
     "Webhook",
+    # Publishing jobs
+    "PublishingJob",
+    "PublishingLog",
+    "JobStatus",
+    "LogLevel",
     # Plans & entitlements
     "Plan",
     "Feature",

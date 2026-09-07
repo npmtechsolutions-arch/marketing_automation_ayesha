@@ -28,8 +28,9 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import PlatformIcon from "@/components/shared/PlatformIcon";
+import PublishingJobs from "@/components/content/PublishingJobs";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
-import api, { getAccountId } from "@/lib/api";
+import api, { getAccountId, getAccountIdSync } from "@/lib/api";
 import { showSuccess, showError } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -328,6 +329,9 @@ export default function CalendarPage() {
   const [statusFilter, setStatusFilter] = useState<PostStatus | "all">("all");
   const [selectedPost, setSelectedPost] = useState<CalendarPost | null>(null);
   const [isPublishingNow, setIsPublishingNow] = useState(false);
+  // The workspace the panel queries. Read from the store rather than awaited
+  // per handler, because the detail modal renders synchronously.
+  const workspaceId = getAccountIdSync();
 
   const handleRetryPublish = async () => {
     if (!selectedPost) return;
@@ -1170,6 +1174,23 @@ export default function CalendarPage() {
                   </div>
                 </div>
               )}
+
+            {/* Per-platform publishing status.
+                Replaces a single error string with one row per target: its
+                attempt count, when the next retry is due, what the platform
+                said, and a retry button that reruns only that target. */}
+            {workspaceId && (
+              <PublishingJobs
+                accountId={workspaceId}
+                postId={selectedPost.id}
+                // No client-side permission gating exists in this app; the API
+                // enforces content.publish and returns 403, which the panel
+                // surfaces as a toast. Hiding the button here would be a
+                // second, driftable copy of the rule.
+                canRetry
+                onChanged={() => handlePostClick(selectedPost)}
+              />
+            )}
 
             {/* Error Message callout */}
             {selectedPost.errorMessage && (

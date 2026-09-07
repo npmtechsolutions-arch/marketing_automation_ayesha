@@ -57,61 +57,10 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    # Apply migrations before serving. Only this service migrates; the celery
-    # services share the same database and must not race it.
+    # Apply migrations before serving. Publishing runs in-process as an asyncio
+    # worker in this same service -- there is no separate queue service, and
+    # nothing else migrates.
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips='*'"
-
-  # ---------- Celery worker ----------
-  celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/marketengine
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: dev-secret-key-change-in-production
-      JWT_SECRET_KEY: dev-jwt-secret-change-in-production
-      # Required: without it the placeholder secrets above are treated as a
-      # production misconfiguration and the service refuses to start.
-      DEBUG: "true"
-      # Development-only Fernet key for encrypting stored platform credentials.
-      # Generate a real one per environment with:
-      #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-      TOKEN_ENCRYPTION_KEY: fdWd56g7RVBIwHV0Vje69Z2NGGBroRXNXmxYwzy7XZQ=
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
-
-  # ---------- Celery beat scheduler ----------
-  celery_beat:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/marketengine
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: dev-secret-key-change-in-production
-      JWT_SECRET_KEY: dev-jwt-secret-change-in-production
-      # Required: without it the placeholder secrets above are treated as a
-      # production misconfiguration and the service refuses to start.
-      DEBUG: "true"
-      # Development-only Fernet key for encrypting stored platform credentials.
-      # Generate a real one per environment with:
-      #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-      TOKEN_ENCRYPTION_KEY: fdWd56g7RVBIwHV0Vje69Z2NGGBroRXNXmxYwzy7XZQ=
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-    command: celery -A app.workers.celery_app beat --loglevel=info
 
   # ---------- Frontend ----------
   frontend:

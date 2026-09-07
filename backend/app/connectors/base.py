@@ -73,6 +73,42 @@ class ProviderAPIError(Exception):
         self.retryable = classify_retryable(status_code if status_code else detail)
 
 
+class PlatformRateLimited(Exception):
+    """The platform returned 429 and told us when to come back.
+
+    Carried as its own type because ``Retry-After`` is the one piece of retry
+    information a platform gives us directly, and stringifying it into an error
+    message -- which is what every failure used to become -- throws it away.
+    """
+
+    def __init__(self, slug: str, detail: str, retry_after: int | None = None) -> None:
+        super().__init__(detail)
+        self.slug = slug
+        self.detail = detail
+        self.retry_after = retry_after
+
+
+def retry_after_seconds(response: Any) -> int | None:
+    """Parse ``Retry-After`` from a response. Seconds only.
+
+    The header may also be an HTTP date; those are rare from these platforms
+    and a wrong parse would be worse than falling back to exponential backoff,
+    so a non-numeric value is ignored.
+    """
+    raw = None
+    try:
+        raw = response.headers.get("retry-after")
+    except Exception:  # noqa: BLE001 - a mock or an odd response object
+        return None
+    if not raw:
+        return None
+    try:
+        seconds = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds > 0 else None
+
+
 class MissingCredential(ProviderAPIError):
     """The account has no stored credential for this operation.
 
@@ -183,6 +219,10 @@ class PublishResult:
     post_url: Optional[str] = None
     error: Optional[str] = None
     retryable: bool = False
+    # Seconds the platform asked us to wait, from a 429's Retry-After. The
+    # scheduler honours it over its own backoff: guessing shorter gets us rate
+    # limited again, guessing longer delays the post for nothing.
+    retry_after: Optional[int] = None
 
     @property
     def succeeded(self) -> bool:

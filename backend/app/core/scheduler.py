@@ -1,133 +1,133 @@
+"""The publishing worker loop.
+
+Deliberately not Celery. The loop is a plain asyncio task started in the
+FastAPI lifespan, and the durability that Celery would have provided comes from
+the database instead: jobs are rows, a claim is a transaction, and a retry is a
+future ``run_at``. Nothing is held in a broker that can disagree with the
+database about what was published.
+
+What changed from the post-level version: this used to claim whole *posts* and
+republish every one of their targets on recovery -- so a process death after
+two of three platforms had succeeded republished those two. Claiming is now per
+job, so recovery resumes exactly the work that did not finish.
+"""
+
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+
 from sqlalchemy import select
+
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.post import Post, PostStatus
-from app.api.v1.endpoints.posts import publish_to_platforms
+from app.services import publishing
 
 logger = logging.getLogger(__name__)
 
-# A post normally finishes publishing within a few minutes, but a worst-case
-# multi-target post can legitimately run ~13 min (YouTube's 600s upload timeout +
-# 180s image->video render + Instagram's 120s processing poll). Only treat a post
-# as stranded (owner process died mid-publish) well beyond that, so we never reset
-# one that is genuinely still uploading.
-STUCK_PUBLISHING_MINUTES = 20
-# How many times to auto-retry a stuck post before giving up and marking FAILED.
-MAX_PUBLISH_RETRIES = 3
-
-# Hold strong references to in-flight publish tasks. asyncio only keeps a weak
-# reference to tasks created with create_task(), so without this a running
-# publish can be garbage-collected mid-flight — leaving the post stuck in
-# PUBLISHING and never actually posted. Discard each task when it completes.
-_running_publish_tasks: set[asyncio.Task] = set()
+# How often the loop looks for work. Also the worst-case delay between a post
+# becoming due and its jobs being claimed.
+POLL_SECONDS = 5
+# Jobs claimed per pass. The publish semaphore bounds how many actually run at
+# once; this only bounds how many are spoken for in one transaction.
+CLAIM_BATCH = 10
 
 
-def _spawn_publish(post_id) -> None:
-    task = asyncio.create_task(publish_to_platforms(post_id))
-    _running_publish_tasks.add(task)
-    task.add_done_callback(_running_publish_tasks.discard)
+async def enqueue_due_posts() -> int:
+    """Move posts whose scheduled time has arrived into PUBLISHING.
 
+    Scheduling already created the jobs with a future ``run_at``, so normally
+    this only flips the post's status. It also creates jobs for a due post that
+    has none -- posts scheduled before this existed, and any case where job
+    creation was lost -- so a scheduled post cannot sit due-but-idle forever.
 
-async def recover_stuck_publishing_posts():
-    """Reset posts stranded in PUBLISHING (owner process died mid-publish).
-
-    Retries them up to MAX_PUBLISH_RETRIES, then marks them FAILED so the user
-    can see and act on them instead of them being silently stuck forever.
+    Claiming the post row with ``FOR UPDATE SKIP LOCKED`` keeps two instances
+    from creating two sets of jobs for the same post.
     """
-    async with AsyncSessionLocal() as session:
-        try:
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=STUCK_PUBLISHING_MINUTES)
-            result = await session.execute(
-                select(Post)
-                .where(
-                    Post.status == PostStatus.PUBLISHING,
-                    Post.updated_at < cutoff,
-                    Post.deleted_at.is_(None),
-                )
-                .with_for_update(skip_locked=True)
-            )
-            stuck = result.scalars().all()
-            if not stuck:
-                return
-
-            for post in stuck:
-                if (post.retry_count or 0) < MAX_PUBLISH_RETRIES:
-                    post.retry_count = (post.retry_count or 0) + 1
-                    post.status = PostStatus.SCHEDULED
-                    post.scheduled_at = datetime.now(timezone.utc)
-                    post.error_message = None
-                    logger.warning(
-                        "Recovering stuck post %s (retry %d/%d).",
-                        post.id, post.retry_count, MAX_PUBLISH_RETRIES,
-                    )
-                else:
-                    post.status = PostStatus.FAILED
-                    post.error_message = (
-                        "Publishing was interrupted repeatedly (server restart or "
-                        "timeout). Please try publishing again."
-                    )
-                    logger.error(
-                        "Giving up on stuck post %s after %d retries.",
-                        post.id, post.retry_count,
-                    )
-            await session.commit()
-        except Exception as e:
-            await session.rollback()
-            logger.error(f"Error recovering stuck publishing posts: {e}")
-
-
-async def check_and_publish_scheduled_posts():
-    # Phase 1: atomically claim the due posts.
-    post_ids: list = []
+    created = 0
     async with AsyncSessionLocal() as session:
         try:
             now = datetime.now(timezone.utc)
-            # Find posts with status SCHEDULED whose scheduled_at is in the past
-            # (<= now). FOR UPDATE SKIP LOCKED locks the rows this worker reads so
-            # a second worker / server instance skips them instead of grabbing the
-            # same posts — without this, horizontal scaling would double-publish.
-            result = await session.execute(
-                select(Post)
-                .where(
-                    Post.status == PostStatus.SCHEDULED,
-                    Post.scheduled_at <= now,
-                    Post.deleted_at.is_(None),
+            posts = (
+                await session.execute(
+                    select(Post)
+                    .where(
+                        Post.status == PostStatus.SCHEDULED,
+                        Post.scheduled_at <= now,
+                        Post.deleted_at.is_(None),
+                    )
+                    .with_for_update(skip_locked=True)
                 )
-                .with_for_update(skip_locked=True)
-            )
-            scheduled_posts = result.scalars().all()
-            if not scheduled_posts:
-                return
+            ).scalars().all()
+            if not posts:
+                return 0
 
-            logger.info(f"Found {len(scheduled_posts)} scheduled posts to publish.")
-            # Flip every claimed post to PUBLISHING and commit once, while still
-            # holding the row locks. By the time the locks release, these posts no
-            # longer match the SCHEDULED filter, so they can't be picked up again.
-            for post in scheduled_posts:
+            for post in posts:
+                existing = await publishing.job_count_for_post(session, post.id)
+                if existing == 0:
+                    jobs = await publishing.create_jobs_for_post(
+                        session, post, run_at=now
+                    )
+                    created += len(jobs)
+                    logger.info(
+                        "Due post %s had no jobs; created %d.", post.id, len(jobs)
+                    )
+                # PUBLISHING while its jobs run; the terminal status is derived
+                # from them when they finish.
                 post.status = PostStatus.PUBLISHING
-                post_ids.append(post.id)
             await session.commit()
-        except Exception as e:
+        except Exception:
             await session.rollback()
-            logger.error(f"Error claiming scheduled posts: {e}")
-            return
+            logger.exception("Error enqueuing due posts")
+            return 0
+    return created
 
-    # Phase 2: fire the publish tasks. They are bounded by the publish semaphore
-    # inside publish_to_platforms(), so a large batch queues rather than
-    # overwhelming the server. References are held so they aren't GC'd mid-run.
-    for post_id in post_ids:
-        logger.info(f"Publishing scheduled post {post_id}.")
-        _spawn_publish(post_id)
+
+async def run_due_jobs() -> int:
+    """Claim due jobs and start them.
+
+    Claiming and executing are separate sessions on purpose: a publish can take
+    minutes (a 600s YouTube upload, a 180s render), and holding the claiming
+    transaction open for that would pin a database connection and block the
+    next pass.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            job_ids = await publishing.claim_due_jobs(session, limit=CLAIM_BATCH)
+        except Exception:
+            await session.rollback()
+            logger.exception("Error claiming publishing jobs")
+            return 0
+
+    for job_id in job_ids:
+        publishing.spawn(job_id)
+    if job_ids:
+        logger.info("Claimed %d publishing job(s).", len(job_ids))
+    return len(job_ids)
+
+
+async def recover_stale_jobs() -> int:
+    async with AsyncSessionLocal() as session:
+        try:
+            return await publishing.requeue_stale_claims(session)
+        except Exception:
+            await session.rollback()
+            logger.exception("Error recovering stale publishing jobs")
+            return 0
 
 
 async def scheduled_post_worker():
-    logger.info("Starting scheduled post background worker loop...")
+    logger.info(
+        "Starting publishing worker (poll=%ss, batch=%d, max concurrent=%d).",
+        POLL_SECONDS, CLAIM_BATCH, settings.MAX_CONCURRENT_PUBLISHES,
+    )
     while True:
         try:
-            await check_and_publish_scheduled_posts()
-            await recover_stuck_publishing_posts()
-        except Exception as e:
-            logger.error(f"Error in scheduled_post_worker loop iteration: {e}")
-        await asyncio.sleep(10)  # check every 10 seconds
+            await enqueue_due_posts()
+            await run_due_jobs()
+            await recover_stale_jobs()
+        except Exception:
+            # One bad pass must not end the loop, or scheduled posts stop
+            # going out until someone restarts the process.
+            logger.exception("Error in the publishing worker loop")
+        await asyncio.sleep(POLL_SECONDS)

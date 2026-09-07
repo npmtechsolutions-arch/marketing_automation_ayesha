@@ -262,6 +262,43 @@ If `alembic check` does report differences, the database drifted from the models
 
 > **Alembic is the only thing that creates schema.** The application performs no DDL at startup: `init_db()` in `app/core/database.py` only waits for the database to accept connections. It previously ran `Base.metadata.create_all()` plus ad-hoc `ALTER TABLE ... IF NOT EXISTS` statements, which meant a model change could reach a database without a migration. If you change a model, you must generate a migration — nothing else will apply it.
 
+## Publishing
+
+Publishing is a queue of database rows, not an inline loop. Each post fans out into one **`PublishingJob`** per target social account, and each attempt writes a **`PublishingLog`** row carrying the platform's own response.
+
+It used to run inline: an endpoint flipped the post to `PUBLISHING` and fired a background task that looped over the targets. Three things were wrong with that, and they are why this exists:
+
+- **Not durable.** A process death mid-loop left the post in `PUBLISHING`. The sweeper's only recourse was to reset the *whole post* and republish every target — including the ones that had already succeeded, so recovery could double-post.
+- **Not retryable per target.** One expired token failed the post, and the healthy accounts had to be republished along with it.
+- **Not observable.** A failure was a string in a JSON array: no attempt count, no next-retry time, no record of what the platform said.
+
+**Deliberately not Celery.** The worker is a plain asyncio loop in the FastAPI lifespan ([app/core/scheduler.py](backend/app/core/scheduler.py)); the durability a broker would have provided comes from the database instead. Nothing is held in a queue that can disagree with the database about what was published.
+
+```
+publish / schedule ──> create_jobs_for_post()   one QUEUED job per target
+                                                run_at = now, or scheduled_at
+worker loop (5s) ────> claim_due_jobs()          FOR UPDATE SKIP LOCKED
+                  ──> execute_job()              provider registry
+                  ──> requeue_stale_claims()     claimed > 20 min ago
+                       │
+                       └─> derive_post_status()  jobs → post.status
+```
+
+**Claiming is what makes multiple instances safe.** `FOR UPDATE SKIP LOCKED` means rows one worker locks are invisible to another's `SELECT`, and the claim commits while the locks are held — so by the time they release, the rows no longer match the queue filter. Without it both workers take every job and every post goes out twice; [test_publishing_concurrency.py](backend/tests/test_publishing_concurrency.py) proves it, and needs real Postgres to do so.
+
+**Retries back off exponentially** — 30s, 60s, 120s… capped at 30 minutes, with ±25% jitter so a batch that fails together does not retry in lockstep. A platform's `Retry-After` on a 429 always wins over the curve. A permanent error (a revoked token, a rejected payload) fails immediately rather than burning three attempts to tell the user the same thing.
+
+**Post status is derived, not stored independently.** All jobs succeeded → `PUBLISHED`; some failed → `PARTIALLY_PUBLISHED`; all failed → `FAILED`; any still pending → `PUBLISHING`. `posting_results` is rebuilt from the same rows, so it is a projection rather than a second source of truth that can disagree.
+
+Two endpoints expose it, and the post detail modal renders them per platform with a retry button:
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/v1/accounts/{id}/posts/{id}/jobs` | `content.view` |
+| `POST` | `/api/v1/accounts/{id}/posts/{id}/jobs/{job_id}/retry` | `content.publish` |
+
+Retrying reruns **only that job** — the accounts that already published are untouched. Retrying a job that already succeeded is refused with a 409, because it would post the content a second time.
+
 ## Social connectors
 
 Every platform lives behind one `SocialProvider` in [backend/app/connectors/](backend/app/connectors/). Before this, platform behaviour was spread across three layers and the same `if "facebook" in slug ... elif` chain was written four times — publishing covered five platforms, pre-publish token refresh covered two, and account verification and manual refresh each had their own shape. Adding a platform meant finding all four.
@@ -356,7 +393,7 @@ DEBUG=true python -m pytest tests/ -q
 
 The suite runs against in-memory SQLite and needs no Postgres or Redis. Shared fixtures (app client, database session, user/account/member factories, auth headers, plan seeding and `set_limit`) live in [backend/tests/conftest.py](backend/tests/conftest.py).
 
-One file is the exception. [backend/tests/test_entitlement_concurrency.py](backend/tests/test_entitlement_concurrency.py) proves that two requests arriving at the same limit cannot both succeed, and that needs two connections running two transactions at once — which the single-connection SQLite harness cannot express. It creates its own scratch database on the server named by `DATABASE_URL` (overridable with `TEST_POSTGRES_ADMIN_URL`) and drops it afterwards, and **skips** when no Postgres is reachable. CI runs a Postgres service, so it executes there; locally it will skip unless Postgres is up.
+Two files are the exception. [test_publishing_concurrency.py](backend/tests/test_publishing_concurrency.py) proves that two workers cannot claim the same publishing job, and [test_entitlement_concurrency.py](backend/tests/test_entitlement_concurrency.py) proves that two requests arriving at the same limit cannot both succeed. Both need two connections running two transactions at once — which the single-connection SQLite harness cannot express, and where `with_for_update(skip_locked=True)` is a silent no-op. Each creates its own scratch database on the server named by `DATABASE_URL` (overridable with `TEST_POSTGRES_ADMIN_URL`) and drops it afterwards, and **skips** when no Postgres is reachable. CI runs a Postgres service, so it executes there; locally it will skip unless Postgres is up.
 
 Linting:
 

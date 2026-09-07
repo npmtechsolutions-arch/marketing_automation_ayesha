@@ -16,7 +16,9 @@ from app.connectors.base import (
     MediaRef,
     PostVariant,
     PublishResult,
+    PlatformRateLimited,
     SocialProvider,
+    retry_after_seconds,
     OAuthTokens,
     tokens_from,
     ProviderAPIError,
@@ -38,6 +40,23 @@ from app.connectors.media import (
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _raise_if_rate_limited(slug: str, response: Any) -> None:
+    """Turn a 429 into a typed error carrying the platform's Retry-After.
+
+    Applied to the request that actually posts the content -- the one whose
+    rate limit decides when the post can go out. Secondary calls (page
+    discovery, insights) fall back to exponential backoff, which is the right
+    trade: plumbing this through all twenty request sites would be noise for
+    the ones a user never waits on.
+    """
+    if getattr(response, "status_code", None) == 429:
+        raise PlatformRateLimited(
+            slug,
+            f"{slug} rate limited the request: {getattr(response, 'text', '')[:300]}",
+            retry_after_seconds(response),
+        )
 
 
 async def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:
@@ -128,6 +147,7 @@ async def publish_to_youtube(post: Any, platform: Any) -> dict[str, Any]:
             json=metadata,
             timeout=30.0,
         )
+        _raise_if_rate_limited("youtube", init)
         if init.status_code not in (200, 201):
             raise ValueError(f"YouTube upload initiation failed: {init.text}")
         upload_url = init.headers.get("location") or init.headers.get("Location")
@@ -262,6 +282,14 @@ class YouTubeProvider(SocialProvider):
     ) -> PublishResult:
         try:
             result = await publish_to_youtube(variant.post, social_account)
+        except PlatformRateLimited as exc:
+            # The one case where the platform tells us when to come back.
+            return PublishResult(
+                status="failed",
+                error=exc.detail,
+                retryable=True,
+                retry_after=exc.retry_after,
+            )
         except Exception as exc:  # noqa: BLE001 - every failure becomes a result
             message = str(exc)
             # YouTube Community posts have no API. The publisher signals that by
