@@ -410,3 +410,64 @@ async def set_limit(db_session):
         entitlement_service.invalidate_all()
 
     return _set
+
+
+@pytest_asyncio.fixture
+async def social_platform_factory(db_session):
+    """Create a ``SocialPlatform`` row.
+
+    These are per-workspace catalogue rows rather than a global enum, so a test
+    that wants a connected account needs one of these first.
+    """
+    from app.models.platform import SocialPlatform
+
+    async def _make(owner, account, *, slug: str = "instagram", name: str | None = None):
+        platform = SocialPlatform(
+            id=uuid.uuid4(),
+            user_id=owner.id,
+            account_id=account.id,
+            name=name or slug.title(),
+            slug=slug,
+            is_active=True,
+            sort_order=0,
+        )
+        db_session.add(platform)
+        await db_session.flush()
+        await db_session.refresh(platform)
+        return platform
+
+    return _make
+
+
+@pytest_asyncio.fixture
+async def social_account_factory(db_session, social_platform_factory):
+    """Create a connected ``SocialAccount``, with its platform if needed."""
+    from app.models.platform import SocialAccount
+
+    async def _make(
+        owner,
+        account,
+        *,
+        slug: str = "instagram",
+        platform=None,
+        access_token: str = "mock_token_for_tests",
+        **extra,
+    ):
+        platform = platform or await social_platform_factory(owner, account, slug=slug)
+        social_account = SocialAccount(
+            id=uuid.uuid4(),
+            user_id=owner.id,
+            account_id=account.id,
+            platform_id=platform.id,
+            account_name=extra.pop("account_name", f"{slug} account"),
+            access_token=access_token,
+            is_active=True,
+            is_verified=True,
+            **extra,
+        )
+        db_session.add(social_account)
+        await db_session.flush()
+        await db_session.refresh(social_account)
+        return social_account
+
+    return _make

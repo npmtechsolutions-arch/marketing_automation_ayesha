@@ -20,6 +20,8 @@ from app.schemas.post import PostCreate, PostResponse, PostUpdate, PostWithPerfo
 from app.services.activity_service import log_activity
 from app.services.entitlements import enforce_post_limit
 from app.core.authz import verify_account_access as _verify_account_access
+from app.connectors.base import MediaRef, NotSupportedError, variant_for
+from app.connectors.registry import get_provider
 from app.core.permissions import (  # noqa: F401
     CONTENT_APPROVE,
     CONTENT_CREATE,
@@ -234,13 +236,24 @@ async def create_post(
 
 
 async def _ensure_valid_token(sa: SocialAccount, db: AsyncSession) -> None:
-    """Check if the social account's OAuth token has expired (or is expiring soon),
-    and refresh it using the refresh token if available.
+    """Refresh the account's OAuth token if it is expired or about to be.
+
+    This used to carry its own per-platform if/elif with branches for YouTube
+    and X only -- Meta and LinkedIn tokens simply expired mid-publish, even
+    though the working refresh for both sat in social_accounts.py. Going
+    through the registry means every platform with a refresh implementation
+    gets one here, which is the one place this refactor deliberately changes
+    behaviour.
+
+    Failure is non-fatal by design: the publish attempt proceeds with the token
+    we have and reports the platform's own error, rather than failing the post
+    on a refresh that might not have been needed.
     """
-    if not sa.token_expires_at or not sa.refresh_token:
+    if not sa.token_expires_at:
         return
 
     from datetime import datetime, timedelta, timezone
+
     now = datetime.now(timezone.utc)
     expires_at = sa.token_expires_at
     if expires_at.tzinfo is None:
@@ -248,85 +261,27 @@ async def _ensure_valid_token(sa: SocialAccount, db: AsyncSession) -> None:
     if expires_at > now + timedelta(minutes=2):
         return
 
-    platform_slug = (sa.platform.slug if sa.platform else "").lower()
-    
-    # YouTube (Google) Refresh Flow
-    if "youtube" in platform_slug:
-        import httpx
-        from app.core.config import settings
-        
-        logging.getLogger(__name__).info("YouTube token expired for account %s. Refreshing...", sa.account_name)
-        try:
-            async with httpx.AsyncClient() as client:
-                res = await client.post(
-                    "https://oauth2.googleapis.com/token",
-                    data={
-                        "client_id": settings.GOOGLE_CLIENT_ID,
-                        "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                        "refresh_token": sa.refresh_token,
-                        "grant_type": "refresh_token",
-                    },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    timeout=15.0
-                )
-            if res.status_code == 200:
-                data = res.json()
-                sa.access_token = data["access_token"]
-                expires_in = data.get("expires_in", 3600)
-                sa.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
-                if "refresh_token" in data:
-                    sa.refresh_token = data["refresh_token"]
-                db.add(sa)
-                await db.flush()
-                logging.getLogger(__name__).info("YouTube token successfully refreshed for account %s.", sa.account_name)
-            else:
-                logging.getLogger(__name__).error("Failed to refresh YouTube token: %s", res.text)
-        except Exception as exc:
-            logging.getLogger(__name__).exception("Error refreshing YouTube token: %s", exc)
+    provider = get_provider(sa.platform.slug if sa.platform else None)
+    try:
+        result = await provider.refresh_token(sa)
+    except NotSupportedError:
+        return
+    except Exception as exc:  # noqa: BLE001 - never fail a publish on refresh
+        logging.getLogger(__name__).warning(
+            "Could not refresh %s token for social account %s: %s",
+            provider.slug, sa.id, exc,
+        )
+        return
 
-    # Twitter/X Refresh Flow
-    elif "twitter" in platform_slug or platform_slug == "x":
-        import httpx
-        from app.core.config import settings
-        import base64
-        
-        logging.getLogger(__name__).info("Twitter token expired for account %s. Refreshing...", sa.account_name)
-        try:
-            auth_str = f"{settings.TWITTER_CLIENT_ID}:{settings.TWITTER_CLIENT_SECRET}"
-            b64_auth = base64.b64encode(auth_str.encode()).decode()
-            
-            async with httpx.AsyncClient() as client:
-                res = await client.post(
-                    "https://api.twitter.com/2/oauth2/token",
-                    data={
-                        "grant_type": "refresh_token",
-                        "refresh_token": sa.refresh_token,
-                        "client_id": settings.TWITTER_CLIENT_ID,
-                    },
-                    headers={
-                        "Authorization": f"Basic {b64_auth}",
-                        "Content-Type": "application/x-www-form-urlencoded"
-                    },
-                    timeout=15.0
-                )
-            if res.status_code == 200:
-                data = res.json()
-                sa.access_token = data["access_token"]
-                expires_in = data.get("expires_in", 7200)
-                sa.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
-                if "refresh_token" in data:
-                    sa.refresh_token = data["refresh_token"]
-                db.add(sa)
-                await db.flush()
-                logging.getLogger(__name__).info("Twitter token successfully refreshed for account %s.", sa.account_name)
-            else:
-                logging.getLogger(__name__).error("Failed to refresh Twitter token: %s", res.text)
-        except Exception as exc:
-            logging.getLogger(__name__).exception("Error refreshing Twitter token: %s", exc)
+    sa.access_token = result.access_token
+    if result.refresh_token:
+        sa.refresh_token = result.refresh_token
+    if result.expires_at:
+        sa.token_expires_at = result.expires_at
+    await db.flush()
 
 
 async def _sync_post_performance(post: Post, db: AsyncSession):
-    from app.services.platform_service import PlatformService
     from app.models.post_performance import PostPerformance
     from app.models.platform import SocialAccount
     
@@ -357,8 +312,8 @@ async def _sync_post_performance(post: Post, db: AsyncSession):
                 continue
 
             await _ensure_valid_token(sa, db)
-            import asyncio
-            metrics = await asyncio.to_thread(PlatformService.fetch_performance, ext_id, sa)
+            provider = get_provider(sa.platform.slug if sa.platform else None)
+            metrics = await provider.get_post_metrics(ext_id, sa)
             if not metrics:
                 continue
 
@@ -549,7 +504,6 @@ async def publish_to_platforms(post_id: uuid.UUID):
 
 
 async def _do_publish_to_platforms(post_id: uuid.UUID):
-    from app.services.platform_service import PlatformService
     from app.models.platform import SocialAccount
     import logging
 
@@ -623,46 +577,35 @@ async def _do_publish_to_platforms(post_id: uuid.UUID):
                 # Auto-refresh OAuth tokens if expired/expiring
                 await _ensure_valid_token(sa, session)
 
-                try:
-                    import asyncio
-                    if "facebook" in platform_slug:
-                        res = await asyncio.to_thread(PlatformService.publish_to_facebook, post, sa)
-                    elif "instagram" in platform_slug or "insta" in platform_slug:
-                        res = await asyncio.to_thread(PlatformService.publish_to_instagram, post, sa)
-                    elif "linkedin" in platform_slug:
-                        res = await asyncio.to_thread(PlatformService.publish_to_linkedin, post, sa)
-                    elif "youtube" in platform_slug:
-                        res = await asyncio.to_thread(PlatformService.publish_to_youtube, post, sa)
-                    elif "twitter" in platform_slug or platform_slug == "x":
-                        res = await asyncio.to_thread(PlatformService.publish_to_twitter, post, sa)
-                    else:
-                        res = await asyncio.to_thread(PlatformService.publish_to_instagram, post, sa)
+                # One registry lookup replaces the if/elif chain that used to
+                # live here. The provider owns the platform's quirks, including
+                # turning an exception into a result -- so this loop no longer
+                # needs its own try/except around the publish itself.
+                provider = get_provider(platform_slug)
+                variant = variant_for(post, provider.slug)
+                media = [MediaRef(url=u) for u in variant.media_urls]
+                result = await provider.publish_post(variant, media, sa)
 
+                if result.succeeded:
                     success_count += 1
                     posting_results.append({
                         "social_account_id": sa_id,
                         "status": "published",
-                        "external_post_id": res.get("external_post_id"),
-                        "post_url": res.get("post_url", f"https://mock-{platform_slug}.com/posts/{res.get('external_post_id')}"),
+                        "external_post_id": result.external_post_id,
+                        "post_url": result.post_url or f"https://mock-{platform_slug}.com/posts/{result.external_post_id}",
                     })
-                except Exception as exc:
+                else:
                     failed_count += 1
-                    err = str(exc)
-                    # YouTube Community posts have no API and must be published by
-                    # hand. Tag them distinctly so the UI shows a "publish
-                    # manually" helper instead of a generic red error.
-                    if err.startswith("MANUAL_YOUTUBE_COMMUNITY:"):
-                        posting_results.append({
-                            "social_account_id": sa_id,
-                            "status": "manual_required",
-                            "error": err.replace("MANUAL_YOUTUBE_COMMUNITY:", "").strip(),
-                        })
-                    else:
-                        posting_results.append({
-                            "social_account_id": sa_id,
-                            "status": "failed",
-                            "error": err,
-                        })
+                    entry = {
+                        "social_account_id": sa_id,
+                        "status": result.status,
+                        "error": result.error,
+                    }
+                    # Kept out of the payload when false so existing consumers
+                    # of posting_results see the shape they always have.
+                    if result.retryable:
+                        entry["retryable"] = True
+                    posting_results.append(entry)
 
             if success_count > 0 and failed_count == 0:
                 post.status = PostStatus.PUBLISHED

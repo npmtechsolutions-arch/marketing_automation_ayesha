@@ -262,6 +262,44 @@ If `alembic check` does report differences, the database drifted from the models
 
 > **Alembic is the only thing that creates schema.** The application performs no DDL at startup: `init_db()` in `app/core/database.py` only waits for the database to accept connections. It previously ran `Base.metadata.create_all()` plus ad-hoc `ALTER TABLE ... IF NOT EXISTS` statements, which meant a model change could reach a database without a migration. If you change a model, you must generate a migration — nothing else will apply it.
 
+## Social connectors
+
+Every platform lives behind one `SocialProvider` in [backend/app/connectors/](backend/app/connectors/). Before this, platform behaviour was spread across three layers and the same `if "facebook" in slug ... elif` chain was written four times — publishing covered five platforms, pre-publish token refresh covered two, and account verification and manual refresh each had their own shape. Adding a platform meant finding all four.
+
+```
+app/connectors/
+  base.py      SocialProvider, Capabilities, PublishResult, PostVariant,
+               NotSupportedError, and the shared OAuth/refresh plumbing
+  media.py     platform-agnostic helpers (media re-hosting, SSRF guard,
+               hashtags, ffmpeg image+audio -> video)
+  facebook.py  instagram.py  linkedin.py  twitter.py  youtube.py
+  registry.py  get_provider(slug) -> SocialProvider
+```
+
+`get_provider(slug)` is the only dispatch. It keeps the substring matching the old code used (`"insta"`, `slug == "x"`) so no existing `social_platforms` row stops resolving.
+
+**Provider methods are `async`; their bodies are synchronous.** The publishing code uses blocking `httpx.Client` and, for some platforms, ffmpeg, so the async methods hand it to `asyncio.to_thread` — which is what the old dispatch did around each call. Converting the HTTP layer to `httpx.AsyncClient` is a separate change.
+
+A method a platform has no API for raises `NotSupportedError`, which is deliberately distinct from "not built yet": a caller that sees it should stop asking rather than retry.
+
+**Publishing** goes through `posts.py::_do_publish_to_platforms`, which both the publish endpoint and [the scheduler](backend/app/core/scheduler.py) call — one implementation, not two. Each target yields a `PublishResult`; the post lands on `PUBLISHED`, `PARTIALLY_PUBLISHED` or `FAILED`. `manual_required` is its own status because YouTube Community posts have no API and the UI offers a "publish by hand" helper instead of an error.
+
+`PublishResult.retryable` distinguishes a rate limit or 5xx from a revoked token. **Nothing acts on it yet** — the scheduler's `retry_count` is crash-recovery only and never retries a platform error — but classifying it where the HTTP status is still in hand is the only place it can be done honestly.
+
+**Capabilities.** `GET /api/v1/accounts/{account_id}/social-accounts/{id}/capabilities` reports what a platform accepts, so the composer can validate before a user spends effort on a post that will be rejected:
+
+| | chars | images | video | carousel | links |
+|---|---|---|---|---|---|
+| facebook | 63,206 | yes | yes | yes | yes |
+| instagram | 2,200 | yes | yes | yes | no |
+| linkedin | 3,000 | yes | **no** | no | yes |
+| twitter | **280** | **no** | no | no | yes |
+| youtube | 5,000 | no | yes | no | no |
+
+The two bold "no"s report what the *connector* does, not what the platform allows: the X publisher drops media silently and the LinkedIn one rejects video outright. Reporting the API's real limits would promise something the connector will not deliver.
+
+`None` on a numeric field means no limit — not unknown, not zero.
+
 ## Entitlements
 
 What each plan allows lives in the database — `plans`, `features`, `plan_features` and `usage_records` — not in the source. Limits used to be a `TIER_LIMITS` dictionary, which meant changing one needed a deploy and a customer who negotiated a higher cap could not have it.

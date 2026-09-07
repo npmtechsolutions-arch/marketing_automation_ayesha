@@ -23,8 +23,17 @@ from app.core.permissions import (
 from app.models.platform import SocialAccount, SocialPlatform
 from app.models.team_member import InvitationStatus, TeamMember
 from app.models.user import User
+from app.connectors.base import (
+    NotSupportedError,
+    MissingCredential,
+    ProviderAPIError,
+    ProviderNotConfigured,
+    is_mock_token,
+)
+from app.connectors.registry import get_provider
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.social_account import (
+    SocialAccountCapabilities,
     SocialAccountCreate,
     SocialAccountResponse,
     SocialAccountUpdate,
@@ -687,235 +696,95 @@ async def refresh_social_account_token(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Refresh the access token for a social account."""
+    """Refresh the access token for a social account.
+
+    This was 238 lines of per-platform if/elif that duplicated the refresh in
+    posts.py and disagreed with it about which platforms were covered. The
+    grants now live on the providers; this handles auth, the mock short-circuit
+    and persistence.
+    """
     await _verify_membership(db, current_user.id, account_id)
     social_account = await _get_social_account_or_404(social_account_id, account_id, db)
 
-    platform_name = (social_account.platform.name if social_account.platform else "").lower()
-    platform_slug = (social_account.platform.slug if social_account.platform else "").lower() or platform_name
-    
     access_token = social_account.access_token or ""
-    
-    # Check if mock token
-    if not access_token or "mock" in access_token or "test" in access_token or access_token.startswith("refreshed_"):
-        # For mock/testing, return mock refresh token
+    if is_mock_token(access_token):
+        # Seeded and development accounts must not reach a real API.
         social_account.access_token = f"refreshed_access_token_{uuid.uuid4().hex[:8]}"
         social_account.last_verified_at = datetime.now(timezone.utc)
         await db.flush()
         await db.refresh(social_account)
         return MessageResponse(message="Token refresh completed successfully (mocked)")
 
-    # Real token refresh logic for Meta (Facebook / Instagram)
-    if "facebook" in platform_slug or "instagram" in platform_slug:
-        import httpx
-        from datetime import timedelta
-        if not settings.META_APP_ID or not settings.META_APP_SECRET:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Meta App ID or Secret is not configured in the environment settings"
-            )
-        
-        url = "https://graph.facebook.com/v18.0/oauth/access_token"
-        params = {
-            "grant_type": "fb_exchange_token",
-            "client_id": settings.META_APP_ID,
-            "client_secret": settings.META_APP_SECRET,
-            "fb_exchange_token": access_token
-        }
-        
-        try:
-            with httpx.Client() as client:
-                res = client.get(url, params=params, timeout=15.0)
-                if res.status_code == 200:
-                    data = res.json()
-                    new_token = data.get("access_token")
-                    expires_in = data.get("expires_in")
-                    
-                    social_account.access_token = new_token
-                    if expires_in:
-                        social_account.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                    social_account.last_verified_at = datetime.now(timezone.utc)
-                    await db.flush()
-                    await db.refresh(social_account)
-                    return MessageResponse(message="Instagram/Facebook access token refreshed successfully via Meta API")
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Meta token exchange failed: {res.text}"
-                    )
-        except Exception as e:
-            if isinstance(e, HTTPException):
-                raise
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Meta API token refresh call failed: {e}"
-            )
-
-    # Real token refresh logic for LinkedIn (refresh_token grant)
-    if "linkedin" in platform_slug:
-        import httpx
-        from datetime import timedelta
-
-        refresh_token = social_account.refresh_token
-        if not refresh_token:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "No LinkedIn refresh token stored. Reconnect the account with "
-                    "'Connect LinkedIn'. (Refresh tokens require the 'programmatic "
-                    "refresh' setting on your LinkedIn app.)"
-                ),
-            )
-        if not settings.LINKEDIN_CLIENT_ID or not settings.LINKEDIN_CLIENT_SECRET:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="LinkedIn Client ID or Secret is not configured in the environment settings",
-            )
-
-        try:
-            with httpx.Client() as client:
-                res = client.post(
-                    "https://www.linkedin.com/oauth/v2/accessToken",
-                    data={
-                        "grant_type": "refresh_token",
-                        "refresh_token": refresh_token,
-                        "client_id": settings.LINKEDIN_CLIENT_ID,
-                        "client_secret": settings.LINKEDIN_CLIENT_SECRET,
-                    },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    timeout=15.0,
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    social_account.access_token = data.get("access_token")
-                    if data.get("refresh_token"):
-                        social_account.refresh_token = data["refresh_token"]
-                    expires_in = data.get("expires_in")
-                    if expires_in:
-                        social_account.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                    social_account.last_verified_at = datetime.now(timezone.utc)
-                    await db.flush()
-                    await db.refresh(social_account)
-                    return MessageResponse(message="LinkedIn access token refreshed successfully")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"LinkedIn token refresh failed: {res.text}",
-                )
-        except Exception as e:
-            if isinstance(e, HTTPException):
-                raise
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"LinkedIn API token refresh call failed: {e}",
-            )
-
-    # Real token refresh logic for X (Twitter) — refresh_token grant (PKCE / confidential)
-    if "twitter" in platform_slug or platform_slug == "x":
-        import httpx
-        from datetime import timedelta
-
-        refresh_token = social_account.refresh_token
-        if not refresh_token:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No X refresh token stored. Reconnect the account with 'Connect X'.",
-            )
-        if not settings.TWITTER_CLIENT_ID:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="X Client ID is not configured in the environment settings",
-            )
-        auth = (
-            (settings.TWITTER_CLIENT_ID, settings.TWITTER_CLIENT_SECRET)
-            if settings.TWITTER_CLIENT_SECRET
-            else None
+    provider = get_provider(
+        social_account.platform.slug if social_account.platform else None
+    )
+    try:
+        result = await provider.refresh_token(social_account)
+    except NotSupportedError:
+        return MessageResponse(
+            message="Token refresh is not supported/implemented for this platform yet"
         )
-        try:
-            with httpx.Client() as client:
-                res = client.post(
-                    "https://api.twitter.com/2/oauth2/token",
-                    data={
-                        "grant_type": "refresh_token",
-                        "refresh_token": refresh_token,
-                        "client_id": settings.TWITTER_CLIENT_ID,
-                    },
-                    auth=auth,
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    timeout=15.0,
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    social_account.access_token = data.get("access_token")
-                    if data.get("refresh_token"):
-                        social_account.refresh_token = data["refresh_token"]
-                    expires_in = data.get("expires_in")
-                    if expires_in:
-                        social_account.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                    social_account.last_verified_at = datetime.now(timezone.utc)
-                    await db.flush()
-                    await db.refresh(social_account)
-                    return MessageResponse(message="X access token refreshed successfully")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"X token refresh failed: {res.text}",
-                )
-        except Exception as e:
-            if isinstance(e, HTTPException):
-                raise
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"X API token refresh call failed: {e}",
-            )
+    except (ProviderNotConfigured, MissingCredential) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=exc.detail
+        ) from exc
+    except ProviderAPIError as exc:
+        # The platform refusing us is a 400; being unable to reach it is a 502.
+        raise HTTPException(
+            status_code=(
+                status.HTTP_400_BAD_REQUEST
+                if exc.status_code
+                else status.HTTP_502_BAD_GATEWAY
+            ),
+            detail=exc.detail,
+        ) from exc
 
-    # Real token refresh logic for YouTube (Google) — refresh_token grant
-    if "youtube" in platform_slug:
-        import httpx
-        from datetime import timedelta
+    social_account.access_token = result.access_token
+    if result.refresh_token:
+        social_account.refresh_token = result.refresh_token
+    if result.expires_at:
+        social_account.token_expires_at = result.expires_at
+    social_account.last_verified_at = datetime.now(timezone.utc)
+    await db.flush()
+    await db.refresh(social_account)
+    return MessageResponse(message=result.message)
 
-        refresh_token = social_account.refresh_token
-        if not refresh_token:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No YouTube refresh token stored. Reconnect the account with 'Connect YouTube'.",
-            )
-        if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Google Client ID or Secret is not configured in the environment settings",
-            )
-        try:
-            with httpx.Client() as client:
-                res = client.post(
-                    "https://oauth2.googleapis.com/token",
-                    data={
-                        "grant_type": "refresh_token",
-                        "refresh_token": refresh_token,
-                        "client_id": settings.GOOGLE_CLIENT_ID,
-                        "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                    },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    timeout=15.0,
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    social_account.access_token = data.get("access_token")
-                    expires_in = data.get("expires_in")
-                    if expires_in:
-                        social_account.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                    social_account.last_verified_at = datetime.now(timezone.utc)
-                    await db.flush()
-                    await db.refresh(social_account)
-                    return MessageResponse(message="YouTube access token refreshed successfully")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"YouTube token refresh failed: {res.text}",
-                )
-        except Exception as e:
-            if isinstance(e, HTTPException):
-                raise
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"YouTube API token refresh call failed: {e}",
-            )
 
-    return MessageResponse(message="Token refresh is not supported/implemented for this platform yet")
+@router.get(
+    "/{social_account_id}/capabilities",
+    response_model=SocialAccountCapabilities,
+)
+async def get_social_account_capabilities(
+    account_id: uuid.UUID,
+    social_account_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """What this account's platform accepts, for composer validation.
+
+    Membership is enough -- no extra permission. A limit is not privileged
+    information, and anyone who can see the account needs to know what it will
+    take before writing a post for it.
+    """
+    await _verify_membership(db, current_user.id, account_id)
+    social_account = await _get_social_account_or_404(social_account_id, account_id, db)
+
+    provider = get_provider(
+        social_account.platform.slug if social_account.platform else None
+    )
+    caps = provider.capabilities
+    return SocialAccountCapabilities(
+        social_account_id=social_account.id,
+        platform_slug=provider.slug,
+        platform_name=provider.name,
+        supports_images=caps.supports_images,
+        supports_video=caps.supports_video,
+        supports_carousel=caps.supports_carousel,
+        supports_link_posts=caps.supports_link_posts,
+        supports_comments_api=caps.supports_comments_api,
+        supports_dm_api=caps.supports_dm_api,
+        max_chars=caps.max_chars,
+        max_images=caps.max_images,
+        max_video_seconds=caps.max_video_seconds,
+        max_video_bytes=caps.max_video_bytes,
+    )

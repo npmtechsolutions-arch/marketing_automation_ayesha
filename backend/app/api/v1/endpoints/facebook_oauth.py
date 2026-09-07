@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.social_accounts import _verify_membership
 from app.core.config import settings
+from app.connectors.base import ProviderAPIError
+from app.connectors.registry import get_provider
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.deps import get_current_active_user
 from app.models.platform import SocialAccount, SocialPlatform
@@ -94,18 +96,9 @@ async def facebook_authorize(
         algorithm=settings.JWT_ALGORITHM,
     )
 
-    redirect_uri = settings.META_REDIRECT_URI or settings.LINKEDIN_REDIRECT_URI.replace("/linkedin/callback", "/facebook/callback")
-
-    params = {
-        "response_type": "code",
-        "client_id": settings.META_APP_ID.strip() if settings.META_APP_ID else "",
-        "redirect_uri": redirect_uri,
-        "state": state,
-        "scope": "pages_manage_posts,pages_read_engagement,pages_show_list,read_insights",
-    }
-    if settings.META_CONFIG_ID:
-        params["config_id"] = settings.META_CONFIG_ID.strip()
-    return {"auth_url": f"{FACEBOOK_AUTH_URL}?{urlencode(params)}"}
+    # The consent URL, its scopes and the redirect_uri all belong to the
+    # provider now -- this route only mints state and hands back a URL.
+    return {"auth_url": get_provider("facebook").build_authorize_url(state)}
 
 
 # ---------------------------------------------------------------------------
@@ -140,39 +133,20 @@ async def facebook_callback(
         logger.warning("Invalid Facebook OAuth state: %s", exc)
         return _frontend_redirect("error", "invalid_state")
 
-    redirect_uri = settings.LINKEDIN_REDIRECT_URI.replace("/linkedin/callback", "/facebook/callback")
-
     # 1. Exchange the code for a User Access Token.
     try:
-        async with httpx.AsyncClient() as client:
-            token_res = await client.get(
-                FACEBOOK_TOKEN_URL,
-                params={
-                    "client_id": settings.META_APP_ID.strip() if settings.META_APP_ID else "",
-                    "client_secret": settings.META_APP_SECRET.strip() if settings.META_APP_SECRET else "",
-                    "redirect_uri": redirect_uri,
-                    "code": code,
-                },
-                timeout=20.0,
-            )
-        if token_res.status_code != 200:
-            logger.error("Facebook token exchange failed: %s", token_res.text)
-            return _frontend_redirect("error", "token_exchange_failed")
-        token_data = token_res.json()
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Facebook token exchange error: %s", exc)
-        return _frontend_redirect("error", "token_exchange_error")
+        tokens = await get_provider("facebook").exchange_code(code)
+    except ProviderAPIError as exc:
+        logger.error("Facebook token exchange failed: %s", exc.detail)
+        return _frontend_redirect(
+            "error",
+            "token_exchange_failed" if exc.status_code else "token_exchange_error",
+        )
 
-    access_token = token_data.get("access_token")
-    expires_in = token_data.get("expires_in")
+    access_token = tokens.access_token
     if not access_token:
         return _frontend_redirect("error", "no_access_token")
-
-    token_expires_at = (
-        datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
-        if expires_in
-        else None
-    )
+    token_expires_at = tokens.expires_at
 
     # 2. Fetch the linked Facebook Pages (/me/accounts)
     try:

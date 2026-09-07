@@ -29,6 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.social_accounts import _verify_membership
 from app.core.config import settings
+from app.connectors.base import ProviderAPIError
+from app.connectors.registry import get_provider
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.deps import get_current_active_user
 from app.models.platform import SocialAccount, SocialPlatform
@@ -117,16 +119,8 @@ async def twitter_authorize(
         algorithm=settings.JWT_ALGORITHM,
     )
 
-    params = {
-        "response_type": "code",
-        "client_id": settings.TWITTER_CLIENT_ID,
-        "redirect_uri": settings.TWITTER_REDIRECT_URI,
-        "scope": TWITTER_SCOPES,
-        "state": state,
-        "code_challenge": challenge,
-        "code_challenge_method": "S256",
-    }
-    return {"auth_url": f"{TWITTER_AUTH_URL}?{urlencode(params)}"}
+    # Consent URL, scopes and redirect_uri belong to the provider now.
+    return {"auth_url": get_provider("twitter").build_authorize_url(state, challenge)}
 
 
 # ---------------------------------------------------------------------------
@@ -159,47 +153,22 @@ async def twitter_callback(
         logger.warning("Invalid X OAuth state: %s", exc)
         return _frontend_redirect("error", "invalid_state")
 
-    # 1. Exchange the code for an access token. X supports confidential clients
-    #    (HTTP Basic auth with the client secret) as well as public PKCE clients.
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": settings.TWITTER_REDIRECT_URI,
-        "code_verifier": code_verifier,
-        "client_id": settings.TWITTER_CLIENT_ID,
-    }
-    auth = (
-        (settings.TWITTER_CLIENT_ID, settings.TWITTER_CLIENT_SECRET)
-        if settings.TWITTER_CLIENT_SECRET
-        else None
-    )
+    # 1. Exchange the code for tokens. The grant's shape -- verb, credential
+    # placement, PKCE verifier -- is the provider's business.
     try:
-        async with httpx.AsyncClient() as client:
-            token_res = await client.post(
-                TWITTER_TOKEN_URL,
-                data=data,
-                auth=auth,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                timeout=20.0,
-            )
-        if token_res.status_code != 200:
-            logger.error("X token exchange failed: %s", token_res.text)
-            return _frontend_redirect("error", "token_exchange_failed")
-        token_data = token_res.json()
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("X token exchange error: %s", exc)
-        return _frontend_redirect("error", "token_exchange_error")
+        tokens = await get_provider("twitter").exchange_code(code, code_verifier)
+    except ProviderAPIError as exc:
+        logger.error("X (Twitter) token exchange failed: %s", exc.detail)
+        return _frontend_redirect(
+            "error",
+            "token_exchange_failed" if exc.status_code else "token_exchange_error",
+        )
 
-    access_token = token_data.get("access_token")
-    refresh_token = token_data.get("refresh_token")
-    expires_in = token_data.get("expires_in")
+    access_token = tokens.access_token
+    refresh_token = tokens.refresh_token
     if not access_token:
         return _frontend_redirect("error", "no_access_token")
-    token_expires_at = (
-        datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
-        if expires_in
-        else None
-    )
+    token_expires_at = tokens.expires_at
 
     # 2. Fetch the authenticated user.
     try:

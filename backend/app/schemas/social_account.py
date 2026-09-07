@@ -91,3 +91,31 @@ class SocialAccountWithPlatform(SocialAccountResponse):
     """Social account response including the parent platform details."""
 
     platform: SocialPlatformResponse | None = None
+
+
+class SocialAccountCapabilities(BaseModel):
+    """What the platform behind a connected account will accept.
+
+    Served so the composer can validate before a user spends effort on a post
+    the platform will reject. Its character counter is currently a hardcoded
+    2,200 for every platform, so someone targeting X is told 2,200 is fine and
+    finds out at publish time that the limit is 280.
+
+    ``None`` on a numeric field means "no limit" -- not "unknown" and not zero.
+    """
+
+    social_account_id: UUID
+    platform_slug: str
+    platform_name: str
+
+    supports_images: bool
+    supports_video: bool
+    supports_carousel: bool
+    supports_link_posts: bool
+    supports_comments_api: bool
+    supports_dm_api: bool
+
+    max_chars: int | None = None
+    max_images: int
+    max_video_seconds: int | None = None
+    max_video_bytes: int | None = None

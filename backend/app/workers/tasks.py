@@ -27,10 +27,10 @@ def publish_post(self, post_id: str):
         platforms_published = []
         platforms_failed = []
 
-        # from app.services.platform_service import PlatformService
+        # from app.connectors.registry import get_provider
         # for platform in post.platforms:
         #     try:
-        #         result = PlatformService.publish(post, platform)
+        #         result = await get_provider(platform.slug).publish_post(...)
         #         platforms_published.append(platform.platform_type)
         #     except Exception:
         #         platforms_failed.append(platform.platform_type)
@@ -73,7 +73,7 @@ def fetch_post_performance(self, post_id: str):
         # TODO: Replace with real DB + platform API calls
         # post = db.query(Post).filter(Post.id == post_id).first()
         # for platform in post.platforms:
-        #     metrics = PlatformService.fetch_performance(post_id, platform)
+        #     metrics = await get_provider(slug).get_post_metrics(post_id, sa)
         #     PostPerformance.upsert(post_id=post_id, platform=platform.type, **metrics)
         # db.commit()
 
@@ -156,7 +156,7 @@ def sync_platform_metrics(self, platform_id: str):
 
         # TODO: Replace with real implementation
         # platform = db.query(ConnectedPlatform).filter(...).first()
-        # metrics = PlatformService.fetch_account_metrics(platform)
+        # metrics = await get_provider(slug).get_profile(sa)
         # platform.follower_count = metrics["followers"]
         # platform.last_synced_at = datetime.now(timezone.utc)
         # db.commit()
@@ -271,7 +271,7 @@ def refresh_expiring_tokens(self):
         # refreshed = 0
         # for platform in platforms:
         #     try:
-        #         new_token = PlatformService.refresh_token(platform)
+        #         new_token = await get_provider(slug).refresh_token(sa)
         #         platform.access_token = new_token["access_token"]
         #         platform.token_expires_at = new_token["expires_at"]
         #         refreshed += 1

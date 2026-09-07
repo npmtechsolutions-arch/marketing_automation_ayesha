@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.social_accounts import _verify_membership
 from app.core.config import settings
+from app.connectors.base import ProviderAPIError
+from app.connectors.registry import get_provider
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.deps import get_current_active_user
 from app.models.platform import SocialAccount, SocialPlatform
@@ -106,17 +108,8 @@ async def youtube_authorize(
         algorithm=settings.JWT_ALGORITHM,
     )
 
-    params = {
-        "response_type": "code",
-        "client_id": settings.GOOGLE_CLIENT_ID,
-        "redirect_uri": settings.YOUTUBE_REDIRECT_URI,
-        "scope": YOUTUBE_SCOPES,
-        "state": state,
-        "access_type": "offline",  # request a refresh token
-        "prompt": "consent",       # force refresh-token issuance on re-consent
-        "include_granted_scopes": "true",
-    }
-    return {"auth_url": f"{GOOGLE_AUTH_URL}?{urlencode(params)}"}
+    # Consent URL, scopes and redirect_uri belong to the provider now.
+    return {"auth_url": get_provider("youtube").build_authorize_url(state)}
 
 
 # ---------------------------------------------------------------------------
@@ -147,39 +140,22 @@ async def youtube_callback(
         logger.warning("Invalid YouTube OAuth state: %s", exc)
         return _frontend_redirect("error", "invalid_state")
 
-    # 1. Exchange the code for tokens.
+    # 1. Exchange the code for tokens. The grant's shape -- verb, credential
+    # placement, PKCE verifier -- is the provider's business.
     try:
-        async with httpx.AsyncClient() as client:
-            token_res = await client.post(
-                GOOGLE_TOKEN_URL,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": settings.YOUTUBE_REDIRECT_URI,
-                    "client_id": settings.GOOGLE_CLIENT_ID,
-                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                timeout=20.0,
-            )
-        if token_res.status_code != 200:
-            logger.error("YouTube token exchange failed: %s", token_res.text)
-            return _frontend_redirect("error", "token_exchange_failed")
-        token_data = token_res.json()
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("YouTube token exchange error: %s", exc)
-        return _frontend_redirect("error", "token_exchange_error")
+        tokens = await get_provider("youtube").exchange_code(code)
+    except ProviderAPIError as exc:
+        logger.error("YouTube token exchange failed: %s", exc.detail)
+        return _frontend_redirect(
+            "error",
+            "token_exchange_failed" if exc.status_code else "token_exchange_error",
+        )
 
-    access_token = token_data.get("access_token")
-    refresh_token = token_data.get("refresh_token")
-    expires_in = token_data.get("expires_in")
+    access_token = tokens.access_token
+    refresh_token = tokens.refresh_token
     if not access_token:
         return _frontend_redirect("error", "no_access_token")
-    token_expires_at = (
-        datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
-        if expires_in
-        else None
-    )
+    token_expires_at = tokens.expires_at
 
     # 2. Fetch the user's YouTube channel.
     try:

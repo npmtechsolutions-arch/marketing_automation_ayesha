@@ -1,5 +1,10 @@
 """Publishing to X/Twitter.
 
+These call the moved function directly. It came from
+``PlatformService.publish_to_twitter`` and is unchanged, so these passing
+against ``app.connectors.twitter`` is the check that the move preserved
+behaviour.
+
 Migrated from the ad-hoc ``backend/test_twitter_publishing.py``, which was the
 only one of the old manual scripts carrying real assertions -- the rest printed
 results, needed a running server, or called live third-party APIs with real
@@ -10,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.platform_service import PlatformService
+from app.connectors.twitter import publish_to_twitter
 
 
 def _platform(access_token: str, username: str) -> MagicMock:
@@ -31,7 +36,7 @@ def _post(content: str) -> MagicMock:
 def test_mock_token_returns_simulated_success():
     """A token that is explicitly a mock short-circuits to a fake success, so
     development and seeded data do not call the live API."""
-    result = PlatformService.publish_to_twitter(
+    result = publish_to_twitter(
         _post("Test tweet content"), _platform("mock_token_123", "testuser")
     )
 
@@ -49,7 +54,7 @@ def test_real_token_publishes_and_returns_the_tweet_url(mock_httpx):
     response.json.return_value = {"data": {"id": "1829304958671"}}
     client.post.return_value = response
 
-    result = PlatformService.publish_to_twitter(
+    result = publish_to_twitter(
         _post("A tweet."), _platform("real_oauth2_token_xyz", "someaccount")
     )
 
@@ -76,7 +81,7 @@ def test_api_error_raises_with_an_actionable_message(mock_httpx):
     client.post.return_value = response
 
     with pytest.raises(ValueError) as exc:
-        PlatformService.publish_to_twitter(
+        publish_to_twitter(
             _post("Test tweet"), _platform("real_oauth2_token_xyz", "someaccount")
         )
 
