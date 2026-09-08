@@ -27,6 +27,7 @@ from app.services import (
     error_log,
     publishing,
     recurring,
+    report_jobs,
 )
 
 logger = logging.getLogger(__name__)
@@ -233,6 +234,38 @@ async def materialise_recurring() -> None:
             logger.exception("Materialising recurring schedules failed")
 
 
+_last_report_check: float = 0.0
+
+
+async def run_reports() -> None:
+    """Generate queued reports and queue any the schedule is due.
+
+    Rate-limited to once a minute like the recurrence pass: rendering is
+    CPU-bound in this process, and checking twelve times as often would be
+    twelve times the queries for the same answer.
+    """
+    global _last_report_check
+
+    now = asyncio.get_running_loop().time()
+    if (
+        _last_report_check
+        and now - _last_report_check < report_jobs.CHECK_INTERVAL_SECONDS
+    ):
+        return
+    _last_report_check = now
+
+    async with AsyncSessionLocal() as session:
+        try:
+            await report_jobs.queue_scheduled(session)
+            generated = await report_jobs.run_pending(session)
+            await session.commit()
+            if generated:
+                logger.info("Generated %d report(s)", generated)
+        except Exception:
+            await session.rollback()
+            logger.exception("Report generation pass failed")
+
+
 async def scheduled_post_worker():
     logger.info(
         "Starting publishing worker (poll=%ss, batch=%d, max concurrent=%d).",
@@ -241,6 +274,7 @@ async def scheduled_post_worker():
     while True:
         try:
             await materialise_recurring()
+            await run_reports()
             await enqueue_due_posts()
             await run_due_jobs()
             await recover_stale_jobs()

@@ -52,3 +52,11 @@ aiofiles==25.1.0
 # --- Utilities -------------------------------------------------------------
 python-dateutil==2.9.0.post0
 tenacity==9.1.4
+
+# Report rendering (scope 13). WeasyPrint additionally needs pango at the
+# system level -- `brew install pango` on macOS, `libpango-1.0-0` and
+# `libpangoft2-1.0-0` on Debian. The PDF renderer degrades to "unavailable"
+# rather than erroring when it is missing, so CSV and Excel still work.
+openpyxl==3.1.5
+weasyprint==70.0
+

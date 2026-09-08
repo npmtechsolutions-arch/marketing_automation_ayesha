@@ -24,6 +24,21 @@ TODAY = date(2026, 6, 15)
 NOW = datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc)
 
 
+def _today() -> date:
+    """Today on the *workspace's* clock, which these fixtures set to UTC.
+
+    Not ``date.today()``, which is the machine's local date. The analytics
+    windows resolve in the workspace timezone, so on a machine east of UTC --
+    between local midnight and UTC midnight -- a row written "today" lands a day
+    beyond the window and every assertion about it fails.
+
+    The suite passed for weeks and broke at 00:17 IST, which is the whole shape
+    of the bug: it was always wrong, and only visible for five and a half hours
+    a day. Any CI runner not on UTC would have found it eventually.
+    """
+    return datetime.now(timezone.utc).date()
+
+
 @pytest.fixture
 async def workspace(
     db_session, user_factory, account_factory, organization_factory,
@@ -244,9 +259,9 @@ async def test_overview_compares_with_the_preceding_window(
 ):
     ws = await workspace()
     # 100 reach in the current 7 days, 50 in the 7 before.
-    await _row(db_session, ws["social_ids"][0], date.today(), reach=100)
+    await _row(db_session, ws["social_ids"][0], _today(), reach=100)
     await _row(
-        db_session, ws["social_ids"][0], date.today() - timedelta(days=9), reach=50
+        db_session, ws["social_ids"][0], _today() - timedelta(days=9), reach=50
     )
 
     body = (
@@ -268,7 +283,7 @@ async def test_engagement_rate_is_null_without_reach(
     """0% reads as "nobody engaged", which is a different claim from "we could
     not measure it"."""
     ws = await workspace()
-    await _row(db_session, ws["social_ids"][0], date.today(), likes=10)
+    await _row(db_session, ws["social_ids"][0], _today(), likes=10)
 
     body = (
         await client.get(
@@ -397,8 +412,8 @@ async def test_backoff_is_jittered():
 
 async def test_platforms_breakdown(client, auth_header, db_session, workspace):
     ws = await workspace(slugs=("instagram", "twitter"))
-    await _row(db_session, ws["social_ids"][0], date.today(), followers=100, reach=500)
-    await _row(db_session, ws["social_ids"][1], date.today(), followers=50)
+    await _row(db_session, ws["social_ids"][0], _today(), followers=100, reach=500)
+    await _row(db_session, ws["social_ids"][1], _today(), followers=50)
 
     body = (
         await client.get(
@@ -418,7 +433,7 @@ async def test_audience_series_and_growth(
     for offset, followers in ((6, 1000), (0, 1100)):
         await _row(
             db_session, ws["social_ids"][0],
-            date.today() - timedelta(days=offset), followers=followers,
+            _today() - timedelta(days=offset), followers=followers,
         )
 
     body = (
@@ -438,7 +453,7 @@ async def test_growth_is_null_with_a_single_snapshot(
 ):
     """One point shows a value, not growth."""
     ws = await workspace()
-    await _row(db_session, ws["social_ids"][0], date.today(), followers=1000)
+    await _row(db_session, ws["social_ids"][0], _today(), followers=1000)
 
     body = (
         await client.get(
@@ -483,7 +498,7 @@ async def test_csv_export_streams_with_a_filename(
     client, auth_header, db_session, workspace
 ):
     ws = await workspace()
-    await _row(db_session, ws["social_ids"][0], date.today(), followers=100, reach=50)
+    await _row(db_session, ws["social_ids"][0], _today(), followers=100, reach=50)
 
     response = await client.get(
         f"/api/v1/accounts/{ws['account_id']}/analytics/summary?format=csv",
@@ -504,7 +519,7 @@ async def test_csv_renders_null_as_blank_not_the_word_none(
 ):
     """A spreadsheet should read an unreported metric as empty, not as text."""
     ws = await workspace()
-    await _row(db_session, ws["social_ids"][0], date.today(), followers=100)
+    await _row(db_session, ws["social_ids"][0], _today(), followers=100)
 
     body = (
         await client.get(
@@ -521,7 +536,7 @@ async def test_another_workspaces_analytics_are_not_included(
 ):
     mine = await workspace()
     theirs = await workspace()
-    await _row(db_session, theirs["social_ids"][0], date.today(), followers=9999)
+    await _row(db_session, theirs["social_ids"][0], _today(), followers=9999)
 
     body = (
         await client.get(
@@ -644,7 +659,7 @@ async def test_engagement_rate_is_null_when_no_interaction_is_reported(
     Found by driving the running server, not by the suite.
     """
     ws = await workspace()
-    today = date.today()
+    today = _today()
     await analytics_sync.upsert_day(
         db_session, ws["social_ids"][0], today, {"reach": 61588, "impressions": 154169}
     )
@@ -669,7 +684,7 @@ async def test_engagement_rate_counts_a_partially_reported_numerator(
     where nothing at all was reported.
     """
     ws = await workspace()
-    today = date.today()
+    today = _today()
     await analytics_sync.upsert_day(
         db_session, ws["social_ids"][0], today, {"reach": 1000, "likes": 250}
     )

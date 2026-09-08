@@ -68,6 +68,12 @@ class FakeStorage(storage.StorageBackend):
         """Stands in for the client's PUT to the presigned URL."""
         self.objects[key] = data
 
+    def put_object(self, key: str, data: bytes, *, content_type: str = "") -> None:
+        """A server-side write. The media library never uses this -- browsers
+        upload straight to the presigned URL -- but the interface requires it,
+        which is what stops a backend shipping without it."""
+        self.objects[key] = data
+
     def head(self, key):
         if key not in self.objects:
             raise storage.ObjectNotFound(key)

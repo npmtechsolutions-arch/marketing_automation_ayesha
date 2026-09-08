@@ -28,6 +28,12 @@ from app.models.recurring_schedule import (
     RecurrenceStatus,
     RecurringSchedule,
 )
+from app.models.report import (
+    Report,
+    ReportFormat,
+    ReportStatus,
+    ReportType,
+)
 from app.models.strategy import Strategy
 from app.models.subscription_event import (
     SubscriptionEvent,
@@ -40,6 +46,10 @@ from app.models.webhook import Webhook, WebhookStatus
 
 __all__ = [
     "ApiError",
+    "Report",
+    "ReportFormat",
+    "ReportStatus",
+    "ReportType",
     "QueueSlot",
     "RecurringSchedule",
     "RecurrenceStatus",

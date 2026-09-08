@@ -1,0 +1,142 @@
+{# The report PDF. Rendered by WeasyPrint, which is a print engine rather than
+   a browser: no JavaScript, no flexbox gaps to rely on, and page breaks are
+   the layout primitive that matters. Everything below is deliberately plain.
+
+   Branding values are sanitised before they reach here (hex colours only, and
+   an http(s) logo URL only), because this document is sent to the workspace's
+   own clients. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ branding.company_name }} — {{ period.label }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 16mm 20mm 16mm;
+    @bottom-center {
+      content: "{{ branding.company_name }} · {{ period.label }} · page " counter(page) " of " counter(pages);
+      font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+      font-size: 8pt;
+      color: #94a3b8;
+    }
+  }
+  body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+         color: #0f172a; font-size: 10pt; line-height: 1.5; }
+  h1 { font-size: 22pt; margin: 0 0 2mm; color: {{ branding.primary_color }}; }
+  h2 { font-size: 13pt; margin: 9mm 0 3mm; color: {{ branding.primary_color }};
+       border-bottom: 1px solid #e2e8f0; padding-bottom: 1.5mm; }
+  .sub { color: #64748b; font-size: 10pt; margin: 0; }
+  header { border-bottom: 3px solid {{ branding.primary_color }};
+           padding-bottom: 4mm; margin-bottom: 6mm; }
+  .logo { max-height: 16mm; max-width: 55mm; margin-bottom: 3mm; }
+  .cards { display: table; width: 100%; border-spacing: 3mm 0; margin: 0 -3mm; }
+  .card { display: table-cell; width: 25%; background: #f8fafc;
+          border: 1px solid #e2e8f0; border-radius: 3mm; padding: 4mm; }
+  .card .label { font-size: 8pt; color: #64748b; text-transform: uppercase;
+                 letter-spacing: .04em; }
+  .card .value { font-size: 17pt; font-weight: 700; margin-top: 1mm; }
+  .up { color: {{ branding.accent_color }}; } .down { color: #e11d48; }
+  .delta { font-size: 8.5pt; margin-top: .5mm; }
+  table { width: 100%; border-collapse: collapse; margin-top: 2mm; }
+  th { text-align: left; font-size: 8pt; text-transform: uppercase;
+       letter-spacing: .04em; color: #64748b; padding: 2mm 2mm; }
+  td { padding: 2mm; border-top: 1px solid #e2e8f0; font-size: 9.5pt; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .summary { background: #f8fafc; border-left: 3px solid {{ branding.primary_color }};
+             padding: 4mm 5mm; border-radius: 0 2mm 2mm 0; }
+  .muted { color: #94a3b8; }
+  section { break-inside: avoid; }
+  footer { margin-top: 10mm; padding-top: 3mm; border-top: 1px solid #e2e8f0;
+           font-size: 8pt; color: #94a3b8; }
+</style>
+</head>
+<body>
+<header>
+  {% if branding.logo_url %}<img class="logo" src="{{ branding.logo_url }}" alt="">{% endif %}
+  <h1>{{ workspace.name }}</h1>
+  <p class="sub">{{ period.label }} · {{ period.start }} to {{ period.end }} ({{ period.timezone }})</p>
+</header>
+
+<section>
+  <h2>Summary</h2>
+  <div class="summary">{{ executive_summary }}</div>
+</section>
+
+<section>
+  <h2>Headline</h2>
+  <div class="cards">
+    {% for card in headline %}
+    <div class="card">
+      <div class="label">{{ card.label }}</div>
+      <div class="value">{{ card.value }}</div>
+      {# A dash rather than 0% when there is nothing to compare against: the
+         null discipline that runs through the analytics reaches the PDF too. #}
+      <div class="delta {{ 'up' if card.positive else ('down' if card.negative else 'muted') }}">
+        {{ card.delta }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if platforms %}
+<section>
+  <h2>By platform</h2>
+  <table>
+    <thead><tr>
+      <th>Platform</th><th class="num">Followers</th><th class="num">Reach</th>
+      <th class="num">Impressions</th><th class="num">Interactions</th><th class="num">Eng. rate</th>
+    </tr></thead>
+    <tbody>
+      {% for row in platforms %}
+      <tr>
+        <td>{{ row.platform_name }}</td>
+        <td class="num">{{ row.followers | metric }}</td>
+        <td class="num">{{ row.reach | metric }}</td>
+        <td class="num">{{ row.impressions | metric }}</td>
+        <td class="num">{{ row.interactions | metric }}</td>
+        <td class="num">{{ row.engagement_rate | percent }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if top_posts %}
+<section>
+  <h2>Top posts</h2>
+  <table>
+    <thead><tr>
+      <th>Post</th><th>Published</th><th class="num">Engagement</th>
+      <th class="num">Reach</th><th class="num">Eng. rate</th>
+    </tr></thead>
+    <tbody>
+      {% for post in top_posts %}
+      <tr>
+        <td>{{ post.title | truncate(70) }}</td>
+        <td>{{ (post.published_at or '')[:10] or '—' }}</td>
+        <td class="num">{{ post.engagement | metric }}</td>
+        <td class="num">{{ post.reach | metric }}</td>
+        <td class="num">{{ post.engagement_rate | percent }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if not has_data %}
+<section>
+  <p class="muted">No analytics were recorded for this period. Metrics arrive
+  from the nightly sync once an account has been connected for a full day.</p>
+</section>
+{% endif %}
+
+<footer>
+  Generated {{ generated_at[:10] }}{% if branding.footer_note %} · {{ branding.footer_note }}{% endif %}
+  · A dash means the platform does not report that metric, not that it is zero.
+</footer>
+</body>
+</html>

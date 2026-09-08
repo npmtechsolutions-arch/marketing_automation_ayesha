@@ -92,6 +92,17 @@ class StorageBackend(ABC):
         """
 
     @abstractmethod
+    def put_object(
+        self, key: str, data: bytes, *, content_type: str = "application/octet-stream"
+    ) -> None:
+        """Write bytes from the server.
+
+        Distinct from ``presign_upload``, which hands the browser a URL and
+        never sees the file. Reports are rendered in the worker, so their bytes
+        exist in this process and have to be written from here.
+        """
+
+    @abstractmethod
     def presign_download(self, key: str) -> str:
         ...
 
@@ -176,6 +187,18 @@ class S3Backend(StorageBackend):
             if code in ("404", "NoSuchKey", "NotFound"):
                 raise ObjectNotFound(key) from exc
             raise StorageError(f"Could not read the object: {exc}") from exc
+
+    def put_object(
+        self, key: str, data: bytes, *, content_type: str = "application/octet-stream"
+    ) -> None:
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            self._client.put_object(
+                Bucket=self._bucket, Key=key, Body=data, ContentType=content_type
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise StorageError(f"Could not store {key}: {exc}") from exc
 
     def presign_download(self, key: str) -> str:
         try:
@@ -267,6 +290,12 @@ class LocalStorageBackend(StorageBackend):
             key=key,
             expires_in=PRESIGN_EXPIRY_SECONDS,
         )
+
+    def put_object(
+        self, key: str, data: bytes, *, content_type: str = "application/octet-stream"
+    ) -> None:
+        # content_type is not stored on disk; head() sniffs it from the key.
+        self.write(key, data)
 
     def write(self, key: str, data: bytes) -> None:
         path = self.path_for(key)

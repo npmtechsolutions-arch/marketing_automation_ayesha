@@ -29,6 +29,13 @@ Every entry earned its place by a specific incident.
   61,000 reach, `/analytics/posts` 500ing on Postgres, and an all-zero
   connection-health panel from a wrong enum key.
 
+- **A test that anchors on `date.today()` is anchored to the machine, not the
+  product.** Windows here resolve in the *workspace's* timezone, so on a machine
+  east of UTC — between local midnight and UTC midnight — a row written "today"
+  lands a day outside the window. Six analytics tests passed for weeks and broke
+  at 00:17 IST: always wrong, visible five and a half hours a day. Compute the
+  date on the same clock the code under test uses.
+
 - **SQLite accepts SQL that Postgres rejects.** The suite runs on in-memory
   SQLite. `round(double precision, int)` does not exist in Postgres — only
   `round(numeric, int)` — so a query passed all 600-odd tests and 500'd in
@@ -92,6 +99,15 @@ Every entry earned its place by a specific incident.
 - **One source of truth per number.** Limits live in `plan_features`, prices in
   `plans`. A serialised copy that no longer drives enforcement is the drift
   pattern this project keeps killing.
+
+## System dependencies
+
+- **WeasyPrint needs pango**, which pip does not install: the package imports
+  and then fails at render time with "cannot load library libpango-1.0-0". On
+  macOS `brew install pango`; on Debian `libpango-1.0-0` and
+  `libpangoft2-1.0-0`. Code that renders PDFs should degrade to "this format is
+  unavailable" rather than failing the whole job, and its tests should skip
+  rather than fail — the same convention as the Postgres-gated suites.
 
 ## Shell
 

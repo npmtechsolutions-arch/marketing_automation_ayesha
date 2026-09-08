@@ -709,6 +709,90 @@ Nothing fires on its own — no assist on blur, on debounce or on mount. Every
 call is metered, so every call is one the author asked for by name, and the menu
 says so.
 
+## Reports
+
+`POST /accounts/{id}/reports/` queues one; the worker generates it; `GET
+.../{id}/download?format=pdf|csv|xlsx` hands back a short-lived presigned URL.
+Weekly, monthly, quarterly or a custom span.
+
+**202, not 201.** The row exists, the files do not yet. Generating inline would
+hold the connection through an aggregation and three renders, which dies behind
+a proxy on any period worth reporting on. The page polls, and stops polling
+when nothing is building.
+
+### The period is fixed when the report is created
+
+Stored as two dates on the row, never recomputed. "Last month" evaluated at read
+time answers a different question every month, so a report titled *August*
+downloaded in December would silently re-aggregate as November — the numbers
+under a constant title would change.
+
+It is also always the **last complete** period. A monthly report generated on
+the 3rd that covers three days is a number nobody asked for, and it would change
+if regenerated. Periods resolve on the workspace's clock, so *September* means
+September on the customer's calendar.
+
+### The numbers are the analytics page's numbers
+
+`reporting.aggregate` is built on `analytics_query`, not beside it. An agency
+that screenshots the dashboard and emails the PDF is the whole point of the
+feature, and two implementations of "sum the reach" is how those two numbers
+drift apart. The null discipline survives into the documents: an unreported
+metric is an em dash in the PDF and an **empty cell** in the CSV and workbook,
+never a zero and never the string `None`.
+
+Excel writes numbers as numbers. A formatted string would make every column sort
+alphabetically and every `SUM` return zero — the first thing a spreadsheet user
+tries.
+
+### One format failing does not fail the report
+
+PDF needs WeasyPrint, which needs **pango** at the system level (`brew install
+pango`; `libpango-1.0-0` and `libpangoft2-1.0-0` on Debian). A host without it
+still produces CSV and Excel: the format is simply absent from `file_keys`,
+which is the honest record of what happened, and the row carries a note saying
+which formats were unavailable. Only if *every* renderer fails does the report
+fail. The PDF test skips rather than fails when the library is missing, the same
+convention as the Postgres-gated suites.
+
+### White-label
+
+`branding` carries a company name, logo URL, two colours and a footer note,
+gated by the `white_label` entitlement.
+
+It is resolved **once, at creation, and frozen on the row**. A customer who
+rebrands should not find last quarter's PDF has changed colours, and one whose
+plan lapses should not retroactively lose branding from a file they already had.
+
+Without the entitlement the customer's branding is *stored but not applied*, and
+the settings endpoint returns both `branding` (what is saved) and `effective`
+(what a report would use today) so the difference is visible rather than
+mysterious. That is a fallback rather than an error on purpose: a hard failure
+at the plan boundary would mean a scheduled report silently stops arriving the
+month a plan changes.
+
+Values are sanitised before they reach the template — hex colours only, `http(s)`
+logo URLs only, unknown keys dropped — because the document is rendered from an
+HTML template and sent to the workspace's own clients. Post titles are
+autoescaped for the same reason.
+
+### Scheduled reports
+
+A workspace sets `reports_cadence` to `off`, `weekly` or `monthly`, beside the
+timezone and approval flags on its settings blob. The worker queues one when the
+period has closed.
+
+Idempotent **by period**, not by a stored `next_run_at`: "has a monthly report
+for August already been made?" is a question the reports table answers exactly,
+while a next-run timestamp can drift, be missed while a worker is down, or fire
+twice after a restart — and each of those puts a duplicate in front of a
+customer. A workspace younger than the period is skipped; there is nothing to
+report on before it existed.
+
+A "report ready" notification goes to whoever asked, or to the workspace owner
+for a scheduled one. Not to every member: telling five people the monthly report
+exists is how people learn to ignore notifications.
+
 
 ## Review and approvals
 
