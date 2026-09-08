@@ -374,6 +374,48 @@ Pruning is per organization, from the `analytics_history_days` entitlement, with
 so a misconfigured plan cannot delete a workspace's entire history. A plan with no limit set keeps
 everything. Because limits live on the *plan*, two workspaces on the same tier necessarily share a
 retention window; a paying workspace keeps more than a free one by being on a different plan.
+### Suggested posting times
+
+`GET /analytics/best-times` returns a weekday × hour heatmap and the top three
+slots; `/best-times/next` returns those slots as concrete upcoming datetimes so
+a chip can fill the scheduler without the browser doing weekday arithmetic in
+its own timezone.
+
+This replaced a heatmap drawn from `Math.random()` captioned with a fabricated
+"22% uplift". Everything about the design follows from not doing that again:
+**the payload carries a `source` of `observed` or `default`, and every cell
+carries `observed`**, so a reader can always tell a measurement from a
+convention. The UI renders the three states differently — a tinted cell, a blank
+one, and a dimmed grid with a caption — rather than leaving it to be inferred.
+
+**Where the numbers come from, and where they do not.** `analytics_daily` stores
+a date and no hour, so it cannot say anything about time of day and is not
+consulted. The dataset is `Post.published_at` joined to `post_performance`.
+Attribution is per connected account, not merely per platform: posts are
+filtered by the connection in `target_accounts` *and* by the performance row's
+`platform_type`, so a post sent to Instagram and Facebook contributes its
+Instagram numbers to the Instagram account only.
+
+**Two thresholds.** Below twelve measured posts in the window the account's own
+history is anecdote rather than evidence — three posts that happened to land on
+a Tuesday would otherwise make Tuesday the recommendation forever — so the
+platform's usual times are shown instead, labelled as such. And a single cell
+needs at least two posts before it counts as measured rather than noise, so one
+spectacular post cannot become a recommendation.
+
+**Ranking is by average, not total.** A slot used twenty times out-totals a
+better one used twice, and the question is where the next post should go, not
+where most have gone.
+
+**A slot never tried scores null, not zero.** Zero would say "we posted here and
+nobody engaged", which is a different and false claim — so those cells render
+blank rather than dark, since dark reads as "tried and failed".
+
+Hours are on the workspace's clock: "post at 9am" means 9am where the audience
+is. The slot-to-datetime conversion goes through the same resolution recurring
+schedules use, so a suggestion inside a spring-forward gap lands on an instant
+that exists.
+
 
 ### Tested on Postgres, not just SQLite
 

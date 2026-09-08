@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ListChecks,
   FileSpreadsheet,
+  Flame,
   Plus,
   Sparkles,
   ChevronLeft,
@@ -33,6 +34,7 @@ import PlatformIcon from "@/components/shared/PlatformIcon";
 import PublishingJobs from "@/components/content/PublishingJobs";
 import QueuePanel from "@/components/scheduling/QueuePanel";
 import BulkImportDialog from "@/components/content/BulkImportDialog";
+import BestTimesHeatmap from "@/components/scheduling/BestTimesHeatmap";
 import ReviewPanel from "@/components/content/ReviewPanel";
 import { statusMeta, type BadgeVariant, type ReviewStatus } from "@/lib/review";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
@@ -335,6 +337,7 @@ export default function CalendarPage() {
   const [view, setView] = useState<CalendarView>(initialView);
   const [showQueue, setShowQueue] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
 
   useEffect(() => {
     const saved =
@@ -611,6 +614,19 @@ export default function CalendarPage() {
             </button>
 
             <button
+              onClick={() => setShowHeatmap((v) => !v)}
+              className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm transition-colors"
+              style={{
+                backgroundColor: showHeatmap ? "rgba(109,94,246,0.16)" : "var(--sidebar-hover-bg)",
+                color: showHeatmap ? "var(--page-heading)" : "var(--page-text-secondary)",
+                border: "1px solid var(--surface-border)",
+              }}
+            >
+              <Flame className="h-4 w-4" />
+              Best times
+            </button>
+
+            <button
               onClick={() => setShowImport(true)}
               className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm transition-colors"
               style={{
@@ -679,6 +695,16 @@ export default function CalendarPage() {
               fetchPosts();
             }}
           />
+        )}
+
+        {showHeatmap && workspaceId && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            className="overflow-hidden"
+          >
+            <BestTimesHeatmap accountId={workspaceId} />
+          </motion.div>
         )}
 
         {showQueue && workspaceId && (

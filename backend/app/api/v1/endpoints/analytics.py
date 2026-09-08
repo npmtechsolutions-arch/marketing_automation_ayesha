@@ -2,7 +2,7 @@ import asyncio
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.services import analytics_query
+from app.services import analytics_query, dashboard
+from app.services import best_times as best_times_service
 from app.core.deps import get_current_active_user
 from app.models.account import Account
 from app.models.post import Post, PostStatus
@@ -512,3 +513,83 @@ async def analytics_audience(
             f"analytics-audience-{window.start.date()}-to-{window.end.date()}.csv",
         )
     return payload
+
+
+@router.get("/best-times")
+async def best_times(
+    account_id: uuid.UUID,
+    social_account_id: uuid.UUID | None = Query(
+        None, description="Narrow to one connection. Omit for the whole workspace."
+    ),
+    window_days: int = Query(84, ge=14, le=365),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """When this account's posts have actually performed, by weekday and hour.
+
+    The payload carries a ``source`` of ``observed`` or ``default``, and every
+    heatmap cell carries ``observed``. A caller must respect both: below the
+    sample threshold these are the platform's usual posting times, not this
+    account's data, and presenting them as measurements is the fabrication this
+    feature replaced.
+
+    Hours are on the workspace's clock. ``analytics_daily`` is not consulted --
+    it stores a date and no hour, so it cannot say anything about time of day.
+    """
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one_or_none()
+    if account is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    await _verify_account_access(account_id, current_user, db)
+
+    try:
+        return await best_times_service.analyse(
+            db, account,
+            social_account_id=social_account_id,
+            window_days=window_days,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/best-times/next")
+async def best_time_slots(
+    account_id: uuid.UUID,
+    social_account_id: uuid.UUID | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """The suggested slots as concrete upcoming datetimes.
+
+    So a chip in the composer can fill the scheduler without the browser doing
+    weekday arithmetic in its own timezone -- the mistake the S2 defect was.
+    """
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one_or_none()
+    if account is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    await _verify_account_access(account_id, current_user, db)
+
+    report = await best_times_service.analyse(
+        db, account, social_account_id=social_account_id
+    )
+    tz = dashboard.workspace_timezone(account)
+    return {
+        "source": report["source"],
+        "timezone": tz.key,
+        "explanation": report["explanation"],
+        "slots": [
+            {
+                **suggestion,
+                "run_at": best_times_service.next_occurrence(
+                    suggestion["weekday"], suggestion["hour"], tz
+                ).isoformat(),
+                "local": best_times_service.next_occurrence(
+                    suggestion["weekday"], suggestion["hour"], tz
+                ).astimezone(tz).strftime("%Y-%m-%dT%H:%M"),
+            }
+            for suggestion in report["suggestions"]
+        ],
+    }

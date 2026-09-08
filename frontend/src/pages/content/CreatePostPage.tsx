@@ -51,6 +51,7 @@ import api, { getAccountId , getAccountIdSync } from "@/lib/api";
 import { localDateTime, schedulingApi, wallClockIn } from "@/lib/scheduling";
 import RecurrenceEditor from "@/components/scheduling/RecurrenceEditor";
 import AiAssistMenu from "@/components/content/AiAssistMenu";
+import SuggestedTimes from "@/components/scheduling/SuggestedTimes";
 import { showSuccess, showError, showWarning } from "@/components/ui/Toast";
 
 // ────────────────────────────────────────────────────────
@@ -2896,6 +2897,19 @@ export default function CreatePostPage() {
                             style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                           />
                         </div>
+                      </div>
+                      <div className="mt-3">
+                        <SuggestedTimes
+                          accountId={workspaceId}
+                          socialAccountId={selectedAccounts[0] ?? null}
+                          onPick={(date, time) => {
+                            // Already the workspace's wall clock; passing it
+                            // through a Date here would reintroduce the
+                            // browser-timezone bug the S2 fix removed.
+                            setScheduleDate(date);
+                            setScheduleTime(time);
+                          }}
+                        />
                       </div>
                       <p className="mt-3 text-xs" style={{ color: "var(--page-text-muted)" }}>
                         Times are on the workspace's clock ({workspaceTimezone}),
