@@ -21,7 +21,13 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.post import Post, PostStatus
-from app.services import account_health, analytics_sync, error_log, publishing
+from app.services import (
+    account_health,
+    analytics_sync,
+    error_log,
+    publishing,
+    recurring,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +202,37 @@ async def maybe_prune_api_errors() -> None:
             logger.exception("Pruning api_errors failed")
 
 
+_last_recurring_check: float = 0.0
+
+
+async def materialise_recurring() -> None:
+    """Turn due recurring schedules into posts, about once a minute.
+
+    Not every poll: the loop runs every 5 seconds, and a schedule is due at
+    minute granularity at best, so checking twelve times as often would be
+    twelve times the queries for the same answer.
+    """
+    global _last_recurring_check
+
+    now = asyncio.get_running_loop().time()
+    if (
+        _last_recurring_check
+        and now - _last_recurring_check < recurring.CHECK_INTERVAL_SECONDS
+    ):
+        return
+    _last_recurring_check = now
+
+    async with AsyncSessionLocal() as session:
+        try:
+            produced = await recurring.run_due(session)
+            await session.commit()
+            if produced:
+                logger.info("Recurring schedules produced %d post(s)", produced)
+        except Exception:
+            await session.rollback()
+            logger.exception("Materialising recurring schedules failed")
+
+
 async def scheduled_post_worker():
     logger.info(
         "Starting publishing worker (poll=%ss, batch=%d, max concurrent=%d).",
@@ -203,6 +240,7 @@ async def scheduled_post_worker():
     )
     while True:
         try:
+            await materialise_recurring()
             await enqueue_due_posts()
             await run_due_jobs()
             await recover_stale_jobs()

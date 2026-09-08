@@ -23,6 +23,11 @@ from app.models.publishing_job import (
     PublishingLog,
 )
 from app.models.post_performance import PostPerformance
+from app.models.recurring_schedule import (
+    QueueSlot,
+    RecurrenceStatus,
+    RecurringSchedule,
+)
 from app.models.strategy import Strategy
 from app.models.subscription_event import (
     SubscriptionEvent,
@@ -35,6 +40,9 @@ from app.models.webhook import Webhook, WebhookStatus
 
 __all__ = [
     "ApiError",
+    "QueueSlot",
+    "RecurringSchedule",
+    "RecurrenceStatus",
     "SubscriptionEvent",
     "SubscriptionEventSource",
     # Core models

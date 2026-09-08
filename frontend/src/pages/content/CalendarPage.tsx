@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays,
+  ListChecks,
   Plus,
   Sparkles,
   ChevronLeft,
@@ -29,6 +30,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import PlatformIcon from "@/components/shared/PlatformIcon";
 import PublishingJobs from "@/components/content/PublishingJobs";
+import QueuePanel from "@/components/scheduling/QueuePanel";
 import ReviewPanel from "@/components/content/ReviewPanel";
 import { statusMeta, type BadgeVariant, type ReviewStatus } from "@/lib/review";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
@@ -329,6 +331,7 @@ export default function CalendarPage() {
     "month"
   );
   const [view, setView] = useState<CalendarView>(initialView);
+  const [showQueue, setShowQueue] = useState(false);
 
   useEffect(() => {
     const saved =
@@ -591,6 +594,19 @@ export default function CalendarPage() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => setShowQueue((v) => !v)}
+              className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm transition-colors"
+              style={{
+                backgroundColor: showQueue ? "rgba(109,94,246,0.16)" : "var(--sidebar-hover-bg)",
+                color: showQueue ? "var(--page-heading)" : "var(--page-text-secondary)",
+                border: "1px solid var(--surface-border)",
+              }}
+            >
+              <ListChecks className="h-4 w-4" />
+              Queue
+            </button>
+
             {/* View toggle */}
             <div
               className="flex items-center p-1 rounded-xl backdrop-blur-sm"
@@ -637,6 +653,16 @@ export default function CalendarPage() {
             </Button>
           </div>
         </motion.div>
+
+        {showQueue && workspaceId && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            className="overflow-hidden"
+          >
+            <QueuePanel accountId={workspaceId} />
+          </motion.div>
+        )}
 
         {/* Quick stats */}
         <motion.div

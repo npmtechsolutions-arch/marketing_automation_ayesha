@@ -141,6 +141,7 @@ from app.api.v1.endpoints import (
     linkedin_oauth,
     notifications,
     posts,
+    scheduling,
     settings as settings_routes,
     social_accounts,
     social_platforms,
@@ -176,6 +177,7 @@ app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["Webhooks"]
 app.include_router(posts.router,            prefix="/api/v1/accounts/{account_id}/posts",       tags=["Content"])
 app.include_router(ai.router,               prefix="/api/v1/accounts/{account_id}/ai",          tags=["AI Content Generation"])
 app.include_router(analytics.router,        prefix="/api/v1/accounts/{account_id}/analytics",   tags=["Analytics"])
+app.include_router(scheduling.router,       prefix="/api/v1/accounts/{account_id}/scheduling",  tags=["Scheduling"])
 app.include_router(strategies.router,       prefix="/api/v1/accounts/{account_id}/strategies",  tags=["Strategies"])
 app.include_router(campaigns.router,        prefix="/api/v1/accounts/{account_id}/campaigns",   tags=["Campaigns"])
 app.include_router(notifications.router,    prefix="/api/v1/notifications",                     tags=["Notifications"])

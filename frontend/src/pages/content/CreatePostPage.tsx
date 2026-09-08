@@ -34,6 +34,8 @@ import {
   Play,
   Send,
   Megaphone,
+  ListChecks,
+  Repeat,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import MediaPicker from "@/components/media/MediaPicker";
@@ -46,6 +48,8 @@ import PlatformIcon from "@/components/shared/PlatformIcon";
 import DevicePreview from "@/components/shared/DevicePreview";
 import { cn } from "@/lib/utils";
 import api, { getAccountId , getAccountIdSync } from "@/lib/api";
+import { schedulingApi } from "@/lib/scheduling";
+import RecurrenceEditor from "@/components/scheduling/RecurrenceEditor";
 import { showSuccess, showError, showWarning } from "@/components/ui/Toast";
 
 // ────────────────────────────────────────────────────────
@@ -324,7 +328,11 @@ export default function CreatePostPage() {
   const [previewDevice, setPreviewDevice] = useState<DeviceType>("mobile");
 
   // Step 4 - Schedule
-  const [postMode, setPostMode] = useState<"now" | "schedule">("now");
+  const [postMode, setPostMode] = useState<"now" | "schedule" | "queue">("now");
+  // Repeating is not a fourth publish mode: it needs a saved post to copy
+  // from, so it appears as its own section once the post exists.
+  const [showRepeat, setShowRepeat] = useState(false);
+  const workspaceId = getAccountIdSync();
   const [scheduleDate, setScheduleDate] = useState(() => {
     const d = new Date();
     d.setHours(d.getHours() + 1);
@@ -775,6 +783,13 @@ export default function CreatePostPage() {
       if (postMode === "now") {
         await api.post(`/accounts/${accountId}/posts/${post.id}/publish`);
         showSuccess("Post published successfully!");
+      } else if (postMode === "queue") {
+        // The server picks the slot and converts it, so the browser's own
+        // timezone never enters into it.
+        const placed = await schedulingApi.addToQueue(accountId, post.id);
+        showSuccess(
+          `Queued for ${new Date(placed.scheduled_at).toLocaleString()}.`
+        );
       } else {
         const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}:00`);
         if (isNaN(scheduledAt.getTime())) {
@@ -2603,8 +2618,85 @@ export default function CreatePostPage() {
                 </div>
               )}
 
+              {/* Repeat this post */}
+              {editingPostId && (
+                <div
+                  className="rounded-2xl p-5"
+                  style={{
+                    backgroundColor: "var(--sidebar-hover-bg)",
+                    border: "1px solid var(--surface-border)",
+                  }}
+                >
+                  <button
+                    onClick={() => setShowRepeat((v) => !v)}
+                    className="flex w-full items-center gap-2 text-left"
+                  >
+                    <Repeat className="h-4 w-4" style={{ color: "var(--accent-purple)" }} />
+                    <span className="text-sm font-medium" style={{ color: "var(--page-heading)" }}>
+                      Repeat this post on a schedule
+                    </span>
+                    <span className="ml-auto text-xs" style={{ color: "var(--page-text-muted)" }}>
+                      {showRepeat ? "Hide" : "Set up"}
+                    </span>
+                  </button>
+                  {showRepeat && workspaceId && (
+                    <div className="mt-4">
+                      <p className="mb-3 text-xs" style={{ color: "var(--page-text-muted)" }}>
+                        Each run publishes its own copy, so every occurrence keeps
+                        its own results and permalink. This post stays the template
+                        and is never published itself.
+                      </p>
+                      <RecurrenceEditor
+                        accountId={workspaceId}
+                        postId={editingPostId}
+                        onCreated={() => {
+                          showSuccess("Repeating schedule created.");
+                          setShowRepeat(false);
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Post options */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Add to queue */}
+                <button
+                  onClick={() => setPostMode("queue")}
+                  className={cn(
+                    "text-left rounded-2xl p-6 transition-all duration-300 border-2 group cursor-pointer",
+                    postMode === "queue"
+                      ? "bg-gradient-to-br from-purple-600/10 to-blue-600/10 border-purple-500/40 shadow-lg shadow-purple-500/10"
+                      : "hover:border-white/20"
+                  )}
+                  style={postMode === "queue" ? undefined : { backgroundColor: "var(--sidebar-hover-bg)", borderColor: "var(--surface-border)" }}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className={cn(
+                      "p-3 rounded-xl",
+                      postMode === "queue" ? "bg-purple-500/20" : "bg-white/5"
+                    )}>
+                      <ListChecks className={cn(
+                        "w-5 h-5",
+                        postMode === "queue" ? "text-purple-300" : "text-gray-400"
+                      )} />
+                    </div>
+                    <div>
+                      <p className={cn(
+                        "font-semibold",
+                        postMode === "queue" ? "text-purple-200" : "text-gray-300"
+                      )} style={postMode === "queue" ? undefined : { color: "var(--page-text)" }}>
+                        Add to queue
+                      </p>
+                      <p className="mt-1 text-xs" style={{ color: "var(--page-text-muted)" }}>
+                        Drop into the next free posting slot. The workspace's
+                        schedule decides when, in its own timezone.
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
                 {/* Post Now */}
                 <button
                   onClick={() => setPostMode("now")}

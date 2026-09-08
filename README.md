@@ -440,6 +440,87 @@ this endpoint, so while the writer dropped its input the review workflow could n
 through the API at all.
 
 
+## Recurring schedules and the posting queue
+
+Two ways to publish without picking a date each time. A **recurring schedule**
+repeats one template post on an RRULE; the **queue** is a weekly set of slots that
+different posts drop into. Endpoints live under
+`/api/v1/accounts/{id}/scheduling/`.
+
+### Everything is stored as local wall-clock time
+
+This is the design, and daylight saving is the reason. "Every Monday at 10:00"
+means 10:00 on the workspace's clock, and the UTC instant that corresponds to it
+moves by an hour twice a year. A schedule kept as "this UTC instant plus 604800
+seconds" is correct for about five months and then publishes at 09:00 or 11:00
+for the rest of the year — a drift nobody reports as a bug, because it looks
+like the product is simply unreliable.
+
+So a `RecurringSchedule` stores an RRULE, a timezone name and a **naive** local
+start. `next_run_at` is UTC because the worker compares it to `now()`, but it is
+*recomputed from the rule* after every run, never advanced by adding an interval.
+All recurrence arithmetic happens in naive local time and is converted to UTC
+exactly once, at the end. Queue slots follow the same rule: weekday plus local
+time, resolved per occurrence.
+
+Verified against a New York workspace over a window straddling the November
+transition: local time stays `10:00` throughout while the UTC instant moves from
+`14:00` to `15:00`.
+
+### The two local times that are not ordinary
+
+| Case | What happens | Policy |
+|---|---|---|
+| **Nonexistent** — 02:30 on a spring-forward date, when the clock jumps 02:00 → 03:00 | The reading never occurs | Publish at 03:00, an hour late once a year |
+| **Ambiguous** — 01:30 on a fall-back date, which happens twice an hour apart | Two candidate instants | Take the first |
+
+Skipping the nonexistent occurrence was the alternative, and it is worse: a
+weekly post would silently vanish one week a year, and silence is a harder
+failure to notice than an hour's delay. Publishing at both ambiguous instants
+would post the same content twice, which the customer's audience sees.
+
+`zoneinfo` implements both through `fold=0`, so the code relies on that rather
+than reimplementing it, and detects the two cases only in order to report them —
+the UI labels a slot that will shift, and the occurrence preview shows the UTC
+offset so a transition is visible rather than looking like a bug.
+
+There is one more guard worth naming. Asking for "the next occurrence after
+06:00 UTC" on a fall-back date converts that reference to 01:00 local — a
+reading that already happened an hour earlier — and the rule's next answer,
+01:30 local, converts back to an instant *before* the reference. Returned as-is,
+the worker would see a due instant in the past, publish, store the same
+`next_run_at`, and publish again on the next pass. `next_occurrence` therefore
+requires the UTC value to move strictly forward.
+
+### Each occurrence is its own post
+
+A run copies the template into a new post rather than republishing the template.
+One row cannot hold two statuses, two `published_at` times, two permalinks or
+two sets of performance rows, so pointing jobs at the template would mean every
+run overwrote the last and a weekly post's history collapsed to a single row.
+The template is never published; it stays a draft.
+
+Copying goes through `app/services/post_cloning.py`, which derives the fields
+from the table and excludes per-occurrence state. The endpoint's previous inline
+duplicate listed thirteen fields by hand, so it silently dropped the
+per-platform settings added in 1.7 and every `PostVariant` row — a duplicated
+Reel came back a plain feed post. Both paths now use the one implementation.
+
+A worker that has been down does **not** flush its backlog: missed occurrences
+are skipped and `next_run_at` moves to the next future one. Emptying a week of a
+daily schedule into a single minute is worse for the customer than the gap it
+repairs.
+
+### The queue
+
+Slots are a weekday and a local time, saved as a whole week rather than
+individually — a half-applied change would leave a workspace posting at times
+nobody chose. "Add to queue" places a post in the next slot that is both in the
+future and unoccupied; drafts do not occupy slots, since they have no scheduled
+time. A full queue and an unconfigured one raise different errors, because one
+is a capacity problem and the other is a setup step.
+
+
 ## Review and approvals
 
 An optional workflow between drafting and publishing, enabled per workspace.
