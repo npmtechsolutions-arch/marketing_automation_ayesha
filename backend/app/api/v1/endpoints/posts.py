@@ -55,7 +55,14 @@ from app.schemas.publishing_job import (
     PublishingJobResponse,
     PublishingLogEntry,
 )
-from app.services import approvals, media_service, post_validation, publishing
+from app.services import (
+    approvals,
+    dashboard,
+    media_service,
+    post_validation,
+    publishing,
+    recurrence,
+)
 from app.core.permissions import (  # noqa: F401
     CONTENT_APPROVE,
     CONTENT_CREATE,
@@ -589,11 +596,40 @@ async def publish_post(
 async def schedule_post(
     account_id: uuid.UUID,
     post_id: uuid.UUID,
-    scheduled_at: datetime = Query(..., description="ISO-8601 datetime for scheduling"),
+    scheduled_at: datetime | None = Query(
+        None,
+        description=(
+            "An absolute instant, e.g. 2026-03-09T14:00:00Z. Must carry an "
+            "offset; a bare datetime is refused rather than assumed to be UTC."
+        ),
+    ),
+    scheduled_at_local: datetime | None = Query(
+        None,
+        description=(
+            "A wall-clock reading in the workspace's timezone, e.g. "
+            "2026-03-09T10:00:00. Preferred for anything a person typed."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):
-    """Schedule a post for future publication."""
+    """Schedule a post for future publication.
+
+    Two ways to say when, and the distinction matters more than it looks.
+
+    ``scheduled_at_local`` is a reading on the *workspace's* clock: "ten in the
+    morning", resolved in the workspace timezone. This is what a person means
+    when they pick a time, and it is what the composer sends. Building a UTC
+    instant in the browser instead would convert through whatever timezone the
+    user's laptop is in -- an agency in London scheduling for a Sydney client
+    would set a time eleven hours out, and the error would move by an hour
+    whenever either side's clocks changed.
+
+    ``scheduled_at`` is an absolute instant, for callers that genuinely have
+    one. It must carry an offset. A naive value used to be silently treated as
+    UTC, which is the same bug wearing a different hat: the caller says 10:00,
+    means their own 10:00, and gets someone else's.
+    """
     await _verify_account_access(account_id, current_user, db, permission=CONTENT_PUBLISH)
     post = await _get_post_or_404(post_id, account_id, db)
 
@@ -603,9 +639,50 @@ async def schedule_post(
             detail=f"Cannot schedule a post with status '{post.status.value}'",
         )
 
+    if (scheduled_at is None) == (scheduled_at_local is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Provide exactly one of scheduled_at (an instant with an "
+                "offset) or scheduled_at_local (a wall-clock time in the "
+                "workspace's timezone)."
+            ),
+        )
+
+    workspace = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+
+    if scheduled_at_local is not None:
+        if scheduled_at_local.tzinfo is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "scheduled_at_local must not carry an offset -- it is a "
+                    "reading on the workspace's clock. Use scheduled_at for an "
+                    "absolute instant."
+                ),
+            )
+        zone = dashboard.workspace_timezone(workspace)
+        # to_utc also settles the two odd local times: a reading inside the
+        # spring-forward gap resolves to the first instant that exists, and an
+        # ambiguous one during fall-back takes the earlier of its two.
+        target = recurrence.to_utc(scheduled_at_local, zone)
+    else:
+        if scheduled_at.tzinfo is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "scheduled_at needs a timezone offset. A bare datetime is "
+                    "ambiguous, and assuming UTC silently moves the post for "
+                    "every workspace that is not in UTC. Use "
+                    "scheduled_at_local for a workspace-local time."
+                ),
+            )
+        target = scheduled_at
+
     # Validate the scheduled time is in the future
     now = datetime.now(timezone.utc)
-    target = scheduled_at if scheduled_at.tzinfo else scheduled_at.replace(tzinfo=timezone.utc)
     if target <= now:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -621,7 +698,7 @@ async def schedule_post(
     account = (
         await db.execute(select(Account).where(Account.id == account_id))
     ).scalar_one()
-    approvals.assert_publishable(account, post)
+    approvals.assert_publishable(workspace, post)
 
     # Jobs are created now with run_at in the future rather than when the time
     # arrives, so a scheduled post's pending work is visible (and cancellable)

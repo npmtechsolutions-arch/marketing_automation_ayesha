@@ -187,3 +187,42 @@ export function detailFrom(error: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+/**
+ * A stored instant, split into the date and time inputs a form needs, as read
+ * on a *named* clock rather than the browser's.
+ *
+ * The counterpart to `localDateTime`. Reading a scheduled post back with
+ * `new Date(iso).getHours()` renders it in whatever timezone the viewer's
+ * machine is in, so a post set for 10:00 Sydney shows as 23:00 the previous
+ * day to someone in London — and saving that form back would store 23:00
+ * Sydney. Getting the write path right is only half the fix.
+ */
+export function wallClockIn(
+  iso: string,
+  timeZone: string
+): { date: string; time: string } {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date(iso));
+
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+    // Intl renders midnight as "24" in some engines; the inputs need "00".
+    const hour = get("hour") === "24" ? "00" : get("hour");
+    return {
+      date: `${get("year")}-${get("month")}-${get("day")}`,
+      time: `${hour}:${get("minute")}`,
+    };
+  } catch {
+    // An unusable zone must not blank the form. Fall back to the raw reading,
+    // which is at least the value the server holds.
+    return { date: iso.slice(0, 10), time: iso.slice(11, 16) };
+  }
+}

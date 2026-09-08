@@ -521,6 +521,44 @@ time. A full queue and an unconfigured one raise different errors, because one
 is a capacity problem and the other is a setup step.
 
 
+### Scheduling a single post
+
+`POST /posts/{id}/schedule` takes exactly one of:
+
+* `scheduled_at_local` — a wall-clock reading on the **workspace's** clock,
+  `2026-03-09T10:00:00`, with no offset. This is what a person means when they
+  pick a time, and what the composer sends.
+* `scheduled_at` — an absolute instant, which must carry an offset.
+
+A naive `scheduled_at` is refused rather than assumed to be UTC. The composer
+previously built its instant with `new Date(...)` in the browser, so the time
+someone typed was read in whatever timezone their laptop was in: an agency in
+London scheduling for a Sydney client set a time eleven hours out, and the error
+moved by an hour whenever either side's clocks changed. The display path had the
+same fault in reverse — a post set for 10:00 Sydney rendered as 23:00 to a
+London viewer, and saving that form back wrote 23:00 Sydney — so both directions
+read and write on the workspace's clock now, and the composer labels which clock
+that is.
+
+Local readings go through the same resolution as recurring schedules, so a time
+inside the spring-forward gap lands on the first instant that exists rather than
+failing, and the two features cannot disagree about what a wall-clock time means.
+
+### Post writes refuse unknown fields
+
+`PostCreate` and `PostUpdate` set `extra="forbid"`. Pydantic's default is to
+drop unknown keys, so a request naming a field the schema does not have returned
+200 having stored nothing — the settings-writer bug one level up, at the
+contract.
+
+That leaves one legitimate casualty, which is why `target_accounts` is accepted
+as an alias for `target_account_ids`: the response returns the former and writes
+take the latter, so reading a post, editing it and sending it back — the
+ordinary way to use an API — would otherwise be rejected. Naming both at once is
+an error rather than a guess, since guessing is how a post publishes to the
+wrong account.
+
+
 ## Review and approvals
 
 An optional workflow between drafting and publishing, enabled per workspace.

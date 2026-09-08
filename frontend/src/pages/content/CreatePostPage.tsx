@@ -48,7 +48,7 @@ import PlatformIcon from "@/components/shared/PlatformIcon";
 import DevicePreview from "@/components/shared/DevicePreview";
 import { cn } from "@/lib/utils";
 import api, { getAccountId , getAccountIdSync } from "@/lib/api";
-import { schedulingApi } from "@/lib/scheduling";
+import { localDateTime, schedulingApi, wallClockIn } from "@/lib/scheduling";
 import RecurrenceEditor from "@/components/scheduling/RecurrenceEditor";
 import { showSuccess, showError, showWarning } from "@/components/ui/Toast";
 
@@ -167,6 +167,40 @@ export default function CreatePostPage() {
   const location = useLocation();
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
 
+  // The workspace's clock, which every scheduled time on this page is read and
+  // written against. UTC until settings load: a wrong-but-stated default beats
+  // silently using the viewer's machine.
+  const [workspaceTimezone, setWorkspaceTimezone] = useState("UTC");
+  // The instant as the server holds it, kept separately from the date/time
+  // inputs. The two effects below race -- the post can arrive before the
+  // workspace timezone does -- so the conversion waits until both are known
+  // rather than rendering once in UTC and never correcting.
+  const [scheduledAtIso, setScheduledAtIso] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadTimezone = async () => {
+      const activeAccountId = await getAccountId();
+      if (!activeAccountId) return;
+      try {
+        const res = await api.get<{ settings?: { timezone?: string } }>(
+          `/accounts/${activeAccountId}/settings/`
+        );
+        const zone = res.data?.settings?.timezone;
+        if (zone) setWorkspaceTimezone(zone);
+      } catch {
+        // Leave it at UTC; scheduling still works, the label is just generic.
+      }
+    };
+    loadTimezone();
+  }, []);
+
+  useEffect(() => {
+    if (!scheduledAtIso) return;
+    const { date, time } = wallClockIn(scheduledAtIso, workspaceTimezone);
+    setScheduleDate(date);
+    setScheduleTime(time);
+  }, [scheduledAtIso, workspaceTimezone]);
+
   useEffect(() => {
     const editState = location.state as { post?: any; mode?: "edit" | "duplicate" } | null;
     if (editState?.post) {
@@ -213,18 +247,15 @@ export default function CreatePostPage() {
         setVideoPreviewUrl(p.instagram_video_url);
       }
       
-      // Load schedule time if present
+      // Load schedule time if present.
+      //
+      // Rendered on the *workspace's* clock, not the browser's. Reading it
+      // back with getHours() would show a post set for 10:00 Sydney as 23:00
+      // the previous day to a viewer in London -- and saving that form would
+      // then store 23:00 Sydney. The write path alone is only half the fix.
       if (p.scheduled_at) {
         setPostMode("schedule");
-        const sched = new Date(p.scheduled_at);
-        const yyyy = sched.getFullYear();
-        const mm = String(sched.getMonth() + 1).padStart(2, "0");
-        const dd = String(sched.getDate()).padStart(2, "0");
-        setScheduleDate(`${yyyy}-${mm}-${dd}`);
-        
-        const hh = String(sched.getHours()).padStart(2, "0");
-        const min = String(sched.getMinutes()).padStart(2, "0");
-        setScheduleTime(`${hh}:${min}`);
+        setScheduledAtIso(p.scheduled_at);
       } else {
         setPostMode("now");
       }
@@ -791,13 +822,20 @@ export default function CreatePostPage() {
           `Queued for ${new Date(placed.scheduled_at).toLocaleString()}.`
         );
       } else {
-        const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}:00`);
-        if (isNaN(scheduledAt.getTime())) {
-          throw new Error("Invalid schedule date or time");
+        if (!scheduleDate || !scheduleTime) {
+          throw new Error("Pick a date and a time to schedule this post.");
         }
+        // Sent as a naive local reading, not an instant. Routing this through
+        // `new Date(...).toISOString()` would interpret the time the user
+        // typed in *their browser's* timezone: an agency in London scheduling
+        // for a Sydney client would set a time eleven hours out, and the error
+        // would move by an hour whenever either side's clocks changed. The
+        // server applies the workspace's timezone, as it does for queue slots
+        // and recurring schedules.
+        const localWallClock = localDateTime(scheduleDate, scheduleTime);
         await api.post(
-          `/accounts/${accountId}/posts/${post.id}/schedule?scheduled_at=${encodeURIComponent(
-            scheduledAt.toISOString()
+          `/accounts/${accountId}/posts/${post.id}/schedule?scheduled_at_local=${encodeURIComponent(
+            localWallClock
           )}`
         );
         showSuccess("Post scheduled successfully!");
@@ -2826,6 +2864,10 @@ export default function CreatePostPage() {
                           />
                         </div>
                       </div>
+                      <p className="mt-3 text-xs" style={{ color: "var(--page-text-muted)" }}>
+                        Times are on the workspace's clock ({workspaceTimezone}),
+                        not your computer's.
+                      </p>
                     </motion.div>
                   )}
                 </button>

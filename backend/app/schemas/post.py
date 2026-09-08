@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_serializer
+from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 
 
 class PostBase(BaseModel):
@@ -14,7 +14,64 @@ class PostBase(BaseModel):
     hashtags: list[str] | None = None
 
 
-class PostCreate(PostBase):
+class _StrictWriteModel(BaseModel):
+    """Shared rules for post writes.
+
+    **Unknown fields are refused, not ignored.** Pydantic's default is to drop
+    them, so a request naming a field this schema does not have used to return
+    200 having stored nothing -- the same failure as the settings writer, one
+    level up at the contract. A typo, a renamed field, or a client written
+    against a newer version now gets a 422 naming the offending key.
+
+    That leaves one legitimate casualty, which is why the validator below
+    exists. ``PostResponse`` returns the targets as ``target_accounts`` (a list
+    of objects), while writes take ``target_account_ids`` (a list of ids). Read
+    a post, change its text, send it back -- the ordinary way to use an API --
+    and the field it just gave you would be rejected. So the response's name is
+    accepted as an alias and normalised.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_response_target_shape(cls, data):
+        if not isinstance(data, dict) or "target_accounts" not in data:
+            return data
+
+        payload = dict(data)
+        targets = payload.pop("target_accounts")
+
+        if payload.get("target_account_ids") is not None:
+            # Both given and disagreeing is ambiguous, and guessing which the
+            # caller meant is how a post publishes to the wrong account.
+            raise ValueError(
+                "send either target_account_ids or target_accounts, not both"
+            )
+
+        if targets is None:
+            payload["target_account_ids"] = None
+            return payload
+
+        if not isinstance(targets, list):
+            raise ValueError("target_accounts must be a list")
+
+        ids = []
+        for entry in targets:
+            if isinstance(entry, dict):
+                value = entry.get("social_account_id") or entry.get("id")
+                if value is None:
+                    raise ValueError(
+                        "each target_accounts entry needs a social_account_id"
+                    )
+                ids.append(value)
+            else:
+                ids.append(entry)
+        payload["target_account_ids"] = ids
+        return payload
+
+
+class PostCreate(PostBase, _StrictWriteModel):
     media_urls: list[str] | None = None
     # Library files attached from the media picker. Kept separate from
     # media_urls, which also carries pasted external links -- without the
@@ -45,7 +102,7 @@ class PostCreate(PostBase):
     twitter_post_type: str | None = None
 
 
-class PostUpdate(BaseModel):
+class PostUpdate(_StrictWriteModel):
     content: str | None = None
     title: str | None = None
     hashtags: list[str] | None = None
