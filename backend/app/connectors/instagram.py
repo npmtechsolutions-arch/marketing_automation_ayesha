@@ -18,9 +18,12 @@ from app.connectors.base import (
     ResolvedContent,
     PublishResult,
     PlatformRateLimited,
+    ProviderAPIError,
     SocialProvider,
     metrics_from,
     mock_account_metrics,
+    mock_inbox_items,
+    parse_platform_time,
     retry_after_seconds,
     OAuthTokens,
     provider_request,
@@ -414,7 +417,10 @@ class InstagramProvider(SocialProvider):
         # Instagram offers.
         supports_link_posts=False,
         supports_comments_api=True,
-        supports_dm_api=False,
+        # Instagram messaging runs through the same Graph surface as Page
+        # messaging and needs instagram_manage_messages. Offered by the API;
+        # whether this app is approved for it surfaces at call time.
+        supports_dm_api=True,
         max_chars=2200,
         max_images=10,
         max_video_seconds=90,
@@ -521,6 +527,20 @@ class InstagramProvider(SocialProvider):
         )
         return tokens_from(payload)
 
+    async def get_comments(
+        self, social_account: Any, external_post_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Comments on recent media."""
+        return await _ig_comments(social_account)
+
+    async def get_messages(self, social_account: Any) -> list[dict[str, Any]]:
+        return await _ig_messages(social_account)
+
+    async def reply_to_comment(
+        self, social_account: Any, comment_external_id: str, body: str
+    ) -> dict[str, Any]:
+        return await _ig_reply(social_account, comment_external_id, body)
+
     async def get_analytics(
         self, social_account: Any, since: datetime, until: datetime
     ) -> dict[str, Any]:
@@ -592,3 +612,131 @@ async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
                 if key and values[-1].get("value") is not None:
                     out[key] = int(values[-1]["value"])
     return out
+
+
+# ---------------------------------------------------------------------------
+# Inbox
+# ---------------------------------------------------------------------------
+
+def _ig_context(social_account: Any) -> tuple[str, str, str]:
+    config = getattr(social_account, "config", None) or {}
+    ig_id = config.get("instagram_business_account_id") or config.get("page_id")
+    token = getattr(social_account, "access_token", None)
+    if not ig_id:
+        raise ProviderAPIError(
+            "instagram", "This connection has no instagram_business_account_id."
+        )
+    base = (
+        "https://graph.instagram.com/v18.0"
+        if str(token).startswith("IG")
+        else "https://graph.facebook.com/v18.0"
+    )
+    return ig_id, token, base
+
+
+async def _ig_comments(social_account: Any) -> list[dict[str, Any]]:
+    import httpx
+
+    if is_mock_token(getattr(social_account, "access_token", None)):
+        return mock_inbox_items("instagram", "comment")
+
+    ig_id, token, base = _ig_context(social_account)
+    out: list[dict[str, Any]] = []
+    async with httpx.AsyncClient() as client:
+        media = await client.get(
+            f"{base}/{ig_id}/media",
+            params={"fields": "id,permalink", "limit": 25, "access_token": token},
+            timeout=20.0,
+        )
+        _raise_if_rate_limited("instagram", media)
+        if media.status_code != 200:
+            raise ProviderAPIError(
+                "instagram", media.text[:200], status_code=media.status_code
+            )
+
+        for item in media.json().get("data", []):
+            comments = await client.get(
+                f"{base}/{item['id']}/comments",
+                params={
+                    "fields": "id,username,text,timestamp",
+                    "limit": 50, "access_token": token,
+                },
+                timeout=20.0,
+            )
+            _raise_if_rate_limited("instagram", comments)
+            if comments.status_code != 200:
+                continue
+            for row in comments.json().get("data", []):
+                out.append({
+                    "external_id": row.get("id"),
+                    "thread_external_id": item["id"],
+                    "author": row.get("username") or "Someone",
+                    "author_handle": row.get("username"),
+                    "body": row.get("text") or "",
+                    "created_at": parse_platform_time(row.get("timestamp")),
+                    "permalink": item.get("permalink"),
+                })
+    return out
+
+
+async def _ig_messages(social_account: Any) -> list[dict[str, Any]]:
+    import httpx
+
+    if is_mock_token(getattr(social_account, "access_token", None)):
+        return mock_inbox_items("instagram", "dm")
+
+    ig_id, token, base = _ig_context(social_account)
+    out: list[dict[str, Any]] = []
+    async with httpx.AsyncClient() as client:
+        convos = await client.get(
+            f"{base}/{ig_id}/conversations",
+            params={
+                "platform": "instagram",
+                "fields": "id,participants,messages.limit(25){id,from,message,created_time}",
+                "limit": 25, "access_token": token,
+            },
+            timeout=20.0,
+        )
+        _raise_if_rate_limited("instagram", convos)
+        if convos.status_code != 200:
+            raise ProviderAPIError(
+                "instagram", convos.text[:200], status_code=convos.status_code
+            )
+        for conversation in convos.json().get("data", []):
+            people = (conversation.get("participants") or {}).get("data") or []
+            other = next((x for x in people if x.get("id") != ig_id), {})
+            for message in ((conversation.get("messages") or {}).get("data") or []):
+                sender = message.get("from") or {}
+                out.append({
+                    "external_id": message.get("id"),
+                    "thread_external_id": conversation.get("id"),
+                    "author": sender.get("username") or sender.get("name") or "Someone",
+                    "author_handle": sender.get("id"),
+                    "body": message.get("message") or "",
+                    "created_at": parse_platform_time(message.get("created_time")),
+                    "outbound": sender.get("id") == ig_id,
+                    "participant": other.get("username") or other.get("name") or "Someone",
+                    "participant_handle": other.get("id"),
+                })
+    return out
+
+
+async def _ig_reply(social_account: Any, comment_id: str, body: str) -> dict[str, Any]:
+    import httpx
+
+    if is_mock_token(getattr(social_account, "access_token", None)):
+        return {"external_id": f"mock_reply_{comment_id}"}
+
+    _, token, base = _ig_context(social_account)
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{base}/{comment_id}/replies",
+            data={"message": body, "access_token": token},
+            timeout=20.0,
+        )
+        _raise_if_rate_limited("instagram", res)
+        if res.status_code != 200:
+            raise ProviderAPIError(
+                "instagram", res.text[:200], status_code=res.status_code
+            )
+        return {"external_id": res.json().get("id")}

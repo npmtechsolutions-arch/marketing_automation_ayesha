@@ -28,6 +28,13 @@ from app.models.recurring_schedule import (
     RecurrenceStatus,
     RecurringSchedule,
 )
+from app.models.inbox import (
+    InboxMessage,
+    InboxThread,
+    MessageDirection,
+    ThreadStatus,
+    ThreadType,
+)
 from app.models.report import (
     Report,
     ReportFormat,
@@ -46,6 +53,11 @@ from app.models.webhook import Webhook, WebhookStatus
 
 __all__ = [
     "ApiError",
+    "InboxThread",
+    "InboxMessage",
+    "ThreadType",
+    "ThreadStatus",
+    "MessageDirection",
     "Report",
     "ReportFormat",
     "ReportStatus",

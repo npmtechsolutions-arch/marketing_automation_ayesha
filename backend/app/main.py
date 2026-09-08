@@ -140,6 +140,7 @@ from app.api.v1.endpoints import (
     instagram_oauth,
     linkedin_oauth,
     notifications,
+    inbox as inbox_routes,
     posts,
     reports as reports_routes,
     scheduling,
@@ -180,6 +181,7 @@ app.include_router(ai.router,               prefix="/api/v1/accounts/{account_id
 app.include_router(analytics.router,        prefix="/api/v1/accounts/{account_id}/analytics",   tags=["Analytics"])
 app.include_router(scheduling.router,       prefix="/api/v1/accounts/{account_id}/scheduling",  tags=["Scheduling"])
 app.include_router(reports_routes.router,   prefix="/api/v1/accounts/{account_id}/reports",     tags=["Reports"])
+app.include_router(inbox_routes.router,     prefix="/api/v1/accounts/{account_id}/inbox",       tags=["Inbox"])
 app.include_router(strategies.router,       prefix="/api/v1/accounts/{account_id}/strategies",  tags=["Strategies"])
 app.include_router(campaigns.router,        prefix="/api/v1/accounts/{account_id}/campaigns",   tags=["Campaigns"])
 app.include_router(notifications.router,    prefix="/api/v1/notifications",                     tags=["Notifications"])

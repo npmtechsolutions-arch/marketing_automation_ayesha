@@ -120,13 +120,21 @@ async def test_capabilities_report_what_the_connector_actually_does():
 # ---------------------------------------------------------------------------
 
 async def test_unimplemented_capability_raises_not_supported():
+    """A capability nobody has written still refuses rather than returning
+    something empty and plausible.
+
+    The list is deliberately of things Instagram genuinely does not do:
+    it has no mentions endpoint we use, and get_posts was never implemented.
+    ``get_comments`` and ``get_messages`` used to be here and are now real --
+    which is what ``test_a_claimed_capability_is_actually_implemented`` in
+    test_inbox.py exists to keep in step with the Capabilities flags.
+    """
     provider = get_provider("instagram")
     account = object()
 
     for call in (
-        provider.get_messages(account),
         provider.get_posts(account),
-        provider.get_comments(account),
+        provider.get_mentions(account),
     ):
         with pytest.raises(NotSupportedError):
             await call

@@ -20,6 +20,8 @@ from app.connectors.base import (
     SocialProvider,
     metrics_from,
     mock_account_metrics,
+    mock_inbox_items,
+    parse_platform_time,
     retry_after_seconds,
     OAuthTokens,
     tokens_from,
@@ -333,7 +335,12 @@ class FacebookProvider(SocialProvider):
         supports_carousel=True,
         supports_link_posts=True,
         supports_comments_api=True,
-        supports_dm_api=False,
+        # Page messaging is a real Graph endpoint, but it needs the
+        # pages_messaging permission and an app that Meta has reviewed for it.
+        # The flag says the API offers it; an unapproved app finds out at call
+        # time and the error surfaces as a provider error, not a silent empty
+        # inbox.
+        supports_dm_api=True,
         max_chars=63206,
         max_images=10,
         max_video_seconds=240 * 60,
@@ -463,6 +470,26 @@ class FacebookProvider(SocialProvider):
         )
         return tokens_from(payload)
 
+    async def get_comments(
+        self, social_account: Any, external_post_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Comments on the Page's recent posts."""
+        return await _fb_comments(social_account)
+
+    async def get_messages(self, social_account: Any) -> list[dict[str, Any]]:
+        """Page inbox conversations. Needs the pages_messaging permission."""
+        return await _fb_messages(social_account)
+
+    async def reply_to_comment(
+        self, social_account: Any, comment_external_id: str, body: str
+    ) -> dict[str, Any]:
+        return await _fb_reply(social_account, comment_external_id, body)
+
+    async def send_message(
+        self, social_account: Any, recipient_external_id: str, body: str
+    ) -> dict[str, Any]:
+        return await _fb_send(social_account, recipient_external_id, body)
+
     async def get_analytics(
         self, social_account: Any, since: datetime, until: datetime
     ) -> dict[str, Any]:
@@ -522,3 +549,150 @@ async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
                 if key and values[-1].get("value") is not None:
                     out[key] = int(values[-1]["value"])
     return out
+
+
+# ---------------------------------------------------------------------------
+# Inbox
+# ---------------------------------------------------------------------------
+
+def _page_context(social_account: Any) -> tuple[str, str]:
+    config = getattr(social_account, "config", None) or {}
+    page_id = config.get("page_id")
+    token = config.get("page_access_token") or getattr(social_account, "access_token", None)
+    if not page_id:
+        raise ProviderAPIError("facebook", "This connection has no page_id stored.")
+    return page_id, token
+
+
+async def _fb_comments(social_account: Any) -> list[dict[str, Any]]:
+    import httpx
+
+    if is_mock_token(getattr(social_account, "access_token", None)):
+        return mock_inbox_items("facebook", "comment")
+
+    page_id, token = _page_context(social_account)
+    out: list[dict[str, Any]] = []
+    async with httpx.AsyncClient() as client:
+        posts = await client.get(
+            f"https://graph.facebook.com/v18.0/{page_id}/posts",
+            params={"fields": "id,permalink_url", "limit": 25, "access_token": token},
+            timeout=20.0,
+        )
+        _raise_if_rate_limited("facebook", posts)
+        if posts.status_code != 200:
+            raise ProviderAPIError("facebook", posts.text[:200], status_code=posts.status_code)
+
+        for post in posts.json().get("data", []):
+            comments = await client.get(
+                f"https://graph.facebook.com/v18.0/{post['id']}/comments",
+                params={
+                    "fields": "id,from,message,created_time,permalink_url",
+                    "limit": 50, "access_token": token,
+                },
+                timeout=20.0,
+            )
+            _raise_if_rate_limited("facebook", comments)
+            if comments.status_code != 200:
+                continue
+            for row in comments.json().get("data", []):
+                author = row.get("from") or {}
+                out.append({
+                    "external_id": row.get("id"),
+                    "thread_external_id": post["id"],
+                    "author": author.get("name") or "Someone",
+                    "author_handle": author.get("id"),
+                    "body": row.get("message") or "",
+                    "created_at": parse_platform_time(row.get("created_time")),
+                    "permalink": row.get("permalink_url") or post.get("permalink_url"),
+                })
+    return out
+
+
+async def _fb_messages(social_account: Any) -> list[dict[str, Any]]:
+    import httpx
+
+    if is_mock_token(getattr(social_account, "access_token", None)):
+        return mock_inbox_items("facebook", "dm")
+
+    page_id, token = _page_context(social_account)
+    out: list[dict[str, Any]] = []
+    async with httpx.AsyncClient() as client:
+        convos = await client.get(
+            f"https://graph.facebook.com/v18.0/{page_id}/conversations",
+            params={
+                "fields": "id,participants,updated_time,"
+                          "messages.limit(25){id,from,message,created_time}",
+                "limit": 25, "access_token": token,
+            },
+            timeout=20.0,
+        )
+        _raise_if_rate_limited("facebook", convos)
+        if convos.status_code != 200:
+            raise ProviderAPIError(
+                "facebook", convos.text[:200], status_code=convos.status_code
+            )
+
+        for conversation in convos.json().get("data", []):
+            people = (conversation.get("participants") or {}).get("data") or []
+            # The page itself is a participant; the other one is the customer.
+            other = next((p for p in people if p.get("id") != page_id), {})
+            for message in ((conversation.get("messages") or {}).get("data") or []):
+                sender = message.get("from") or {}
+                out.append({
+                    "external_id": message.get("id"),
+                    "thread_external_id": conversation.get("id"),
+                    "author": sender.get("name") or other.get("name") or "Someone",
+                    "author_handle": sender.get("id"),
+                    "body": message.get("message") or "",
+                    "created_at": parse_platform_time(message.get("created_time")),
+                    "outbound": sender.get("id") == page_id,
+                    "participant": other.get("name") or "Someone",
+                    "participant_handle": other.get("id"),
+                })
+    return out
+
+
+async def _fb_reply(social_account: Any, comment_id: str, body: str) -> dict[str, Any]:
+    import httpx
+
+    if is_mock_token(getattr(social_account, "access_token", None)):
+        return {"external_id": f"mock_reply_{comment_id}"}
+
+    _, token = _page_context(social_account)
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"https://graph.facebook.com/v18.0/{comment_id}/comments",
+            data={"message": body, "access_token": token},
+            timeout=20.0,
+        )
+        _raise_if_rate_limited("facebook", res)
+        if res.status_code != 200:
+            raise ProviderAPIError("facebook", res.text[:200], status_code=res.status_code)
+        return {"external_id": res.json().get("id")}
+
+
+async def _fb_send(social_account: Any, recipient_id: str, body: str) -> dict[str, Any]:
+    import httpx
+
+    if is_mock_token(getattr(social_account, "access_token", None)):
+        return {"external_id": f"mock_dm_{recipient_id}"}
+
+    page_id, token = _page_context(social_account)
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"https://graph.facebook.com/v18.0/{page_id}/messages",
+            json={
+                "recipient": {"id": recipient_id},
+                "message": {"text": body},
+                # Meta requires a tag or a recent interaction; RESPONSE means
+                # "the person messaged us first", which is the only case an
+                # inbox reply ever is.
+                "messaging_type": "RESPONSE",
+            },
+            params={"access_token": token},
+            timeout=20.0,
+        )
+        _raise_if_rate_limited("facebook", res)
+        if res.status_code != 200:
+            raise ProviderAPIError("facebook", res.text[:200], status_code=res.status_code)
+        return {"external_id": res.json().get("message_id")}

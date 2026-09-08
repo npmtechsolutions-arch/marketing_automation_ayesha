@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, ClassVar, Literal, Optional
 
 logger = logging.getLogger(__name__)
@@ -155,6 +155,10 @@ class Capabilities:
     supports_link_posts: bool = False
     supports_comments_api: bool = False
     supports_dm_api: bool = False
+    # Mentions are a separate permission and a separate endpoint everywhere
+    # they exist, so they get their own flag rather than being folded into
+    # comments -- X has mentions and no comments, which one flag cannot say.
+    supports_mentions_api: bool = False
     max_chars: Optional[int] = None
     max_images: int = 0
     max_video_seconds: Optional[int] = None
@@ -502,6 +506,19 @@ class SocialProvider:
     async def get_posts(self, social_account: Any) -> list[dict[str, Any]]:
         raise NotSupportedError(self.slug, "get_posts")
 
+    # -- inbox ---------------------------------------------------------------
+    #
+    # Each returns a list of dicts in the shape ``inbox_sync`` expects, so the
+    # sync never learns a platform's own vocabulary:
+    #
+    #   {"external_id", "thread_external_id", "author", "author_handle",
+    #    "body", "created_at" (aware datetime), "media": [...], "permalink"}
+    #
+    # A platform whose API does not offer one of these -- or whose terms do not
+    # let *this* application use it -- raises NotSupportedError rather than
+    # returning an empty list. Empty means "nothing new"; unsupported means
+    # "never ask again", and the UI says so instead of showing a silent void.
+
     async def get_comments(
         self, social_account: Any, external_post_id: str | None = None
     ) -> list[dict[str, Any]]:
@@ -509,6 +526,27 @@ class SocialProvider:
 
     async def get_messages(self, social_account: Any) -> list[dict[str, Any]]:
         raise NotSupportedError(self.slug, "get_messages")
+
+    async def get_mentions(self, social_account: Any) -> list[dict[str, Any]]:
+        """Public posts that name this account.
+
+        Distinct from comments: a mention lives on someone else's post, so it
+        has no parent of ours and cannot be fetched by walking our own content.
+        On X it is the only inbound signal the current tier exposes at all.
+        """
+        raise NotSupportedError(self.slug, "get_mentions")
+
+    async def reply_to_comment(
+        self, social_account: Any, comment_external_id: str, body: str
+    ) -> dict[str, Any]:
+        """Reply to a comment. Returns at least ``{"external_id": ...}``."""
+        raise NotSupportedError(self.slug, "reply_to_comment")
+
+    async def send_message(
+        self, social_account: Any, recipient_external_id: str, body: str
+    ) -> dict[str, Any]:
+        """Send a direct message into an existing conversation."""
+        raise NotSupportedError(self.slug, "send_message")
 
     # -- helpers -------------------------------------------------------------
 
@@ -622,6 +660,72 @@ def tokens_from(payload: dict[str, Any]) -> OAuthTokens:
         raw=payload,
     )
 
+
+
+# ---------------------------------------------------------------------------
+# Inbox helpers, shared by the providers
+# ---------------------------------------------------------------------------
+
+def parse_platform_time(value: Any) -> datetime:
+    """A platform timestamp as an aware UTC datetime.
+
+    Every platform formats these differently and at least one of them omits the
+    colon in the offset. A timestamp we cannot read becomes "now" rather than
+    failing the sync: a message with a slightly wrong time is worth having, and
+    one dropped because of a format is not.
+    """
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    text = str(value or "").strip()
+    if not text:
+        return datetime.now(timezone.utc)
+    normalised = text.replace("Z", "+00:00")
+    # Meta sends +0000; fromisoformat wants +00:00.
+    if len(normalised) > 5 and normalised[-5] in "+-" and ":" not in normalised[-5:]:
+        normalised = normalised[:-2] + ":" + normalised[-2:]
+    try:
+        parsed = datetime.fromisoformat(normalised)
+    except ValueError:
+        logger.debug("Unreadable platform timestamp %r; using now.", value)
+        return datetime.now(timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def mock_inbox_items(platform: str, kind: str) -> list[dict[str, Any]]:
+    """Believable inbox items for a development token.
+
+    Stable ids, deliberately: the sync is idempotent on ``external_id``, and
+    random ids would make every poll look like new mail and hide exactly the
+    bug the idempotency exists to prevent.
+    """
+    now = datetime.now(timezone.utc)
+    samples = {
+        "comment": [
+            ("Priya R", "Does this ship to the EU?"),
+            ("Marcus L", "Been waiting for this one. Congrats!"),
+        ],
+        "dm": [
+            ("Dana K", "Hi — is the discount still running?"),
+        ],
+        "mention": [
+            ("Sam T", f"Just tried @{platform} and it is genuinely good."),
+        ],
+    }.get(kind, [])
+
+    return [
+        {
+            "external_id": f"mock_{platform}_{kind}_{index}",
+            "thread_external_id": f"mock_{platform}_{kind}_thread_{index}",
+            "author": author,
+            "author_handle": author.lower().replace(" ", "_"),
+            "participant": author,
+            "participant_handle": author.lower().replace(" ", "_"),
+            "body": body,
+            "created_at": now - timedelta(hours=index + 1),
+            "permalink": f"https://{platform}.example/{kind}/{index}",
+        }
+        for index, (author, body) in enumerate(samples)
+    ]
 
 def mock_account_metrics(platform: str) -> dict[str, Any]:
     """Plausible account metrics for a development token.

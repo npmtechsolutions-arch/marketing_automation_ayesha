@@ -21,6 +21,8 @@ from app.connectors.base import (
     is_mock_token,
     metrics_from,
     mock_account_metrics,
+    mock_inbox_items,
+    parse_platform_time,
     retry_after_seconds,
     OAuthTokens,
     tokens_from,
@@ -156,6 +158,9 @@ class TwitterProvider(SocialProvider):
         supports_carousel=False,
         supports_link_posts=True,
         supports_comments_api=False,
+        # The mentions timeline is the only inbound signal this tier exposes.
+        # Replies to a tweet are not retrievable, and DMs need elevated access.
+        supports_mentions_api=True,
         supports_dm_api=False,
         # The 280 the composer should be enforcing. It is also what
         # _content_with_hashtags is already called with at platform_service.py:973.
@@ -307,6 +312,10 @@ class TwitterProvider(SocialProvider):
         )
         return tokens_from(payload)
 
+    async def get_mentions(self, social_account: Any) -> list[dict[str, Any]]:
+        """Posts that name this account."""
+        return await _x_mentions(social_account)
+
     async def get_analytics(
         self, social_account: Any, since: datetime, until: datetime
     ) -> dict[str, Any]:
@@ -345,3 +354,73 @@ async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
                 "posts_count": "tweet_count",
             }))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Inbox: mentions
+# ---------------------------------------------------------------------------
+
+async def _x_mentions(social_account: Any) -> list[dict[str, Any]]:
+    import httpx
+
+    token = getattr(social_account, "access_token", None)
+    if is_mock_token(token):
+        return mock_inbox_items("twitter", "mention")
+
+    config = getattr(social_account, "config", None) or {}
+    user_id = config.get("user_id")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with httpx.AsyncClient() as client:
+        if not user_id:
+            me = await client.get(
+                "https://api.twitter.com/2/users/me",
+                headers=headers, timeout=20.0,
+            )
+            _raise_if_rate_limited("twitter", me)
+            if me.status_code != 200:
+                raise ProviderAPIError(
+                    "twitter", me.text[:200], status_code=me.status_code
+                )
+            user_id = (me.json().get("data") or {}).get("id")
+
+        res = await client.get(
+            f"https://api.twitter.com/2/users/{user_id}/mentions",
+            params={
+                "max_results": 50,
+                "tweet.fields": "created_at,author_id,text",
+                "expansions": "author_id",
+                "user.fields": "username,name",
+            },
+            headers=headers, timeout=20.0,
+        )
+        _raise_if_rate_limited("twitter", res)
+        if res.status_code != 200:
+            raise ProviderAPIError(
+                "twitter", res.text[:200], status_code=res.status_code
+            )
+
+        payload = res.json()
+        people = {
+            user["id"]: user
+            for user in (payload.get("includes") or {}).get("users", [])
+        }
+        out = []
+        for tweet in payload.get("data", []):
+            author = people.get(tweet.get("author_id"), {})
+            handle = author.get("username")
+            out.append({
+                "external_id": tweet.get("id"),
+                # A mention has no parent of ours, so each one is its own
+                # thread rather than being grouped under a post we own.
+                "thread_external_id": tweet.get("id"),
+                "author": author.get("name") or handle or "Someone",
+                "author_handle": handle,
+                "body": tweet.get("text") or "",
+                "created_at": parse_platform_time(tweet.get("created_at")),
+                "permalink": (
+                    f"https://x.com/{handle}/status/{tweet.get('id')}"
+                    if handle else None
+                ),
+            })
+        return out

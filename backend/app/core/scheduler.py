@@ -26,6 +26,7 @@ from app.services import (
     analytics_sync,
     error_log,
     publishing,
+    inbox_sync,
     recurring,
     report_jobs,
 )
@@ -266,6 +267,34 @@ async def run_reports() -> None:
             logger.exception("Report generation pass failed")
 
 
+_last_inbox_sync: float = 0.0
+
+
+async def sync_inbox() -> None:
+    """Poll the platforms for comments, messages and mentions.
+
+    Every five minutes rather than every pass: these are rate-limited endpoints
+    and a tighter loop would spend the budget without seeing more. Webhooks
+    will make this a backstop rather than the primary path.
+    """
+    global _last_inbox_sync
+
+    now = asyncio.get_running_loop().time()
+    if _last_inbox_sync and now - _last_inbox_sync < inbox_sync.SYNC_INTERVAL_SECONDS:
+        return
+    _last_inbox_sync = now
+
+    async with AsyncSessionLocal() as session:
+        try:
+            totals = await inbox_sync.sync_all(session)
+            await session.commit()
+            if totals["new_messages"]:
+                logger.info("Inbox: %d new message(s)", totals["new_messages"])
+        except Exception:
+            await session.rollback()
+            logger.exception("Inbox sync pass failed")
+
+
 async def scheduled_post_worker():
     logger.info(
         "Starting publishing worker (poll=%ss, batch=%d, max concurrent=%d).",
@@ -275,6 +304,7 @@ async def scheduled_post_worker():
         try:
             await materialise_recurring()
             await run_reports()
+            await sync_inbox()
             await enqueue_due_posts()
             await run_due_jobs()
             await recover_stale_jobs()

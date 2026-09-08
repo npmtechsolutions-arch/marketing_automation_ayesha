@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.connectors.base import (
+    NotSupportedError,
     Capabilities,
     MediaRef,
     ResolvedContent,
@@ -21,6 +22,8 @@ from app.connectors.base import (
     is_mock_token,
     metrics_from,
     mock_account_metrics,
+    mock_inbox_items,
+    parse_platform_time,
     retry_after_seconds,
     OAuthTokens,
     tokens_from,
@@ -229,6 +232,8 @@ class LinkedInProvider(SocialProvider):
         supports_carousel=False,
         supports_link_posts=True,
         supports_comments_api=True,
+        # LinkedIn's messaging API is partner-gated and not generally
+        # available, so get_messages stays unsupported rather than pretending.
         supports_dm_api=False,
         max_chars=3000,
         max_images=9,
@@ -351,6 +356,17 @@ class LinkedInProvider(SocialProvider):
         )
         return tokens_from(payload)
 
+    async def get_comments(
+        self, social_account: Any, external_post_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Comments on the organization's recent posts."""
+        return await _li_comments(social_account)
+
+    async def reply_to_comment(
+        self, social_account: Any, comment_external_id: str, body: str
+    ) -> dict[str, Any]:
+        return await _li_reply(social_account, comment_external_id, body)
+
     async def get_analytics(
         self, social_account: Any, since: datetime, until: datetime
     ) -> dict[str, Any]:
@@ -394,3 +410,95 @@ async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
         if res.status_code == 200:
             out.update(metrics_from(res.json(), {"followers": "firstDegreeSize"}))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Inbox
+# ---------------------------------------------------------------------------
+
+def _li_headers(token: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {token}",
+        "X-Restli-Protocol-Version": "2.0.0",
+        "LinkedIn-Version": "202405",
+    }
+
+
+async def _li_comments(social_account: Any) -> list[dict[str, Any]]:
+    import httpx
+
+    token = getattr(social_account, "access_token", None)
+    if is_mock_token(token):
+        return mock_inbox_items("linkedin", "comment")
+
+    config = getattr(social_account, "config", None) or {}
+    urn = config.get("author_urn") or ""
+    if "organization" not in urn:
+        # Comments are readable on organization posts. A personal profile has
+        # no equivalent endpoint, and saying so is better than an empty inbox.
+        raise NotSupportedError(
+            "linkedin", "get_comments on a personal profile"
+        )
+
+    out: list[dict[str, Any]] = []
+    async with httpx.AsyncClient() as client:
+        posts = await client.get(
+            "https://api.linkedin.com/rest/posts",
+            params={"author": urn, "q": "author", "count": 20},
+            headers=_li_headers(token), timeout=20.0,
+        )
+        _raise_if_rate_limited("linkedin", posts)
+        if posts.status_code != 200:
+            raise ProviderAPIError(
+                "linkedin", posts.text[:200], status_code=posts.status_code
+            )
+
+        for post in posts.json().get("elements", []):
+            post_urn = post.get("id")
+            if not post_urn:
+                continue
+            comments = await client.get(
+                f"https://api.linkedin.com/rest/socialActions/{post_urn}/comments",
+                headers=_li_headers(token), timeout=20.0,
+            )
+            _raise_if_rate_limited("linkedin", comments)
+            if comments.status_code != 200:
+                continue
+            for row in comments.json().get("elements", []):
+                message = (row.get("message") or {}).get("text") or ""
+                out.append({
+                    "external_id": row.get("$URN") or row.get("id"),
+                    "thread_external_id": post_urn,
+                    "author": row.get("actor") or "Someone",
+                    "author_handle": row.get("actor"),
+                    "body": message,
+                    "created_at": parse_platform_time(
+                        (row.get("created") or {}).get("time")
+                    ),
+                })
+    return out
+
+
+async def _li_reply(social_account: Any, comment_id: str, body: str) -> dict[str, Any]:
+    import httpx
+
+    token = getattr(social_account, "access_token", None)
+    if is_mock_token(token):
+        return {"external_id": f"mock_reply_{comment_id}"}
+
+    config = getattr(social_account, "config", None) or {}
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"https://api.linkedin.com/rest/socialActions/{comment_id}/comments",
+            json={
+                "actor": config.get("author_urn"),
+                "message": {"text": body},
+            },
+            headers=_li_headers(token), timeout=20.0,
+        )
+        _raise_if_rate_limited("linkedin", res)
+        if res.status_code not in (200, 201):
+            raise ProviderAPIError(
+                "linkedin", res.text[:200], status_code=res.status_code
+            )
+        return {"external_id": res.headers.get("x-restli-id")}

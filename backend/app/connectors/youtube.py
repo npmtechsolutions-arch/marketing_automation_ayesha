@@ -20,6 +20,8 @@ from app.connectors.base import (
     SocialProvider,
     metrics_from,
     mock_account_metrics,
+    mock_inbox_items,
+    parse_platform_time,
     retry_after_seconds,
     OAuthTokens,
     tokens_from,
@@ -388,6 +390,17 @@ class YouTubeProvider(SocialProvider):
         )
         return tokens_from(payload)
 
+    async def get_comments(
+        self, social_account: Any, external_post_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Top-level comments on the channel's videos."""
+        return await _yt_comments(social_account)
+
+    async def reply_to_comment(
+        self, social_account: Any, comment_external_id: str, body: str
+    ) -> dict[str, Any]:
+        return await _yt_reply(social_account, comment_external_id, body)
+
     async def get_analytics(
         self, social_account: Any, since: datetime, until: datetime
     ) -> dict[str, Any]:
@@ -427,3 +440,85 @@ async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
                     "video_views": "viewCount",
                 }))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Inbox
+# ---------------------------------------------------------------------------
+
+async def _yt_comments(social_account: Any) -> list[dict[str, Any]]:
+    import httpx
+
+    token = getattr(social_account, "access_token", None)
+    if is_mock_token(token):
+        return mock_inbox_items("youtube", "comment")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    out: list[dict[str, Any]] = []
+    async with httpx.AsyncClient() as client:
+        channels = await client.get(
+            "https://www.googleapis.com/youtube/v3/channels",
+            params={"part": "id", "mine": "true"},
+            headers=headers, timeout=20.0,
+        )
+        _raise_if_rate_limited("youtube", channels)
+        if channels.status_code != 200:
+            raise ProviderAPIError(
+                "youtube", channels.text[:200], status_code=channels.status_code
+            )
+        items = channels.json().get("items") or []
+        if not items:
+            return []
+
+        threads = await client.get(
+            "https://www.googleapis.com/youtube/v3/commentThreads",
+            params={
+                "part": "snippet", "allThreadsRelatedToChannelId": items[0]["id"],
+                "maxResults": 50, "order": "time",
+            },
+            headers=headers, timeout=20.0,
+        )
+        _raise_if_rate_limited("youtube", threads)
+        if threads.status_code != 200:
+            raise ProviderAPIError(
+                "youtube", threads.text[:200], status_code=threads.status_code
+            )
+
+        for row in threads.json().get("items", []):
+            top = (row.get("snippet") or {}).get("topLevelComment") or {}
+            snippet = top.get("snippet") or {}
+            out.append({
+                "external_id": top.get("id"),
+                "thread_external_id": row.get("id"),
+                "author": snippet.get("authorDisplayName") or "Someone",
+                "author_handle": snippet.get("authorChannelUrl"),
+                "body": snippet.get("textOriginal") or "",
+                "created_at": parse_platform_time(snippet.get("publishedAt")),
+                "permalink": (
+                    f"https://www.youtube.com/watch?v={snippet.get('videoId')}"
+                    if snippet.get("videoId") else None
+                ),
+            })
+    return out
+
+
+async def _yt_reply(social_account: Any, comment_id: str, body: str) -> dict[str, Any]:
+    import httpx
+
+    token = getattr(social_account, "access_token", None)
+    if is_mock_token(token):
+        return {"external_id": f"mock_reply_{comment_id}"}
+
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            "https://www.googleapis.com/youtube/v3/comments",
+            params={"part": "snippet"},
+            json={"snippet": {"parentId": comment_id, "textOriginal": body}},
+            headers={"Authorization": f"Bearer {token}"}, timeout=20.0,
+        )
+        _raise_if_rate_limited("youtube", res)
+        if res.status_code not in (200, 201):
+            raise ProviderAPIError(
+                "youtube", res.text[:200], status_code=res.status_code
+            )
+        return {"external_id": res.json().get("id")}

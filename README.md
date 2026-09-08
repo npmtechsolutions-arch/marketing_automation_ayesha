@@ -793,6 +793,95 @@ A "report ready" notification goes to whoever asked, or to the workspace owner
 for a scheduled one. Not to every member: telling five people the monthly report
 exists is how people learn to ignore notifications.
 
+## Unified inbox
+
+Comments, direct messages and mentions from every connected account, under
+`/accounts/{id}/inbox/`. Threads carry a status, an assignee, tags and internal
+notes; replies go back out through the provider.
+
+### Built on the connector abstraction
+
+Nothing here knows a platform's vocabulary. Providers gained `get_comments`,
+`get_messages`, `get_mentions`, `reply_to_comment` and `send_message`, each
+returning a common shape, and the sync only ever speaks that shape.
+
+Mentions are a separate capability from comments, not a variant of them: X has
+mentions and no readable comments, which one flag cannot express.
+
+| Platform | Comments | Messages | Mentions |
+|---|---|---|---|
+| Facebook | ✅ Page post comments | ✅ Conversations API (`pages_messaging`) | — |
+| Instagram | ✅ Media comments | ✅ (`instagram_manage_messages`) | — |
+| LinkedIn | ✅ Organization posts only | — messaging API is partner-gated | — |
+| X | — replies are not readable on this tier | — needs elevated access | ✅ Mentions timeline |
+| YouTube | ✅ Channel comment threads | — | — |
+
+A capability flag says the *API* offers something; whether this deployment has
+been approved for the permission surfaces at call time as a provider error, not
+as a silently empty inbox. A test asserts that every flag set to true has a real
+implementation behind it — a flag that claims a feature the server then refuses
+is the lying-matrix pattern this project keeps removing.
+
+### Everything turns on external_id
+
+Polling re-fetches the same items every pass by design. A thread is found by the
+platform's id for the conversation, a message by the platform's id for the
+message, both under a unique constraint. Without that, every poll duplicates the
+inbox — and the duplicates look like new mail.
+
+Three related rules fall out of the same thinking:
+
+* An **existing message is never rewritten**. A platform can re-serve the same
+  comment with the author's name rendered differently, and updating it each poll
+  churns the row and makes "has anything happened here" unanswerable.
+* Activity markers **only move forward**. A late-arriving older item must not
+  rewrite `last_message_at` and shuffle the inbox under whoever is reading it.
+* An item with **no external_id is skipped**: there is nothing to be idempotent
+  on, so storing it would duplicate forever.
+
+Inbound mail **reopens a resolved thread** — a customer replying to a closed
+conversation has not been dealt with.
+
+### Unsupported is not an error
+
+A platform whose capabilities say it has no DM API is never asked for one, and a
+provider that raises `NotSupportedError` anyway — LinkedIn comments on a
+personal profile, say — is recorded as *unsupported* rather than as a failure.
+The two need different things from the reader: one is a fact about the platform,
+the other is a fault to investigate. The UI states the gaps plainly, because an
+empty list and "this platform has no message API" look identical and mean
+opposite things.
+
+### Replying sends first, records second
+
+The provider call happens before the local row is written. The other order
+leaves a reply visible in our inbox that the customer never received, which is
+worse than an error the sender can see. A comment reply targets the most recent
+inbound message rather than the thread root, keeping the conversation threaded
+the way the platform displays it.
+
+Replying needs `content.create`, not just `content.view`: it speaks to the
+workspace's customers in its name, so a viewer who can read the inbox must not
+be able to do it. Mentions cannot be replied to from here at all — a mention
+lives on someone else's post, and answering means composing a public post, which
+belongs to the composer.
+
+**Internal notes** are a message with `direction=internal`. A direction rather
+than a flag, because every query that means "what did the customer see" already
+filters on direction — so a note cannot leak into one by being forgotten. They
+deliberately do not move the thread up the inbox: it sorts by customer activity,
+and a team member writing to themselves is not that.
+
+Tags are lowercased and de-duplicated on the way in, since "Refund" and "refund"
+filtering as two tags is how a tag list becomes useless within a week.
+
+### Polling now, webhooks later
+
+The worker polls every five minutes; these are rate-limited endpoints and a
+tighter loop spends the budget without seeing more. The Meta webhook receiver
+from 0.9 can feed the same upsert path later, making polling a backstop rather
+than the primary route.
+
 
 ## Review and approvals
 
