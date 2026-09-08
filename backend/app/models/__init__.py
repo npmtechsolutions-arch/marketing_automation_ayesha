@@ -1,5 +1,6 @@
 """SQLAlchemy models for the Marketing Automation platform."""
 
+from app.models.analytics_daily import AnalyticsDaily
 from app.models.account import Account, SubscriptionStatus, SubscriptionTier
 from app.models.ai_generation import AIGeneration, AIGenerationStatus, GenerationType
 from app.models.audit_log import ActivityLog
@@ -50,6 +51,7 @@ __all__ = [
     "ActivityLog",
     "AIGeneration",
     "Webhook",
+    "AnalyticsDaily",
     "PostVariant",
     "PostComment",
     # Media library

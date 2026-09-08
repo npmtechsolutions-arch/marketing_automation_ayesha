@@ -18,6 +18,9 @@ from app.connectors.base import (
     PublishResult,
     PlatformRateLimited,
     SocialProvider,
+    is_mock_token,
+    metrics_from,
+    mock_account_metrics,
     retry_after_seconds,
     OAuthTokens,
     tokens_from,
@@ -303,3 +306,42 @@ class TwitterProvider(SocialProvider):
             auth=auth,
         )
         return tokens_from(payload)
+
+    async def get_analytics(
+        self, social_account: Any, since: datetime, until: datetime
+    ) -> dict[str, Any]:
+        """X public metrics.
+
+        users/me returns follower, following and tweet counts. Reach,
+        impressions and saves need a paid analytics tier this integration does
+        not use, so they are absent -- reporting zero would be a claim the tier
+        does not support.
+        """
+        return await _account_metrics(social_account, since, until)
+
+
+async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
+    """X public metrics. No reach or impressions on this tier."""
+    import httpx
+
+    token = getattr(platform, "access_token", None)
+    if is_mock_token(token):
+        return mock_account_metrics("twitter")
+
+    out: dict[str, Any] = {}
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            "https://api.twitter.com/2/users/me",
+            params={"user.fields": "public_metrics"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15.0,
+        )
+        _raise_if_rate_limited("twitter", res)
+        if res.status_code == 200:
+            metrics = (res.json().get("data") or {}).get("public_metrics") or {}
+            out.update(metrics_from(metrics, {
+                "followers": "followers_count",
+                "following": "following_count",
+                "posts_count": "tweet_count",
+            }))
+    return out

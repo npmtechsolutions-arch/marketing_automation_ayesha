@@ -21,7 +21,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.post import Post, PostStatus
-from app.services import account_health, publishing
+from app.services import account_health, analytics_sync, publishing
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,36 @@ async def maybe_sweep_account_health() -> None:
             logger.exception("Account health sweep failed")
 
 
+_last_analytics_sync: float = 0.0
+
+
+async def maybe_sync_analytics() -> None:
+    """Collect yesterday's analytics and prune expired history, once a day.
+
+    Gated on elapsed time in the same loop rather than a separate scheduler:
+    one loop is one thing to reason about, and the alternative was the Celery
+    beat that Phase 1.5 removed.
+    """
+    global _last_analytics_sync
+
+    now = asyncio.get_running_loop().time()
+    if (
+        _last_analytics_sync
+        and now - _last_analytics_sync < analytics_sync.SYNC_INTERVAL_SECONDS
+    ):
+        return
+    _last_analytics_sync = now
+
+    async with AsyncSessionLocal() as session:
+        try:
+            await analytics_sync.sync_day(session)
+            await analytics_sync.refresh_post_metrics(session)
+            await analytics_sync.prune(session)
+        except Exception:
+            await session.rollback()
+            logger.exception("Analytics sync failed")
+
+
 async def scheduled_post_worker():
     logger.info(
         "Starting publishing worker (poll=%ss, batch=%d, max concurrent=%d).",
@@ -150,6 +180,7 @@ async def scheduled_post_worker():
             await run_due_jobs()
             await recover_stale_jobs()
             await maybe_sweep_account_health()
+            await maybe_sync_analytics()
         except Exception:
             # One bad pass must not end the loop, or scheduled posts stop
             # going out until someone restarts the process.

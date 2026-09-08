@@ -18,6 +18,9 @@ from app.connectors.base import (
     PublishResult,
     PlatformRateLimited,
     SocialProvider,
+    is_mock_token,
+    metrics_from,
+    mock_account_metrics,
     retry_after_seconds,
     OAuthTokens,
     tokens_from,
@@ -347,3 +350,47 @@ class LinkedInProvider(SocialProvider):
             },
         )
         return tokens_from(payload)
+
+    async def get_analytics(
+        self, social_account: Any, since: datetime, until: datetime
+    ) -> dict[str, Any]:
+        """LinkedIn follower statistics.
+
+        Organization pages expose follower counts and share statistics;
+        personal profiles expose almost nothing. Saves and profile visits do
+        not exist in the API at all, so they stay absent rather than zero.
+        """
+        return await _account_metrics(social_account, since, until)
+
+
+async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
+    """LinkedIn follower statistics. Organization pages only."""
+    import httpx
+
+    token = getattr(platform, "access_token", None)
+    if is_mock_token(token):
+        return mock_account_metrics("linkedin")
+
+    config = getattr(platform, "config", None) or {}
+    urn = config.get("author_urn") or ""
+    if "organization" not in urn:
+        # A personal profile exposes no statistics endpoint. Absent rather
+        # than zero -- there is nothing to report, which is not the same as
+        # reporting nothing.
+        return {}
+
+    out: dict[str, Any] = {}
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            "https://api.linkedin.com/v2/networkSizes/" + urn,
+            params={"edgeType": "CompanyFollowedByMember"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Restli-Protocol-Version": "2.0.0",
+            },
+            timeout=15.0,
+        )
+        _raise_if_rate_limited("linkedin", res)
+        if res.status_code == 200:
+            out.update(metrics_from(res.json(), {"followers": "firstDegreeSize"}))
+    return out

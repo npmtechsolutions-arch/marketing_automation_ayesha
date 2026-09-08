@@ -18,6 +18,8 @@ from app.connectors.base import (
     PublishResult,
     PlatformRateLimited,
     SocialProvider,
+    metrics_from,
+    mock_account_metrics,
     retry_after_seconds,
     OAuthTokens,
     tokens_from,
@@ -385,3 +387,43 @@ class YouTubeProvider(SocialProvider):
             },
         )
         return tokens_from(payload)
+
+    async def get_analytics(
+        self, social_account: Any, since: datetime, until: datetime
+    ) -> dict[str, Any]:
+        """YouTube channel statistics.
+
+        Subscribers, video count and lifetime views. Per-day reach and
+        impressions need the YouTube Analytics API (a separate OAuth scope),
+        so they are absent here.
+        """
+        return await _account_metrics(social_account, since, until)
+
+
+async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
+    """YouTube channel statistics."""
+    import httpx
+
+    token = getattr(platform, "access_token", None)
+    if is_mock_token(token):
+        return mock_account_metrics("youtube")
+
+    out: dict[str, Any] = {}
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            "https://www.googleapis.com/youtube/v3/channels",
+            params={"part": "statistics", "mine": "true"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15.0,
+        )
+        _raise_if_rate_limited("youtube", res)
+        if res.status_code == 200:
+            items = res.json().get("items") or []
+            if items:
+                stats = items[0].get("statistics") or {}
+                out.update(metrics_from(stats, {
+                    "followers": "subscriberCount",
+                    "posts_count": "videoCount",
+                    "video_views": "viewCount",
+                }))
+    return out

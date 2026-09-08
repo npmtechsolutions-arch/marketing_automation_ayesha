@@ -308,7 +308,89 @@ One call rather than six, so the widgets cannot disagree about what the selected
 
 Two deliberate exceptions to the range: **pending approvals** and **recent activity** ignore it. A post submitted three weeks ago is still waiting, and hiding it because it falls outside "last 7 days" is how an approval queue silently grows.
 
-**Follower growth returns `null`, not `0`, until daily snapshots exist** (`analytics_daily`, arriving in 1.11). Zero means "no change measured"; null means "not measured", and a flat 0% would be a claim the data cannot support. `engagement_rate` is null for the same reason when there is no reach to divide by — 0% reads as "bad", not "no data". It is computed against reach rather than impressions, since reach is people and impressions counts the same person twice.
+**Follower growth returns `null`, not `0`, until daily snapshots exist** (`analytics_daily`, see [Analytics](#analytics)). Zero means "no change measured"; null means "not measured", and a flat 0% would be a claim the data cannot support. `engagement_rate` is null for the same reason when there is no reach to divide by — 0% reads as "bad", not "no data". It is computed against reach rather than impressions, since reach is people and impressions counts the same person twice.
+
+## Analytics
+
+Four views over one window: `GET /accounts/{id}/analytics/{summary,platforms,posts,audience}`. All
+four take the same `range=today|yesterday|7d|30d|90d|custom&from&to` parameters as the dashboard and
+resolve them through the same code, so the analytics page and the dashboard cannot disagree about
+what "last 30 days" means. Add `&format=csv` to any of them to get the same query as a download.
+
+### Where the numbers come from
+
+`analytics_daily` holds one row per social account per day, unique on `(social_account_id, date)`. A
+nightly pass in the worker asks each connected account's provider for `get_analytics()`, upserts the
+day, refreshes per-post metrics for the last 30 days, and prunes history. The sync retries a
+`PlatformRateLimited` up to three times with exponentially backed-off, fully jittered delays; other
+provider errors are logged and skipped, so one broken connection does not cost the workspace its
+whole night's data.
+
+The upsert writes **only the metrics actually present in the response**. A partial re-run — a
+provider that answered for followers but rate-limited on insights — therefore cannot erase what an
+earlier run stored.
+
+### Null is not zero
+
+Every metric column is nullable, and null means *this platform does not report it*. What each
+provider genuinely returns:
+
+| Platform | Reports |
+|---|---|
+| Facebook | followers, impressions, profile visits |
+| Instagram | followers, following, posts, reach, impressions, profile visits |
+| LinkedIn | followers (organization pages only) |
+| X | followers, following, posts — reach and impressions need a paid tier |
+| YouTube | followers, posts, video views |
+
+Storing an unreported metric as `0` would put a real, flat, wrong line on a chart and drag every
+cross-platform average down by the platforms that were never measured. Totals with no contributors
+stay null, CSV exports write an empty cell rather than the string `None`, and the UI renders an em
+dash.
+
+`engagement_rate` is interactions over reach, and is null in **both** directions of that division:
+no reach to divide by, *or* no interaction metric reported at all. The second case is the one that
+bites — a workspace connected only to X and LinkedIn has real reach and an entirely unmeasured
+numerator, and coalescing those nulls to zero produced a confident `0.0%` for a workspace with
+61,000 reach. 0% reads as "your content is failing"; null reads as "not measured". A *partially*
+reported numerator is summed with the absent parts as zero, since a platform that reports likes but
+has no "saves" concept genuinely contributed no saves.
+
+### Cumulative metrics are never summed
+
+`followers`, `following` and `posts_count` are running totals, not daily amounts: 1,000 followers on
+Monday plus 1,010 on Tuesday is not 2,010. Aggregates take the latest value per account in the
+window, and growth is last-minus-first. Everything else in `METRIC_FIELDS` is a daily amount and is
+summed normally. `CUMULATIVE_FIELDS` in `app/models/analytics_daily.py` is the single list both
+rules read from.
+
+Deltas against the preceding window return null — rendered as a dash — rather than a number whenever
+either side is missing or the previous value was zero. "Up 100%" measured against a period with no
+data is a fabrication, and growth from zero has no percentage.
+
+### Retention
+
+Pruning is per organization, from the `analytics_history_days` entitlement, with a seven-day floor
+so a misconfigured plan cannot delete a workspace's entire history. A plan with no limit set keeps
+everything. Because limits live on the *plan*, two workspaces on the same tier necessarily share a
+retention window; a paying workspace keeps more than a free one by being on a different plan.
+
+### Tested on Postgres, not just SQLite
+
+`tests/test_analytics_postgres.py` executes each of the four query functions against a real
+Postgres, and skips when none is reachable. It exists because the suite's in-memory SQLite harness
+accepts SQL that Postgres rejects: the posts query originally rounded a `double precision`, which
+SQLite computes happily and Postgres refuses outright — there is only `round(numeric, int)`. All 600
+tests passed while `/analytics/posts` was a hard 500 in production. The file asserts almost nothing
+about the numbers; it exists to prove the SQL runs at all on the database the product ships on.
+
+### The page
+
+`/analytics` has four tabs — Overview, Platforms, Content, Audience — sharing the range picker at the
+top and each with its own CSV button that exports exactly the query on screen, sort order included.
+Content sorts server-side rather than in the browser, since the table shows a capped number of rows
+and re-sorting the fetched page would reorder a slice instead of finding the actual top posts.
+
 
 ## Review and approvals
 
@@ -503,7 +585,13 @@ DEBUG=true python -m pytest tests/ -q
 
 The suite runs against in-memory SQLite and needs no Postgres or Redis. Shared fixtures (app client, database session, user/account/member factories, auth headers, plan seeding and `set_limit`) live in [backend/tests/conftest.py](backend/tests/conftest.py).
 
-Two files are the exception. [test_publishing_concurrency.py](backend/tests/test_publishing_concurrency.py) proves that two workers cannot claim the same publishing job, and [test_entitlement_concurrency.py](backend/tests/test_entitlement_concurrency.py) proves that two requests arriving at the same limit cannot both succeed. Both need two connections running two transactions at once — which the single-connection SQLite harness cannot express, and where `with_for_update(skip_locked=True)` is a silent no-op. Each creates its own scratch database on the server named by `DATABASE_URL` (overridable with `TEST_POSTGRES_ADMIN_URL`) and drops it afterwards, and **skips** when no Postgres is reachable. CI runs a Postgres service, so it executes there; locally it will skip unless Postgres is up.
+Three files are the exception, for two different reasons.
+
+[test_publishing_concurrency.py](backend/tests/test_publishing_concurrency.py) proves that two workers cannot claim the same publishing job, and [test_entitlement_concurrency.py](backend/tests/test_entitlement_concurrency.py) proves that two requests arriving at the same limit cannot both succeed. Both need two connections running two transactions at once — which the single-connection SQLite harness cannot express, and where `with_for_update(skip_locked=True)` is a silent no-op.
+
+[test_analytics_postgres.py](backend/tests/test_analytics_postgres.py) is there for the opposite reason: not because SQLite is too weak to express the guarantee, but because it is too *permissive* to catch the bug. It accepts SQL Postgres rejects — `round(double precision, int)` among it — so a query can pass all 600-odd tests and 500 in production. It executes each analytics query once on the real database.
+
+All three create a scratch database on the server named by `DATABASE_URL` (overridable with `TEST_POSTGRES_ADMIN_URL`), drop it afterwards, and **skip** when no Postgres is reachable. CI runs a Postgres service, so they execute there; locally they will skip unless Postgres is up.
 
 Linting:
 

@@ -1,15 +1,18 @@
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.services import analytics_query
 from app.core.deps import get_current_active_user
+from app.models.account import Account
 from app.models.post import Post, PostStatus
 from app.models.post_performance import PostPerformance
 from app.api.v1.endpoints.posts import _sync_post_performance
@@ -377,3 +380,135 @@ async def export_analytics(
     )
 
     return ExportResponse(download_url=download_url, expires_at=expires)
+
+
+# ---------------------------------------------------------------------------
+# Range-based analytics (scope §12)
+#
+# These take the same date-range parameters as the dashboard, resolved by the
+# same code -- so a picker on the analytics page and one on the dashboard mean
+# the same window. Each accepts ?format=csv and streams the same data.
+# ---------------------------------------------------------------------------
+
+def _csv_response(body: str, filename: str) -> StreamingResponse:
+    """Stream rather than build a string response.
+
+    A 90-day export across many accounts is large enough that holding the whole
+    encoded body in memory per request is worth avoiding, and the browser gets
+    a download prompt either way.
+    """
+    return StreamingResponse(
+        iter([body]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            # The body is user-influenced text; stop a browser sniffing it into
+            # something it will render.
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+async def _range_context(account_id, current_user, db, range_key, date_from, date_to):
+    await _verify_account_access(account_id, current_user, db)
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+    return account, analytics_query.resolve(account, range_key, date_from, date_to)
+
+
+@router.get("/summary")
+async def analytics_summary(
+    account_id: uuid.UUID,
+    range: str = Query("30d"),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    format: str | None = Query(None, pattern="^csv$"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Totals for the window, with deltas against the preceding one."""
+    account, window = await _range_context(
+        account_id, current_user, db, range, date_from, date_to
+    )
+    payload = await analytics_query.overview(db, account, window)
+    if format == "csv":
+        return _csv_response(
+            analytics_query.overview_csv(payload),
+            f"analytics-overview-{window.start.date()}-to-{window.end.date()}.csv",
+        )
+    return payload
+
+
+@router.get("/platforms")
+async def analytics_platforms(
+    account_id: uuid.UUID,
+    range: str = Query("30d"),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    format: str | None = Query(None, pattern="^csv$"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Per-platform breakdown."""
+    account, window = await _range_context(
+        account_id, current_user, db, range, date_from, date_to
+    )
+    rows = await analytics_query.platforms(db, account, window)
+    if format == "csv":
+        return _csv_response(
+            analytics_query.to_csv(rows),
+            f"analytics-platforms-{window.start.date()}-to-{window.end.date()}.csv",
+        )
+    return {"platforms": rows}
+
+
+@router.get("/posts")
+async def analytics_posts(
+    account_id: uuid.UUID,
+    range: str = Query("30d"),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    sort: str = Query("engagement", pattern="^(engagement|impressions|reach|date)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    limit: int = Query(50, ge=1, le=500),
+    format: str | None = Query(None, pattern="^csv$"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Content performance, sortable."""
+    account, window = await _range_context(
+        account_id, current_user, db, range, date_from, date_to
+    )
+    rows = await analytics_query.posts(
+        db, account, window, sort=sort, order=order, limit=limit
+    )
+    if format == "csv":
+        return _csv_response(
+            analytics_query.to_csv(rows),
+            f"analytics-posts-{window.start.date()}-to-{window.end.date()}.csv",
+        )
+    return {"posts": rows}
+
+
+@router.get("/audience")
+async def analytics_audience(
+    account_id: uuid.UUID,
+    range: str = Query("30d"),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    format: str | None = Query(None, pattern="^csv$"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Follower growth over the window."""
+    account, window = await _range_context(
+        account_id, current_user, db, range, date_from, date_to
+    )
+    payload = await analytics_query.audience(db, account, window)
+    if format == "csv":
+        return _csv_response(
+            analytics_query.to_csv(payload["series"]),
+            f"analytics-audience-{window.start.date()}-to-{window.end.date()}.csv",
+        )
+    return payload

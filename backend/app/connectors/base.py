@@ -477,10 +477,15 @@ class SocialProvider:
     async def get_analytics(
         self, social_account: Any, since: datetime, until: datetime
     ) -> dict[str, Any]:
-        """Account-level metrics over a date range.
+        """Account-level metrics for a day.
 
-        No platform implements this yet: nothing in the app has ever fetched a
-        range. Per-post metrics are :meth:`get_post_metrics`.
+        Returns a mapping of metric name to value, containing **only the
+        metrics this platform actually reports**. A metric the platform does
+        not expose must be absent, not zero: the caller stores absence as NULL,
+        and a stored 0 would render as a real flat line and drag every
+        cross-platform average down.
+
+        Per-post metrics are :meth:`get_post_metrics`.
         """
         raise NotSupportedError(self.slug, "get_analytics")
 
@@ -616,3 +621,50 @@ def tokens_from(payload: dict[str, Any]) -> OAuthTokens:
         expires_at=expires_at_from(payload),
         raw=payload,
     )
+
+
+def mock_account_metrics(platform: str) -> dict[str, Any]:
+    """Plausible account metrics for a development token.
+
+    Only the metrics that platform genuinely reports, so a dev environment
+    exercises the same null handling production will -- a mock that fills every
+    field would hide the case the storage layer exists to get right.
+    """
+    reported = {
+        "instagram": ("followers", "following", "posts_count", "reach",
+                      "impressions", "profile_visits"),
+        "facebook": ("followers", "impressions", "profile_visits"),
+        "linkedin": ("followers",),
+        "twitter": ("followers", "following", "posts_count"),
+        "youtube": ("followers", "posts_count", "video_views"),
+    }.get(platform, ("followers",))
+
+    base = {
+        "followers": random.randint(500, 50_000),
+        "following": random.randint(50, 2_000),
+        "posts_count": random.randint(10, 800),
+        "reach": random.randint(200, 20_000),
+        "impressions": random.randint(400, 60_000),
+        "profile_visits": random.randint(10, 3_000),
+        "video_views": random.randint(100, 90_000),
+    }
+    return {name: base[name] for name in reported if name in base}
+
+
+def metrics_from(payload: dict[str, Any], mapping: dict[str, str]) -> dict[str, Any]:
+    """Pull our metric names out of a platform's response.
+
+    ``mapping`` is metric -> key in the platform payload. A key the platform
+    omitted is left out of the result entirely rather than defaulted, which is
+    what keeps "not reported" distinguishable from "zero".
+    """
+    result: dict[str, Any] = {}
+    for metric, source_key in mapping.items():
+        raw = payload.get(source_key)
+        if raw is None:
+            continue
+        try:
+            result[metric] = int(raw)
+        except (TypeError, ValueError):
+            continue
+    return result

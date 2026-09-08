@@ -18,6 +18,8 @@ from app.connectors.base import (
     PublishResult,
     PlatformRateLimited,
     SocialProvider,
+    metrics_from,
+    mock_account_metrics,
     retry_after_seconds,
     OAuthTokens,
     tokens_from,
@@ -460,3 +462,63 @@ class FacebookProvider(SocialProvider):
             },
         )
         return tokens_from(payload)
+
+    async def get_analytics(
+        self, social_account: Any, since: datetime, until: datetime
+    ) -> dict[str, Any]:
+        """Facebook Page Insights.
+
+        Page fan count plus impressions and engaged users. No "saves" concept
+        on a Page, and profile visits are not exposed.
+        """
+        return await _account_metrics(social_account, since, until)
+
+
+async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
+    """Account-level Facebook Page metrics for the day."""
+    import httpx
+
+    token = getattr(platform, "access_token", None)
+    if is_mock_token(token):
+        return mock_account_metrics("facebook")
+
+    config = getattr(platform, "config", None) or {}
+    page_id = config.get("page_id")
+    page_token = config.get("page_access_token") or token
+    if not page_id:
+        return {}
+
+    base = "https://graph.facebook.com/v18.0"
+    out: dict[str, Any] = {}
+    async with httpx.AsyncClient() as client:
+        page = await client.get(
+            f"{base}/{page_id}",
+            params={"fields": "fan_count", "access_token": page_token},
+            timeout=15.0,
+        )
+        _raise_if_rate_limited("facebook", page)
+        if page.status_code == 200:
+            out.update(metrics_from(page.json(), {"followers": "fan_count"}))
+
+        insights = await client.get(
+            f"{base}/{page_id}/insights",
+            params={
+                "metric": "page_impressions,page_post_engagements,page_views_total",
+                "period": "day",
+                "access_token": page_token,
+            },
+            timeout=15.0,
+        )
+        _raise_if_rate_limited("facebook", insights)
+        if insights.status_code == 200:
+            for entry in insights.json().get("data", []):
+                values = entry.get("values") or []
+                if not values:
+                    continue
+                key = {
+                    "page_impressions": "impressions",
+                    "page_views_total": "profile_visits",
+                }.get(entry.get("name"))
+                if key and values[-1].get("value") is not None:
+                    out[key] = int(values[-1]["value"])
+    return out

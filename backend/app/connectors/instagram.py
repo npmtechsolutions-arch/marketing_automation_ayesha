@@ -19,6 +19,8 @@ from app.connectors.base import (
     PublishResult,
     PlatformRateLimited,
     SocialProvider,
+    metrics_from,
+    mock_account_metrics,
     retry_after_seconds,
     OAuthTokens,
     provider_request,
@@ -518,3 +520,75 @@ class InstagramProvider(SocialProvider):
             },
         )
         return tokens_from(payload)
+
+    async def get_analytics(
+        self, social_account: Any, since: datetime, until: datetime
+    ) -> dict[str, Any]:
+        """Instagram Insights.
+
+        The richest of the five: reach, impressions and profile visits are all
+        first-class. Saves are per-media rather than per-account, so they are
+        absent here and come from post metrics instead.
+        """
+        return await _account_metrics(social_account, since, until)
+
+
+async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
+    """Account-level Instagram metrics for the day."""
+    import httpx
+
+    token = getattr(platform, "access_token", None)
+    if is_mock_token(token):
+        return mock_account_metrics("instagram")
+
+    config = getattr(platform, "config", None) or {}
+    ig_id = config.get("instagram_business_account_id") or config.get("page_id")
+    if not ig_id:
+        return {}
+
+    base = (
+        "https://graph.instagram.com/v18.0"
+        if str(token).startswith("IG")
+        else "https://graph.facebook.com/v18.0"
+    )
+    out: dict[str, Any] = {}
+    async with httpx.AsyncClient() as client:
+        profile = await client.get(
+            f"{base}/{ig_id}",
+            params={
+                "fields": "followers_count,follows_count,media_count",
+                "access_token": token,
+            },
+            timeout=15.0,
+        )
+        _raise_if_rate_limited("instagram", profile)
+        if profile.status_code == 200:
+            out.update(metrics_from(profile.json(), {
+                "followers": "followers_count",
+                "following": "follows_count",
+                "posts_count": "media_count",
+            }))
+
+        insights = await client.get(
+            f"{base}/{ig_id}/insights",
+            params={
+                "metric": "reach,impressions,profile_views",
+                "period": "day",
+                "access_token": token,
+            },
+            timeout=15.0,
+        )
+        _raise_if_rate_limited("instagram", insights)
+        if insights.status_code == 200:
+            for entry in insights.json().get("data", []):
+                values = entry.get("values") or []
+                if not values:
+                    continue
+                key = {
+                    "reach": "reach",
+                    "impressions": "impressions",
+                    "profile_views": "profile_visits",
+                }.get(entry.get("name"))
+                if key and values[-1].get("value") is not None:
+                    out[key] = int(values[-1]["value"])
+    return out
