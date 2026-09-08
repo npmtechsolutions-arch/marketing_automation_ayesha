@@ -50,6 +50,7 @@ import { cn } from "@/lib/utils";
 import api, { getAccountId , getAccountIdSync } from "@/lib/api";
 import { localDateTime, schedulingApi, wallClockIn } from "@/lib/scheduling";
 import RecurrenceEditor from "@/components/scheduling/RecurrenceEditor";
+import AiAssistMenu from "@/components/content/AiAssistMenu";
 import { showSuccess, showError, showWarning } from "@/components/ui/Toast";
 
 // ────────────────────────────────────────────────────────
@@ -158,6 +159,16 @@ function ShimmerBlock({ className }: { className?: string }) {
     </div>
   );
 }
+
+// Character limits, mirroring the connector capabilities the server validates
+// against. Used only to pick which platform an AI assist should aim at.
+const PLATFORM_CHAR_LIMITS: Record<string, number> = {
+  twitter: 280,
+  instagram: 2200,
+  linkedin: 3000,
+  youtube: 5000,
+  facebook: 63206,
+};
 
 // ────────────────────────────────────────────────────────
 // Main Page Component
@@ -956,6 +967,15 @@ export default function CreatePostPage() {
     )
   );
 
+  // Which platform an AI assist should aim at when several are targeted: the
+  // tightest one. A rewrite that fits X fits everywhere; one that fits
+  // Instagram is 1,900 characters too long for X, and the author would find
+  // out from the validator rather than from the assist they just paid for.
+  const assistPlatform =
+    [...targetedPlatforms].sort(
+      (a, b) => (PLATFORM_CHAR_LIMITS[a] ?? 1e9) - (PLATFORM_CHAR_LIMITS[b] ?? 1e9)
+    )[0] ?? null;
+
   const accountsByPlatform = accounts.reduce(
     (acc, account) => {
       if (!acc[account.platform]) acc[account.platform] = [];
@@ -1173,6 +1193,18 @@ export default function CreatePostPage() {
                       <label className="text-sm font-medium" style={{ color: "var(--page-text)" }}>
                         Content
                       </label>
+                      <div className="flex items-center gap-3">
+                        <AiAssistMenu
+                          accountId={workspaceId}
+                          content={content}
+                          platform={assistPlatform}
+                          onApply={setContent}
+                          onHashtags={(tags) =>
+                            setHashtags((prev) =>
+                              Array.from(new Set([...prev, ...tags]))
+                            )
+                          }
+                        />
                       <span
                         className={cn(
                           "text-xs tabular-nums",
@@ -1182,6 +1214,7 @@ export default function CreatePostPage() {
                       >
                         {content.length} / 2,200
                       </span>
+                      </div>
                     </div>
                     <textarea
                       value={content}

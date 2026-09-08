@@ -632,6 +632,83 @@ Rejected rows are not charged.
   — failed every row on "that date is in the past". A test now requires the
   template to import cleanly as its own input.
 
+## AI writing assists
+
+Five operations on the author's own text, under `/accounts/{id}/ai/`:
+`rewrite`, `shorten`, `expand`, `change-tone` and `suggest-hashtags`, plus
+`GET /assist-options` describing what the server will accept.
+
+They sit on the existing AI router, which carries `meter_ai_request` as a
+router-level dependency — so every one is charged against
+`ai_requests_per_month` before a provider is reached, and adding a sixth assist
+cannot accidentally ship unmetered.
+
+### Failures are failures
+
+The older `/generate-content` endpoint catches a provider error, substitutes
+mock text with the exception message interpolated into it, and records the row
+`COMPLETED`. That puts an internal error string into the user's post and leaves
+the usage log unable to answer "how often does this break".
+
+The assists do the opposite: a provider error marks the `AIGeneration` row
+`FAILED` with the exception, and returns **502** with a message that says the
+text has not been changed. The composer then leaves the author's writing alone —
+which is the contract its undo depends on. (The older endpoint's behaviour is
+recorded in the walkthrough defect log rather than changed here.)
+
+### A named provider is honoured or refused
+
+`provider` accepts `openai`, `anthropic` or `gemini`. One that is not
+configured on the deployment is a **400 naming what is configured**, never a
+silent swap: being quietly answered by a different model than you asked for is
+indistinguishable, from the outside, from the requested one behaving oddly.
+Omitting it uses whichever is configured, and a deployment with no keys at all
+falls back to a local mock so the composer is usable in development.
+
+### Tone is an enum
+
+The tone value is interpolated into the system prompt, so it is a closed set —
+`professional`, `casual`, `friendly`, `witty`, `authoritative`,
+`inspirational`, `urgent`, `empathetic`. An open string there is an
+instruction-injection hole, and "make it sound like X" where X is a paragraph of
+the caller's choosing is not a tone control.
+
+### Platform awareness
+
+`platform` does two things. It puts the platform's character limit into the
+prompt, taken from the same connector capabilities the 1.7 validator uses — an
+assist that returns text the composer immediately marks invalid has wasted the
+author's time *and* a metered request. And it sets the hashtag count and
+register: twelve on Instagram, four on LinkedIn, two on X. The same list on both
+reads as under-tagged in one place and as spam in the other.
+
+When several platforms are targeted, the composer aims the assist at the
+**tightest** one. A rewrite that fits X fits everywhere; one that fits Instagram
+is 1,900 characters too long for X.
+
+### Hashtag parsing
+
+Models drift between a JSON array, a comma list, a newline block and a fenced
+code block, so all four are accepted — failing over formatting would spend the
+allowance for nothing. What is *not* accepted is prose: a model that declines
+("I'm sorry, I can't help with that.") splits into chunks that clean up into
+plausible-looking strings, and returning `imsorry` as a hashtag is worse than
+returning nothing. Chunks with contractions, or longer than three words, are
+rejected; if nothing survives the caller gets "no usable hashtags", which is the
+honest answer. It is a heuristic and will not catch a one-word refusal — the
+alternative is refusing legitimate multi-word tags, which would cost users more
+often than this costs them.
+
+### The composer menu
+
+An "AI assist" dropdown on the content field, applying results **in place with
+undo**. The previous text is kept and one click restores it, because an assist
+that replaces your writing with no way back is one people are afraid to press.
+
+Nothing fires on its own — no assist on blur, on debounce or on mount. Every
+call is metered, so every call is one the author asked for by name, and the menu
+says so.
+
 
 ## Review and approvals
 

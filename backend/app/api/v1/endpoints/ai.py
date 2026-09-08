@@ -5,11 +5,12 @@ import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.services import ai_assist
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.ai_generation import AIGeneration, AIGenerationStatus, GenerationType
@@ -984,3 +985,202 @@ async def generate_strategy(
         await db.flush()
         await db.refresh(gen)
         return StrategyGenerateResponse(**mock, generation_id=gen.id)
+
+
+# ---------------------------------------------------------------------------
+# Inline composer assists (scope §14)
+#
+# Five small operations on the author's own text. Every one is metered by the
+# router-level `meter_ai_request` dependency, so a caller cannot reach a
+# provider without spending an allowance -- that is why they live on this
+# router rather than a new one.
+# ---------------------------------------------------------------------------
+
+class AssistRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=ai_assist.MAX_INPUT_CHARS)
+    # Lets the assist respect that platform's character limit, and shapes the
+    # hashtag count. Optional: a post being written before its targets are
+    # chosen still deserves a rewrite.
+    platform: str | None = Field(None, max_length=40)
+    provider: str | None = Field(
+        None,
+        description=(
+            "openai, anthropic or gemini. Omit to use whichever is configured. "
+            "A named provider that is not configured is refused rather than "
+            "quietly swapped for another."
+        ),
+    )
+
+
+class ChangeToneRequest(AssistRequest):
+    tone: ai_assist.Tone
+
+
+class AssistResponse(BaseModel):
+    result: str
+    provider: str
+    model: str
+    generation_id: uuid.UUID
+    # So the composer can show what it will do to the length before applying.
+    original_length: int
+    result_length: int
+
+
+class HashtagResponse(BaseModel):
+    hashtags: list[str]
+    provider: str
+    model: str
+    generation_id: uuid.UUID
+
+
+async def _run_assist(
+    assist: "ai_assist.Assist",
+    account_id: uuid.UUID,
+    body: AssistRequest,
+    db: AsyncSession,
+    current_user,
+    *,
+    tone: "ai_assist.Tone | None" = None,
+):
+    """Shared body for the five endpoints.
+
+    The error mapping is the interesting part. A provider that is not
+    configured is the caller's mistake (400); a provider that failed is ours
+    (502). Both leave the author's text untouched, which is the contract the
+    composer's undo depends on.
+    """
+    await _verify_account_access(account_id, current_user, db)
+    try:
+        return await ai_assist.run(
+            db,
+            assist=assist,
+            content=body.content,
+            user_id=current_user.id,
+            account_id=account_id,
+            platform=body.platform,
+            tone=tone,
+            provider=body.provider,
+        )
+    except ai_assist.ProviderNotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    except ai_assist.ProviderFailed as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
+
+
+def _text_response(body: AssistRequest, outcome) -> "AssistResponse":
+    return AssistResponse(
+        result=outcome.result,
+        provider=outcome.provider,
+        model=outcome.model,
+        generation_id=outcome.generation_id,
+        original_length=len(body.content),
+        result_length=len(outcome.result),
+    )
+
+
+@router.post("/rewrite", response_model=AssistResponse)
+async def ai_rewrite(
+    account_id: uuid.UUID,
+    body: AssistRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Rewrite the post so it reads better, at roughly the same length."""
+    outcome = await _run_assist(ai_assist.Assist.REWRITE, account_id, body, db, current_user)
+    return _text_response(body, outcome)
+
+
+@router.post("/shorten", response_model=AssistResponse)
+async def ai_shorten(
+    account_id: uuid.UUID,
+    body: AssistRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Tighten the post, targeting the platform's limit when one is given."""
+    if len(body.content.strip()) < ai_assist.MIN_SHORTEN_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"There is not enough here to shorten (under "
+                f"{ai_assist.MIN_SHORTEN_CHARS} characters)."
+            ),
+        )
+    outcome = await _run_assist(ai_assist.Assist.SHORTEN, account_id, body, db, current_user)
+    return _text_response(body, outcome)
+
+
+@router.post("/expand", response_model=AssistResponse)
+async def ai_expand(
+    account_id: uuid.UUID,
+    body: AssistRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Develop the post further without inventing facts."""
+    outcome = await _run_assist(ai_assist.Assist.EXPAND, account_id, body, db, current_user)
+    return _text_response(body, outcome)
+
+
+@router.post("/change-tone", response_model=AssistResponse)
+async def ai_change_tone(
+    account_id: uuid.UUID,
+    body: ChangeToneRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Rewrite in a named tone. The tone is an enum, not free text: the value
+    reaches the system prompt, and an open string there is an injection hole."""
+    outcome = await _run_assist(
+        ai_assist.Assist.CHANGE_TONE, account_id, body, db, current_user, tone=body.tone
+    )
+    return _text_response(body, outcome)
+
+
+@router.post("/suggest-hashtags", response_model=HashtagResponse)
+async def ai_suggest_hashtags(
+    account_id: uuid.UUID,
+    body: AssistRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Hashtags for the post, in the count and register the platform expects.
+
+    Twelve on Instagram and two on X is not a detail: the same list on both
+    reads as under-tagged in one place and as spam in the other.
+    """
+    outcome = await _run_assist(
+        ai_assist.Assist.HASHTAGS, account_id, body, db, current_user
+    )
+    return HashtagResponse(
+        hashtags=outcome.result,
+        provider=outcome.provider,
+        model=outcome.model,
+        generation_id=outcome.generation_id,
+    )
+
+
+@router.get("/assist-options")
+async def ai_assist_options(
+    account_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """What the composer's assist menu should offer.
+
+    Served rather than hard-coded in the UI so the tone list and the provider
+    list cannot drift from what the server will actually accept.
+    """
+    await _verify_account_access(account_id, current_user, db)
+    return {
+        "tones": [t.value for t in ai_assist.Tone],
+        "providers": ai_assist.configured_providers(),
+        "hashtag_counts": {
+            slug: style.count for slug, style in ai_assist.HASHTAG_STYLES.items()
+        },
+        "min_shorten_chars": ai_assist.MIN_SHORTEN_CHARS,
+    }

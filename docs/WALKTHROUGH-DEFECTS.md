@@ -40,6 +40,13 @@ hand, which they were not before #2 was fixed.
 the 404 page is 82. It was a 404 the whole time. A check that can pass while the
 thing it checks is broken is not a check.
 
+## Found while building, not by the walk
+
+| # | Area | Severity | What happens |
+|---|------|----------|--------------|
+| 7 | `POST /ai/generate-content` | S2 | A provider failure is caught, mock text is substituted with the raw exception interpolated into it (`⚠️ … Error: {exc}`), and the `AIGeneration` row is recorded **COMPLETED**. So an internal error string can land in the user's post, and the usage log cannot answer "how often does this break". The newer `/ai/rewrite` family does the opposite — FAILED row, 502, text untouched — and `generate-content` should be brought into line. Not changed here because its response contract is what the composer's generate flow depends on. |
+| 8 | Composer character counter | S3 | The counter is hardcoded `/ 2,200` for every platform, so someone targeting X is told 2,200 is fine and finds out at publish time. Already noted in the `Capabilities` docstring; the AI assists route around it by asking the connector for the real limit. |
+
 ## Observations that are not defects
 
 Things worth remembering that are not bugs — friction, missing features, ideas
