@@ -200,6 +200,50 @@ class EmailService:
         )
 
     # ------------------------------------------------------------------
+    # Account health
+    # ------------------------------------------------------------------
+
+    @classmethod
+    async def send_account_health_email(
+        cls,
+        email: str,
+        *,
+        user_name: str,
+        account_name: str,
+        platform: str,
+        health: str,
+        detail: str = "",
+    ) -> bool:
+        """Warn a workspace manager that a connection is failing.
+
+        Sent once per state change, not once per sweep -- see
+        app.services.account_health. An hourly reminder about the same broken
+        account is how people learn to filter these out.
+        """
+        expiring = health == "expiring"
+        subject = (
+            f"Action needed: {platform} connection for {account_name} is expiring"
+            if expiring
+            else f"{platform} disconnected for {account_name}"
+        )
+        context = {
+            "subject": subject,
+            "user_name": user_name,
+            "account_name": account_name,
+            "platform": platform,
+            "health": health,
+            "detail": detail,
+            "expiring": expiring,
+            "reconnect_url": f"{settings.FRONTEND_URL}/social-accounts",
+        }
+        return await cls._send(
+            to=email,
+            subject=subject,
+            html_body=_render("account_health.html", **context),
+            text_body=_render("account_health.txt", **context),
+        )
+
+    # ------------------------------------------------------------------
     # Welcome
     # ------------------------------------------------------------------
 

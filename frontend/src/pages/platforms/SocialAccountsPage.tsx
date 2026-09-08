@@ -17,6 +17,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { healthMeta, needsAttention, reconnectPath } from "@/lib/health";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { cn, formatDate, formatNumber } from "@/lib/utils";
@@ -47,6 +48,12 @@ interface SocialAccount {
   createdAt: string;
   configFields: { key: string; label: string; value: string; type: string }[];
   platformId: string;
+  // Connection health from the hourly sweep. Separate from isActive (the
+  // user's own switch) and isVerified (whether we ever confirmed it worked):
+  // a connection can be active, verified, and about to stop publishing.
+  health: string;
+  healthDetail: string | null;
+  lastCheckedAt: string | null;
 }
 
 const getProxiedImageUrl = (url?: string) => {
@@ -111,6 +118,9 @@ export default function SocialAccountsPage() {
         return {
           id: item.id,
           platformName: item.platform?.name || "Unknown",
+          health: item.health || "unknown",
+          healthDetail: item.health_detail ?? null,
+          lastCheckedAt: item.last_checked_at ?? null,
           platformColor: item.platform?.color || "#6366F1",
           platformSlug: item.platform?.slug || "unknown",
           accountName: item.account_name,
@@ -306,6 +316,42 @@ export default function SocialAccountsPage() {
     } catch (error) {
       console.error("Error verifying account:", error);
       showError("Failed to verify social account connection.");
+    }
+  };
+
+  /**
+   * Re-authorise a connection in place.
+   *
+   * The ?reconnect= parameter is what makes the OAuth callback update this
+   * SocialAccount row rather than creating a second one. Without it every
+   * reconnect leaves the old row -- and every post, publishing job and metric
+   * pointing at it -- holding dead credentials.
+   */
+  const handleReconnect = async (account: SocialAccount) => {
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
+    try {
+      setIsLoading(true);
+      const res: any = await api.get(
+        reconnectPath(
+          activeAccountId,
+          account.platformSlug,
+          account.platformId,
+          account.id
+        )
+      );
+      const authUrl = res.auth_url || res.data?.auth_url;
+      if (authUrl) {
+        window.location.href = authUrl;
+      } else {
+        showError("Could not start the reconnect flow for this platform.");
+      }
+    } catch (err: any) {
+      showError(
+        err.response?.data?.detail || "Could not start the reconnect flow."
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -652,6 +698,9 @@ export default function SocialAccountsPage() {
                         <span className="text-xs" style={{ color: "var(--page-text-secondary)" }}>{account.handle}</span>
                         <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>·</span>
                         <Badge size="sm" variant="default">{account.platformName}</Badge>
+                        <Badge size="sm" variant={healthMeta(account.health).variant}>
+                          {healthMeta(account.health).label}
+                        </Badge>
                       </div>
                     </div>
 
@@ -702,6 +751,15 @@ export default function SocialAccountsPage() {
 
                     {/* Actions */}
                     <div className="flex items-center gap-1">
+                      {needsAttention(account.health) && (
+                        <button
+                          onClick={() => handleReconnect(account)}
+                          title={healthMeta(account.health).blurb}
+                          className="rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer bg-amber-500/15 text-amber-300 hover:bg-amber-500/25"
+                        >
+                          Reconnect
+                        </button>
+                      )}
                       <button
                         onClick={() => setSelectedAccount(account)}
                         className="rounded-lg p-2 transition-colors cursor-pointer hover:bg-[var(--sidebar-hover-bg)] hover:text-white"

@@ -1,8 +1,9 @@
 """Account settings and usage endpoints."""
 
 import uuid
+from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,7 @@ from app.core.authz import verify_account_access as _verify_account_access
 from app.core.permissions import (
     SETTINGS_MANAGE,
 )
+from app.services import dashboard
 from app.services import entitlement_service as ent
 from app.services.entitlements import get_organization_for_account
 
@@ -171,4 +173,33 @@ async def get_usage(
             db, organization, ent.SOCIAL_ACCOUNTS
         ),
         platforms_limit=await ent.get_limit(db, organization, ent.SOCIAL_ACCOUNTS),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+@router.get("/dashboard")
+async def get_dashboard(
+    account_id: uuid.UUID,
+    range: str = Query("7d", description="today|yesterday|7d|30d|90d|custom"),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Every dashboard widget in one payload.
+
+    One call rather than six, so the widgets cannot disagree about what the
+    selected range means -- and so the page costs a fixed number of queries
+    regardless of how much content the workspace holds.
+
+    Ranges resolve in the workspace's timezone: "today" for a team in Sydney is
+    not the same fourteen hours as "today" in UTC.
+    """
+    await _verify_account_access(account_id, current_user, db)
+    account = await _get_account_or_404(account_id, db)
+    return await dashboard.build(
+        db, account, range_key=range, date_from=date_from, date_to=date_to
     )

@@ -28,6 +28,12 @@ from app.api.v1.endpoints.social_accounts import _verify_membership
 from app.core.config import settings
 from app.connectors.base import ProviderAPIError
 from app.connectors.registry import get_provider
+from app.api.v1.endpoints.oauth_common import (
+    apply_reconnect,
+    reconnect_claim,
+    reconnect_id_from_state,
+    validate_reconnect_target,
+)
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.deps import get_current_active_user
 from app.models.platform import SocialAccount, SocialPlatform
@@ -68,6 +74,14 @@ def _frontend_redirect(status_: str, reason: str | None = None) -> RedirectRespo
 async def youtube_authorize(
     account_id: uuid.UUID,
     platform_id: uuid.UUID = Query(..., description="The YouTube SocialPlatform id"),
+    reconnect: uuid.UUID | None = Query(
+        None,
+        description=(
+            "Re-authorise an existing connection in place. Without this a "
+            "re-connect creates a second row and orphans the first one\'s "
+            "post history."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -94,7 +108,13 @@ async def youtube_authorize(
         )
 
     # Stop at the plan's platform cap before sending the user off to Google.
-    await enforce_platform_limit(db, account_id, platform_id)
+    reconnect_target = await validate_reconnect_target(
+        db, reconnect_id=reconnect, account_id=account_id, platform_id=platform_id
+    )
+    # The plan cap counts connections, and a reconnect does not add one. A
+    # workspace at its limit must still be able to fix a broken account.
+    if reconnect_target is None:
+        await enforce_platform_limit(db, account_id, platform_id)
 
     state = jwt.encode(
         {
@@ -102,6 +122,7 @@ async def youtube_authorize(
             "account_id": str(account_id),
             "user_id": str(current_user.id),
             "platform_id": str(platform_id),
+            **reconnect_claim(reconnect_target),
             "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
         },
         settings.JWT_SECRET_KEY,
@@ -194,6 +215,24 @@ async def youtube_callback(
             # account past its limit, and the state token can be replayed.
             if not await platform_slot_available(session, account_id, platform_id):
                 return _frontend_redirect("error", "plan_limit")
+            # A reconnect updates the existing row so every post,
+            # publishing job and metric that points at it keeps working.
+            # A fresh row would leave all of that pointing at dead
+            # credentials.
+            reconnect_id = reconnect_id_from_state(payload)
+            if reconnect_id is not None and await apply_reconnect(
+                session,
+                reconnect_id=reconnect_id,
+                account_id=account_id,
+                platform_id=platform_id,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                token_expires_at=token_expires_at,
+                config={"channel_id": channel_id},
+            ):
+                await session.commit()
+                return _frontend_redirect("success")
+
             existing = (
                 await session.execute(
                     select(SocialAccount).where(

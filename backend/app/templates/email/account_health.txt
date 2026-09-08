@@ -1,0 +1,22 @@
+{% if expiring %}Your {{ platform }} connection is expiring{% else %}Your {{ platform }} connection has stopped working{% endif %}
+
+Hi {{ user_name }},
+
+{% if expiring -%}
+The {{ platform }} connection for "{{ account_name }}" will stop working soon.
+Scheduled posts to this account will start failing once it does.
+{%- else -%}
+The {{ platform }} connection for "{{ account_name }}" can no longer publish.
+Any scheduled posts to this account will fail until it is reconnected.
+{%- endif %}
+
+{% if detail %}{{ detail }}
+
+{% endif %}Reconnect it here:
+
+{{ reconnect_url }}
+
+You are receiving this because you manage social accounts on this workspace.
+We send one message per change, not one per check.
+
+-- MarketEngine AI

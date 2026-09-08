@@ -30,6 +30,11 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/Button";
 import { GlassCard } from "@/components/ui/GlassCard";
 import PendingApprovals from "@/components/content/PendingApprovals";
+import AccountHealthStrip from "@/components/shared/AccountHealthStrip";
+import DateRangeFilter, {
+  rangeQuery,
+  type DateRangeValue,
+} from "@/components/shared/DateRangeFilter";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -65,6 +70,11 @@ export default function DashboardPage() {
   const [topPosts, setTopPosts] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // One payload for every widget, so they cannot disagree about what the
+  // selected range means. The older per-widget analytics calls stay for the
+  // chart series they still provide.
+  const [summary, setSummary] = useState<any>(null);
+  const [range, setRange] = useState<DateRangeValue>({ key: "7d" });
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -76,6 +86,7 @@ export default function DashboardPage() {
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
   useEffect(() => {
+    // Re-runs when the range changes, which is the point of the shared filter.
     const load = async () => {
       const activeAccountId = await getAccountId();
       if (!activeAccountId) {
@@ -84,13 +95,19 @@ export default function DashboardPage() {
       }
       try {
         setLoading(true);
-        const [ovRes, trRes, tpRes, notifRes] = await Promise.allSettled([
+        const [dashRes, ovRes, trRes, tpRes, notifRes] = await Promise.allSettled([
+          api.get(
+            `/accounts/${activeAccountId}/settings/dashboard?${rangeQuery(range)}`
+          ),
           api.get(`/accounts/${activeAccountId}/analytics/overview?period=7d`),
           api.get(`/accounts/${activeAccountId}/analytics/trends?period=7d&group_by=day`),
           api.get(`/accounts/${activeAccountId}/analytics/top-posts?period=30d&limit=5`),
           api.get(`/notifications/?limit=3`),
         ]);
 
+        if (dashRes.status === "fulfilled") {
+          setSummary((dashRes.value as any).data ?? dashRes.value);
+        }
         if (ovRes.status === "fulfilled") setOverview((ovRes.value as any).data);
         if (trRes.status === "fulfilled") {
           const data = (trRes.value as any).data;
@@ -112,7 +129,9 @@ export default function DashboardPage() {
       }
     };
     load();
-  }, []);
+    // The range is a dependency: changing it must refetch, not filter
+    // client-side against data fetched for a different window.
+  }, [range]);
 
   const stats = [
     {
@@ -281,6 +300,22 @@ export default function DashboardPage() {
         </motion.div>
 
         {/* Main Charts & Side Panels */}
+        <motion.div variants={itemVariants} className="flex justify-end">
+          <DateRangeFilter value={range} onChange={setRange} />
+        </motion.div>
+
+        {/* Connections that will stop publishing. A broken one is otherwise
+            discovered when a post fails on it, by which time the slot is
+            gone. Renders nothing when everything is healthy. */}
+        {summary?.connected_accounts && (
+          <motion.div variants={itemVariants}>
+            <AccountHealthStrip
+              expiring={summary.connected_accounts.expiring ?? 0}
+              failed={summary.connected_accounts.failed ?? 0}
+            />
+          </motion.div>
+        )}
+
         {/* What is waiting on somebody. Above the charts because an approval
             queue that needs scrolling to reach is one that gets missed. */}
         <motion.div variants={itemVariants}>

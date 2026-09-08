@@ -33,6 +33,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.platform import SocialAccount
+from app.services import account_health
 from app.models.post import Post, PostStatus
 from app.models.publishing_job import (
     TERMINAL_STATUSES,
@@ -370,6 +371,15 @@ async def _execute_job_inner(job_id: uuid.UUID) -> None:
                 platform_response={"manual_required": True, "error": result.error},
             )
         else:
+            # A platform rejecting our credentials is stronger evidence than
+            # any expiry arithmetic, and waiting up to an hour for the health
+            # sweep to notice would let the next scheduled post fail the same
+            # way.
+            if _looks_like_auth_failure(result.error):
+                account_health.mark_auth_failure(
+                    account,
+                    f"Publishing was rejected: {(result.error or '')[:200]}",
+                )
             await _schedule_retry_or_fail(
                 db, job,
                 error=result.error or "Publishing failed",
@@ -378,6 +388,21 @@ async def _execute_job_inner(job_id: uuid.UUID) -> None:
             )
 
         await _derive_and_commit(db, job.post_id)
+
+
+# Substrings that mean "these credentials are no longer good", as opposed to a
+# transient platform problem. Deliberately narrow: marking an account FAILED on
+# a timeout would send a false alarm and teach people to ignore the real ones.
+_AUTH_FAILURE_MARKERS = (
+    "401", "invalid_token", "invalid access token", "token expired",
+    "expired access token", "oauthexception", "invalid_grant",
+    "revoked", "unauthorized", "malformed access token",
+)
+
+
+def _looks_like_auth_failure(error: Optional[str]) -> bool:
+    lowered = (error or "").lower()
+    return any(marker in lowered for marker in _AUTH_FAILURE_MARKERS)
 
 
 async def _log(

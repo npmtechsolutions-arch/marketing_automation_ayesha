@@ -55,6 +55,13 @@ class SocialAccountResponse(BaseModel):
     refresh_token: str | None = Field(None, exclude=True)
     token_expires_at: datetime | None = None
     config: dict | None = None
+    # Connection health, so the accounts page can badge a dying token before
+    # a scheduled post fails on it.
+    health: str = "unknown"
+    health_detail: str | None = None
+    last_checked_at: datetime | None = None
+    health_changed_at: datetime | None = None
+
     is_active: bool
     is_verified: bool
     last_verified_at: datetime | None = None

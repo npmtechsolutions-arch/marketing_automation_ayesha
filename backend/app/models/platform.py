@@ -4,7 +4,19 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, func
+import enum
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -66,6 +78,27 @@ class SocialPlatform(Base):
         return f"<SocialPlatform {self.name} ({self.slug})>"
 
 
+class AccountHealth(str, enum.Enum):
+    """Whether a connection can still publish.
+
+    Kept separate from ``is_active`` (the user's own on/off switch) and
+    ``is_verified`` (whether we ever confirmed the credentials worked). A
+    connection can be active, verified, and still about to stop working --
+    which is the case this exists to surface before a scheduled post fails.
+    """
+
+    CONNECTED = "connected"
+    # Token expires within the warning window. Still publishes today; will not
+    # next week unless it refreshes or someone reconnects.
+    EXPIRING = "expiring"
+    # A refresh or a publish came back with an auth error. Publishing to this
+    # account will fail until it is reconnected.
+    FAILED = "failed"
+    # Never checked. Distinct from CONNECTED so a sweep that has not run yet
+    # does not read as a clean bill of health.
+    UNKNOWN = "unknown"
+
+
 class SocialAccount(Base):
     """A specific social media account on a platform (e.g., a client's Instagram account)."""
 
@@ -104,6 +137,26 @@ class SocialAccount(Base):
     # Additional config (flexible JSON for platform-specific settings)
     config: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     # e.g., {"page_id": "123", "app_id": "456", "webhook_url": "..."}
+
+    health: Mapped[AccountHealth] = mapped_column(
+        Enum(AccountHealth, name="account_health_enum"),
+        default=AccountHealth.UNKNOWN,
+        server_default="UNKNOWN",
+        nullable=False,
+        index=True,
+    )
+    # When the sweep last looked. A stale timestamp means the sweep is not
+    # running, which is itself worth being able to see.
+    last_checked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # When health last *changed*. Notifications key on this so a degraded
+    # account is reported once, not every hour until someone fixes it.
+    health_changed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Why it is FAILED, for the accounts page. Cleared on recovery.
+    health_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)  # connection tested successfully

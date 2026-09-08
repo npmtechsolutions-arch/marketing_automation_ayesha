@@ -286,6 +286,30 @@ Accepted types are narrow on purpose — every one is identifiable from its magi
 
 Storage config lives in `S3_BUCKET` / `S3_REGION` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_ENDPOINT_URL`. `BACKEND_URL` is only used by the local fallback.
 
+## Connection health
+
+A social connection degrades silently: the token has an expiry nobody watches, or a customer revokes access in the platform's own settings. The first anyone hears is a scheduled post failing at 9am with an auth error, by which time the slot is gone.
+
+An hourly sweep inside the worker loop computes `CONNECTED` / `EXPIRING` / `FAILED` / `UNKNOWN` per account, tries to refresh what it can first, and persists the result. `UNKNOWN` is deliberate: a connection nobody has checked is not the same as a healthy one, and defaulting to `CONNECTED` would be a clean bill of health nobody issued.
+
+**Notification is once per state change, not once per sweep.** An hourly reminder that the same account is still broken is how people learn to filter the notification out — and then the one that matters gets filtered too. Only members with `accounts.manage` are told, since reconnecting requires it and telling a contributor is asking them to forward it.
+
+**A live 401 beats expiry arithmetic.** The publish path marks an account `FAILED` directly when a platform rejects the credentials, rather than waiting up to an hour for the sweep to agree. The match is deliberately narrow — a timeout or a 429 is not an auth failure, and marking an account broken on one would send a false alarm.
+
+**Reconnecting updates the row in place.** The OAuth authorize endpoints accept `?reconnect=<social_account_id>`, carried through the signed state to the callback. Without it a reconnect creates a *second* `SocialAccount` and orphans the first one's history — every post's `target_accounts` entry, every `PublishingJob`, every `PostPerformance` row keyed on it. The workspace ends up with two entries for one page: one with all the history, one with the working credentials. Reconnecting also skips the plan's connection cap, since it adds no connection and a workspace at its limit must still be able to fix a broken account.
+
+## Dashboard
+
+`GET /accounts/{id}/settings/dashboard?range=today|yesterday|7d|30d|90d|custom&from&to` returns every widget in one payload — connected accounts with health, post counts, pending approvals, engagement totals, followers, top posts and recent activity.
+
+One call rather than six, so the widgets cannot disagree about what the selected range means, and the page costs a fixed number of queries regardless of how much content the workspace holds. Each widget is one aggregate query; the post counts are conditional aggregates in a single pass rather than four round trips over the same rows.
+
+**Ranges resolve in the workspace's timezone**, read from `settings.timezone` (defaulting to UTC). "Today" for a team in Sydney is not the same fourteen hours as "today" in UTC, and a dashboard quietly using the server's clock shows an agency the wrong day's numbers every morning. Windows are half-open, so a post published at exactly midnight belongs to one day rather than two. An unrecognised timezone falls back to UTC with a log line rather than failing the page.
+
+Two deliberate exceptions to the range: **pending approvals** and **recent activity** ignore it. A post submitted three weeks ago is still waiting, and hiding it because it falls outside "last 7 days" is how an approval queue silently grows.
+
+**Follower growth returns `null`, not `0`, until daily snapshots exist** (`analytics_daily`, arriving in 1.11). Zero means "no change measured"; null means "not measured", and a flat 0% would be a claim the data cannot support. `engagement_rate` is null for the same reason when there is no reach to divide by — 0% reads as "bad", not "no data". It is computed against reach rather than impressions, since reach is people and impressions counts the same person twice.
+
 ## Review and approvals
 
 An optional workflow between drafting and publishing, enabled per workspace.

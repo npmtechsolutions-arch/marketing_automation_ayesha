@@ -21,7 +21,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.post import Post, PostStatus
-from app.services import publishing
+from app.services import account_health, publishing
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,29 @@ async def recover_stale_jobs() -> int:
             return 0
 
 
+# The health sweep runs on its own cadence inside the same loop rather than as
+# a second task: one loop is one thing to reason about, and the sweep is cheap
+# enough that gating it on elapsed time is simpler than scheduling it.
+_last_health_sweep: float = 0.0
+
+
+async def maybe_sweep_account_health() -> None:
+    """Run the connection health sweep at most hourly."""
+    global _last_health_sweep
+
+    now = asyncio.get_running_loop().time()
+    if _last_health_sweep and now - _last_health_sweep < account_health.SWEEP_INTERVAL_SECONDS:
+        return
+    _last_health_sweep = now
+
+    async with AsyncSessionLocal() as session:
+        try:
+            await account_health.sweep(session)
+        except Exception:
+            await session.rollback()
+            logger.exception("Account health sweep failed")
+
+
 async def scheduled_post_worker():
     logger.info(
         "Starting publishing worker (poll=%ss, batch=%d, max concurrent=%d).",
@@ -126,6 +149,7 @@ async def scheduled_post_worker():
             await enqueue_due_posts()
             await run_due_jobs()
             await recover_stale_jobs()
+            await maybe_sweep_account_health()
         except Exception:
             # One bad pass must not end the loop, or scheduled posts stop
             # going out until someone restarts the process.
