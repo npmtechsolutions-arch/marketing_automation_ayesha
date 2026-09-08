@@ -18,21 +18,32 @@ from app.schemas.post import PostCreate, PostResponse, PostUpdate, PostWithPerfo
 from app.services.activity_service import log_activity
 from app.services.entitlements import enforce_post_limit
 from app.core.authz import verify_account_access as _verify_account_access
-from app.connectors.base import NotSupportedError
+from app.connectors.base import (
+    NotSupportedError,
+    resolve_content,
+    variant_for_slug,
+)
 from app.connectors.registry import get_provider
 from app.models.platform import SocialAccount
+from app.models.post_variant import PostVariant
 from app.models.publishing_job import (
     JobStatus,
     LogLevel,
     PublishingJob,
     PublishingLog,
 )
+from app.schemas.post_variant import (
+    PostValidationResponse,
+    PostVariantResponse,
+    PostVariantUpsert,
+    ResolvedPreview,
+)
 from app.schemas.publishing_job import (
     PublishingJobList,
     PublishingJobResponse,
     PublishingLogEntry,
 )
-from app.services import media_service, publishing
+from app.services import media_service, post_validation, publishing
 from app.core.permissions import (  # noqa: F401
     CONTENT_APPROVE,
     CONTENT_CREATE,
@@ -884,3 +895,187 @@ async def retry_publishing_job(
         )
     ).scalar_one()
     return _job_response(job)
+
+
+# ---------------------------------------------------------------------------
+# Per-platform variants
+#
+# One post, customised per platform. The master Post holds the content an
+# author writes once; a variant overrides it for one platform, and every field
+# it leaves NULL keeps following the master as that is edited.
+# ---------------------------------------------------------------------------
+
+def _variant_response(variant: PostVariant) -> PostVariantResponse:
+    return PostVariantResponse(
+        id=variant.id,
+        post_id=variant.post_id,
+        platform_slug=variant.platform_slug,
+        content=variant.content,
+        media=list(variant.media or []),
+        link_url=variant.link_url,
+        alt_texts=dict(variant.alt_texts or {}),
+        thumbnail_media_id=variant.thumbnail_media_id,
+        first_comment=variant.first_comment,
+        overrides=variant.overrides,
+        created_at=variant.created_at,
+        updated_at=variant.updated_at,
+    )
+
+
+@router.get("/{post_id}/variants", response_model=list[PostVariantResponse])
+async def list_post_variants(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_VIEW)
+    await _get_post_or_404(post_id, account_id, db)
+
+    variants = (
+        await db.execute(
+            select(PostVariant)
+            .where(PostVariant.post_id == post_id)
+            .order_by(PostVariant.platform_slug)
+        )
+    ).scalars().all()
+    return [_variant_response(v) for v in variants]
+
+
+@router.put("/{post_id}/variants/{platform_slug}", response_model=PostVariantResponse)
+async def upsert_post_variant(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    platform_slug: str,
+    payload: PostVariantUpsert,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Create or replace one platform's variant.
+
+    PUT rather than POST/PATCH because a platform has at most one variant, so
+    the slug fully identifies it -- the composer can save a tab without first
+    knowing whether a variant already exists.
+    """
+    await _verify_account_access(
+        account_id, current_user, db, permission=CONTENT_CREATE
+    )
+    await _get_post_or_404(post_id, account_id, db)
+
+    # Normalise through the registry so "x", "X (Twitter)" and "twitter" all
+    # address the same variant -- otherwise a post could carry two.
+    slug = get_provider(platform_slug).slug
+
+    variant = (
+        await db.execute(
+            select(PostVariant).where(
+                PostVariant.post_id == post_id, PostVariant.platform_slug == slug
+            )
+        )
+    ).scalar_one_or_none()
+
+    if variant is None:
+        variant = PostVariant(id=uuid.uuid4(), post_id=post_id, platform_slug=slug)
+        db.add(variant)
+
+    # exclude_unset so an omitted field keeps whatever the variant already had,
+    # while an explicit null clears the override back to inheriting.
+    for field_name, value in payload.model_dump(exclude_unset=True).items():
+        if field_name == "media" and value is not None:
+            value = [str(v) for v in value]
+        setattr(variant, field_name, value)
+
+    await db.flush()
+    await db.refresh(variant)
+    return _variant_response(variant)
+
+
+@router.delete("/{post_id}/variants/{platform_slug}", response_model=MessageResponse)
+async def delete_post_variant(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    platform_slug: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Drop a platform's customisation; it goes back to the master post."""
+    await _verify_account_access(
+        account_id, current_user, db, permission=CONTENT_CREATE
+    )
+    await _get_post_or_404(post_id, account_id, db)
+    slug = get_provider(platform_slug).slug
+
+    variant = (
+        await db.execute(
+            select(PostVariant).where(
+                PostVariant.post_id == post_id, PostVariant.platform_slug == slug
+            )
+        )
+    ).scalar_one_or_none()
+    if variant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No {slug} variant on this post.",
+        )
+
+    await db.delete(variant)
+    await db.flush()
+    return MessageResponse(
+        message=f"The {slug} version now follows the master post."
+    )
+
+
+@router.get("/{post_id}/variants/{platform_slug}/preview", response_model=ResolvedPreview)
+async def preview_post_variant(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    platform_slug: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """What this platform would actually publish, master and variant combined.
+
+    The same resolution the publish path uses, so a preview cannot disagree
+    with what goes out.
+    """
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_VIEW)
+    post = await _get_post_or_404(post_id, account_id, db)
+    slug = get_provider(platform_slug).slug
+
+    resolved = resolve_content(post, slug, variant_for_slug(post, slug))
+    return ResolvedPreview(
+        platform=slug,
+        content=resolved.content,
+        media=[uuid.UUID(str(m)) for m in resolved.media_urls if _is_uuid(m)],
+        link_url=resolved.link_url,
+        first_comment=resolved.first_comment,
+        overrides=list(resolved.overridden),
+    )
+
+
+def _is_uuid(value) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+@router.post("/{post_id}/validate", response_model=PostValidationResponse)
+async def validate_post_endpoint(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Check the post against every target platform's capabilities.
+
+    Read-only, and deliberately a separate call rather than a gate on save: an
+    author should be able to save a draft that is not yet publishable. The
+    composer calls this as they type; publishing calls it before scheduling.
+    """
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_VIEW)
+    post = await _get_post_or_404(post_id, account_id, db)
+    return PostValidationResponse(
+        **await post_validation.validate_post(db, post, account_id=account_id)
+    )

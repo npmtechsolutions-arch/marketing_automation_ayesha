@@ -14,7 +14,7 @@ from typing import Any
 from app.connectors.base import (
     Capabilities,
     MediaRef,
-    PostVariant,
+    ResolvedContent,
     PublishResult,
     PlatformRateLimited,
     SocialProvider,
@@ -235,7 +235,7 @@ class LinkedInProvider(SocialProvider):
 
     async def publish_post(
         self,
-        variant: PostVariant,
+        variant: ResolvedContent,
         media: list[MediaRef],
         social_account: Any,
     ) -> PublishResult:

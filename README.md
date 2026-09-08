@@ -286,6 +286,32 @@ Accepted types are narrow on purpose — every one is identifiable from its magi
 
 Storage config lives in `S3_BUCKET` / `S3_REGION` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_ENDPOINT_URL`. `BACKEND_URL` is only used by the local fallback.
 
+## Per-platform variants
+
+One post, customised per platform. The base `Post` holds the master content an author writes once; a `PostVariant` overrides it for one platform — so you trim the version that goes to X without touching what LinkedIn receives.
+
+**Every override column is nullable, and NULL means "inherit" — not "empty".** That distinction is the whole design. A variant created purely to set a first comment keeps following the master content as it is edited; if absence and emptiness were the same value, it would silently freeze that platform's copy at whatever the master said when the variant was created. An explicit `""` is a deliberate choice to publish no text there, and resolution honours it.
+
+Resolution happens in `resolve_content(post, slug, variant)` — the same function the publish path calls, so the composer's preview cannot disagree with what actually goes out. A variant is keyed on platform slug, not on a connected account: two X accounts on one post share one "X version", which is what an author means by customising for a platform.
+
+> The connectors' `PostVariant` dataclass was renamed to **`ResolvedContent`** when this table arrived. A variant is what an author *wrote*; resolved content is what publishing *arrived at* after layering it over the master. Two things under one name, one of them not a model, is a trap.
+
+**Validation** checks each target against *its own* provider's `Capabilities`, so a 400-character post fails X (280) and passes LinkedIn (3,000) rather than failing as a whole. Every rule reads from the connector, so a platform's limits live in exactly one place and adding a platform cannot forget to add its validation.
+
+Errors are structured `{platform, field, message, severity}` so the composer can put each one next to the input that caused it. `warning` does not block saving — a missing alt text is worth telling an author about, but refusing to let them schedule over it would be the tool overruling them.
+
+The character count includes hashtags, which are stored separately but publish in the body. It deliberately does **not** model X's URL shortening (every link counts as 23 characters regardless of length): counting links in full errs toward warning about a post that would have fit, rather than accepting one that will not.
+
+| Method | Path |
+|---|---|
+| `GET` | `/posts/{id}/variants` |
+| `PUT` | `/posts/{id}/variants/{platform_slug}` |
+| `DELETE` | `/posts/{id}/variants/{platform_slug}` |
+| `GET` | `/posts/{id}/variants/{platform_slug}/preview` |
+| `POST` | `/posts/{id}/validate` |
+
+`PUT` rather than POST/PATCH because a platform has at most one variant, so the slug fully identifies it — the composer saves a tab without first knowing whether one exists. Slugs are normalised through the registry, so `x`, `twitter` and `X (Twitter)` all address the same variant instead of creating two.
+
 ## Publishing
 
 Publishing is a queue of database rows, not an inline loop. Each post fans out into one **`PublishingJob`** per target social account, and each attempt writes a **`PublishingLog`** row carrying the platform's own response.

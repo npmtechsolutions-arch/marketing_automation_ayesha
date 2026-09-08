@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from app.models.campaign import Campaign
     from app.models.post_performance import PostPerformance
     from app.models.media import PostMedia
+    from app.models.post_variant import PostVariant
     from app.models.publishing_job import PublishingJob
     from app.models.strategy import Strategy
     from app.models.user import User
@@ -180,6 +181,12 @@ class Post(Base):
     )
     approver: Mapped[Optional["User"]] = relationship(
         "User", foreign_keys=[approved_by]
+    )
+    variants: Mapped[list["PostVariant"]] = relationship(
+        "PostVariant",
+        back_populates="post",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
     media_links: Mapped[list["PostMedia"]] = relationship(
         "PostMedia",

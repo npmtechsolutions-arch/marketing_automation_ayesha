@@ -20,7 +20,7 @@ from app.connectors.base import (
     Capabilities,
     MediaRef,
     NotSupportedError,
-    PostVariant,
+    ResolvedContent,
     PublishResult,
     SocialProvider,
     classify_retryable,
@@ -175,7 +175,7 @@ class FakeProvider(SocialProvider):
 
     def __init__(self, results):
         self.results = dict(results)  # social_account_id str -> PublishResult
-        self.calls: list[tuple[PostVariant, list[MediaRef], Any]] = []
+        self.calls: list[tuple[ResolvedContent, list[MediaRef], Any]] = []
 
     async def publish_post(self, variant, media, social_account):
         self.calls.append((variant, media, social_account))

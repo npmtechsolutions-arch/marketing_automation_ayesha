@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import MediaPicker from "@/components/media/MediaPicker";
+import PlatformVariants from "@/components/content/PlatformVariants";
 import type { MediaItem } from "@/lib/media";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/Button";
@@ -891,6 +892,17 @@ export default function CreatePostPage() {
   ]);
 
   // Group accounts by platform
+  // The distinct platforms this post targets. Variants are per platform, not
+  // per account: two X accounts share one "X version", which is what an author
+  // means by customising for a platform.
+  const targetedPlatforms = Array.from(
+    new Set(
+      accounts
+        .filter((a) => selectedAccounts.includes(a.id))
+        .map((a) => a.platform as string)
+    )
+  );
+
   const accountsByPlatform = accounts.reduce(
     (acc, account) => {
       if (!acc[account.platform]) acc[account.platform] = [];
@@ -1535,6 +1547,24 @@ export default function CreatePostPage() {
                                     </button>
                                   </span>
                                 ))}
+                              </div>
+                            )}
+
+                            {/* Per-platform versions.
+                                Only once the post exists: a variant is a row
+                                keyed on post_id, so there is nothing to attach
+                                one to until the draft is saved. */}
+                            {editingPostId && targetedPlatforms.length > 0 && (
+                              <div
+                                className="pt-4 mt-4"
+                                style={{ borderTop: "1px solid var(--surface-border)" }}
+                              >
+                                <PlatformVariants
+                                  postId={editingPostId}
+                                  masterContent={content}
+                                  hashtags={hashtags}
+                                  platforms={targetedPlatforms}
+                                />
                               </div>
                             )}
 

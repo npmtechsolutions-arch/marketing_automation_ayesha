@@ -283,7 +283,7 @@ async def execute_job(job_id: uuid.UUID) -> None:
 
 async def _execute_job_inner(job_id: uuid.UUID) -> None:
     from app.api.v1.endpoints.posts import _ensure_valid_token
-    from app.connectors.base import MediaRef, variant_for
+    from app.connectors.base import MediaRef, resolve_content, variant_for_slug
     from app.connectors.registry import get_provider
 
     async with AsyncSessionLocal() as db:
@@ -326,9 +326,19 @@ async def _execute_job_inner(job_id: uuid.UUID) -> None:
 
         try:
             await _ensure_valid_token(account, db)
-            variant = variant_for(post, provider.slug)
-            media = [MediaRef(url=u) for u in variant.media_urls]
-            result = await provider.publish_post(variant, media, account)
+            # The platform's own version if the author wrote one, else the
+            # master post. Variants are eager-loaded on Post, so this is a list
+            # scan rather than a query inside the publish path.
+            variant_row = variant_for_slug(post, provider.slug)
+            content = resolve_content(post, provider.slug, variant_row)
+            if content.is_customised:
+                await _log(
+                    db, job, LogLevel.INFO,
+                    f"Using the {provider.slug} variant "
+                    f"(overrides: {', '.join(content.overridden)})",
+                )
+            media = [MediaRef(url=u) for u in content.media_urls]
+            result = await provider.publish_post(content, media, account)
         except Exception as exc:  # noqa: BLE001 - a crash is a failed attempt
             logger.exception("Job %s raised on %s", job.id, attempt_label)
             await _schedule_retry_or_fail(
@@ -368,6 +378,26 @@ async def _execute_job_inner(job_id: uuid.UUID) -> None:
             )
 
         await _derive_and_commit(db, job.post_id)
+
+
+async def _log(
+    db: AsyncSession,
+    job: PublishingJob,
+    level: LogLevel,
+    message: str,
+    platform_response: Optional[dict] = None,
+) -> None:
+    """Append one line to a job's history."""
+    db.add(
+        PublishingLog(
+            id=uuid.uuid4(),
+            job_id=job.id,
+            level=level,
+            message=message,
+            platform_response=platform_response,
+        )
+    )
+    await db.flush()
 
 
 async def _finish(

@@ -174,15 +174,19 @@ class MediaRef:
 
 
 @dataclass(frozen=True)
-class PostVariant:
-    """The content to publish, resolved for one platform.
+class ResolvedContent:
+    """What one platform actually publishes, after resolution.
 
-    Not a database model. Per-platform content lives in fifteen flat columns on
-    ``Post`` (``instagram_music_url``, ``facebook_post_type``, ...) and
-    :func:`variant_for` picks the right ones for a slug. The provider bodies
-    moved in this refactor still read ``variant.post`` directly so their
-    behaviour is unchanged; the resolved fields below are what capability
-    validation reads, and what those bodies should be weaned onto next.
+    Named for what it is rather than ``PostVariant``, which is now a table: a
+    variant is what an author *wrote* for a platform, this is what publishing
+    *arrived at* after layering that over the master post. Two things called
+    the same name, one of them not a model, would be a trap.
+
+    Per-platform detail comes from three places, in order: the PostVariant row
+    for this platform if one exists, then the fifteen flat columns on ``Post``
+    (``instagram_music_url``, ``facebook_post_type``, ...), then the master
+    content. The provider bodies still read ``.post`` directly so their
+    behaviour is unchanged; the resolved fields are what validation reads.
     """
 
     post: Any
@@ -196,6 +200,17 @@ class PostVariant:
     music_start_offset: Optional[int] = None
     music_end_offset: Optional[int] = None
     video_url: Optional[str] = None
+    # From a PostVariant when one exists for this platform.
+    link_url: Optional[str] = None
+    alt_texts: dict = field(default_factory=dict)
+    thumbnail_media_id: Optional[Any] = None
+    first_comment: Optional[str] = None
+    # Which fields the variant overrode, for logging and the composer.
+    overridden: tuple[str, ...] = ()
+
+    @property
+    def is_customised(self) -> bool:
+        return bool(self.overridden)
 
 
 @dataclass(frozen=True)
@@ -252,8 +267,20 @@ def classify_retryable(error: str | int | None) -> bool:
     )
 
 
-def variant_for(post: Any, slug: str) -> PostVariant:
-    """Resolve a Post's per-platform columns for one platform."""
+def resolve_content(
+    post: Any, slug: str, variant: Any = None
+) -> ResolvedContent:
+    """What this platform publishes: the variant layered over the master post.
+
+    ``variant`` is a PostVariant row for this platform, or None. Each of its
+    fields overrides only when it is not NULL -- NULL means "inherit", so a
+    variant that exists purely to set a first comment still tracks the master
+    content as it is edited.
+
+    The caller loads the variant rather than this function querying for it:
+    resolution runs inside the publish path where the session is already open,
+    and a hidden query here would be a lazy load in an async context.
+    """
     from app.connectors import media as media_helpers
 
     prefix = {"twitter": "twitter", "x": "twitter"}.get(slug, slug)
@@ -266,19 +293,69 @@ def variant_for(post: Any, slug: str) -> PostVariant:
         except Exception:  # noqa: BLE001 - malformed JSON means "no media"
             raw_media = []
 
-    return PostVariant(
+    content = post.content or ""
+    media_urls = list(raw_media or [])
+    link_url = None
+    alt_texts: dict = {}
+    thumbnail_media_id = None
+    first_comment = None
+    overridden: list[str] = []
+
+    if variant is not None:
+        # `is not None` throughout, never truthiness: an override to "" or []
+        # is a deliberate choice to publish nothing there, and treating it as
+        # absent would quietly republish the master instead.
+        if variant.content is not None:
+            content = variant.content
+            overridden.append("content")
+        if variant.media is not None:
+            # Media ids, not URLs. The publish path resolves them; validation
+            # only needs the count and the ids.
+            media_urls = list(variant.media)
+            overridden.append("media")
+        if variant.link_url is not None:
+            link_url = variant.link_url
+            overridden.append("link_url")
+        if variant.alt_texts is not None:
+            alt_texts = dict(variant.alt_texts)
+            overridden.append("alt_texts")
+        if variant.thumbnail_media_id is not None:
+            thumbnail_media_id = variant.thumbnail_media_id
+            overridden.append("thumbnail_media_id")
+        if variant.first_comment is not None:
+            first_comment = variant.first_comment
+            overridden.append("first_comment")
+
+    return ResolvedContent(
         post=post,
         platform=slug,
-        content=post.content or "",
+        content=content,
         title=getattr(post, "title", None),
-        media_urls=list(raw_media or []),
+        media_urls=media_urls,
         hashtags=media_helpers._normalize_hashtags(getattr(post, "hashtags", None)),
         post_type=getattr(post, f"{prefix}_post_type", None),
         music_url=getattr(post, f"{prefix}_music_url", None),
         music_start_offset=getattr(post, f"{prefix}_music_start_offset", None),
         music_end_offset=getattr(post, f"{prefix}_music_end_offset", None),
         video_url=getattr(post, f"{prefix}_video_url", None),
+        link_url=link_url,
+        alt_texts=alt_texts,
+        thumbnail_media_id=thumbnail_media_id,
+        first_comment=first_comment,
+        overridden=tuple(overridden),
     )
+
+
+def variant_for_slug(post: Any, slug: str) -> Any:
+    """The post's variant for a platform, from already-loaded rows.
+
+    ``Post.variants`` is eager-loaded, so this is a list scan rather than a
+    query -- which is what keeps it safe to call from inside the publish path.
+    """
+    for variant in getattr(post, "variants", None) or []:
+        if (variant.platform_slug or "").lower() == slug.lower():
+            return variant
+    return None
 
 
 def mock_metrics_untokened(platform_type: str) -> dict[str, Any]:
@@ -385,7 +462,7 @@ class SocialProvider:
 
     async def publish_post(
         self,
-        variant: PostVariant,
+        variant: ResolvedContent,
         media: list[MediaRef],
         social_account: Any,
     ) -> PublishResult:
