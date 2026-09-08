@@ -16,6 +16,11 @@ class PostBase(BaseModel):
 
 class PostCreate(PostBase):
     media_urls: list[str] | None = None
+    # Library files attached from the media picker. Kept separate from
+    # media_urls, which also carries pasted external links -- without the
+    # distinction, "is this file still in use?" could only be answered by
+    # string-matching URLs, which misses one behind an expired presigned link.
+    media_ids: list[UUID] | None = None
     scheduled_at: datetime | None = None
     business_id: UUID | None = None
     strategy_id: UUID | None = None
@@ -45,6 +50,11 @@ class PostUpdate(BaseModel):
     title: str | None = None
     hashtags: list[str] | None = None
     media_urls: list[str] | None = None
+    # Library files attached from the media picker. Kept separate from
+    # media_urls, which also carries pasted external links -- without the
+    # distinction, "is this file still in use?" could only be answered by
+    # string-matching URLs, which misses one behind an expired presigned link.
+    media_ids: list[UUID] | None = None
     scheduled_at: datetime | None = None
     status: str | None = None
     target_account_ids: list[UUID] | None = None

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
   Calendar,
+  Image as ImageIcon,
   PenSquare,
   BarChart3,
   Lightbulb,
@@ -33,6 +34,7 @@ const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard", badge: null },
   { label: "Create Post", icon: PenSquare, path: "/create-post", badge: "AI" },
   { label: "Content Calendar", icon: Calendar, path: "/calendar", badge: null },
+  { label: "Media Library", icon: ImageIcon, path: "/media", badge: null },
   { label: "Platforms", icon: Share2, path: "/platforms", badge: null },
   { label: "Accounts", icon: UserCircle, path: "/social-accounts", badge: null },
   { label: "Analytics", icon: BarChart3, path: "/analytics", badge: null },

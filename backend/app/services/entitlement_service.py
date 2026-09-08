@@ -324,6 +324,20 @@ async def _count_stateful(
             .join(Account, Account.id == TeamMember.account_id)
             .where(Account.organization_id == organization.id)
         )
+    elif feature_key == STORAGE_BYTES:
+        # Was falling through to 0, so the storage allowance always read as
+        # unused. Now the sum of what the media library actually holds,
+        # excluding soft-deleted files.
+        from app.models.media import Media
+
+        stmt = (
+            select(sa_func.coalesce(sa_func.sum(Media.size_bytes), 0))
+            .join(Account, Account.id == Media.account_id)
+            .where(
+                Account.organization_id == organization.id,
+                Media.deleted_at.is_(None),
+            )
+        )
     elif feature_key == SOCIAL_ACCOUNTS:
         stmt = (
             select(sa_func.count(SocialAccount.id))

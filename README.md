@@ -262,6 +262,30 @@ If `alembic check` does report differences, the database drifted from the models
 
 > **Alembic is the only thing that creates schema.** The application performs no DDL at startup: `init_db()` in `app/core/database.py` only waits for the database to accept connections. It previously ran `Base.metadata.create_all()` plus ad-hoc `ALTER TABLE ... IF NOT EXISTS` statements, which meant a model change could reach a database without a migration. If you change a model, you must generate a migration — nothing else will apply it.
 
+## Media library
+
+Uploads used to land in a single `uploads/` directory, be referenced by URL strings in `Post.media_urls`, and be tracked by nothing. Nobody could tell what a workspace was storing, whether a file was still in use, or how much of its allowance it had spent — `storage_bytes` was an entitlement that always reported zero because nothing counted anything.
+
+Files now go **straight to object storage**. The client asks for a presigned URL, PUTs to it, then tells us it landed; the API never carries the bytes, which is what makes a large upload possible without holding a worker for its duration.
+
+```
+POST /media/presign   validate the claim  →  presigned PUT URL + server-generated key
+        ↓ (browser PUTs directly to S3, no Authorization header)
+POST /media/confirm   verify what landed  →  Media row
+```
+
+**Validation is deliberately split across those two calls.** Presign can only check what the client *claims* — declared type, declared size, remaining storage. Confirm checks what actually arrived: that the object exists, its real size from `head_object`, and its real format from the leading bytes via a ranged GET. A client that declares a small PNG and uploads something else is caught at confirm, and no row is written — so a lie produces an orphaned object rather than a library entry. Image dimensions come from that same ranged prefix (Pillow parses headers lazily), never a full download.
+
+The storage limit is checked twice for the same reason: once at presign so the user is refused before spending minutes uploading, and again at confirm against the *measured* size. An upload that clears the first check and fails the second has its object deleted rather than left unreferenced in the bucket.
+
+Accepted types are narrow on purpose — every one is identifiable from its magic number, which is what makes the confirm-time check meaningful. **SVG is excluded**: it is a document format that executes script, and it was removed from the old upload endpoint for that reason.
+
+**Deletion is always soft.** A file a post points at is never removed outright — the object stays so the post's history keeps working, and the response says so rather than letting "deleted" mean two different things. `PostMedia` is what makes that possible: without it, "is this still in use?" could only be answered by string-matching URLs, which misses a file behind an expired presigned link and cannot tell a library file from a pasted external one.
+
+**Without an S3 bucket**, a `LocalStorageBackend` keeps development working through the same interface — it hands back a URL to a signed shim on this API, so the *client* flow is byte-identical to production. That matters: a dev path that differs from production is a dev path that hides bugs. It refuses to run outside `DEBUG`, because writing user media to a container filesystem looks like it works right up until the next deploy throws it away. The shim's HMAC is not decoration — without it, the endpoint would accept a PUT to any path a caller invents.
+
+Storage config lives in `S3_BUCKET` / `S3_REGION` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_ENDPOINT_URL`. `BACKEND_URL` is only used by the local fallback.
+
 ## Publishing
 
 Publishing is a queue of database rows, not an inline loop. Each post fans out into one **`PublishingJob`** per target social account, and each attempt writes a **`PublishingLog`** row carrying the platform's own response.

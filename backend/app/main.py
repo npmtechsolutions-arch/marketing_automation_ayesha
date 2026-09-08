@@ -130,6 +130,7 @@ from app.api.v1.endpoints import (
     social_platforms,
     strategies,
     twitter_oauth,
+    media,
     uploads,
     youtube_oauth,
     webhooks,
@@ -178,6 +179,11 @@ app.include_router(youtube_oauth.router,    prefix="/api/v1/accounts/{account_id
 app.include_router(youtube_oauth.callback_router,  prefix="/api/v1",                                  tags=["YouTube OAuth"])
 app.include_router(activity.router,         prefix="/api/v1/accounts/{account_id}/activity",          tags=["Activity"])
 app.include_router(admin.router,            prefix="/api/v1/admin",                             tags=["Admin Panel"])
+app.include_router(media.router,            prefix="/api/v1/accounts/{account_id}/media",        tags=["Media Library"])
+# The local-storage upload/download shims are workspace-agnostic: the signed key
+# carries the workspace, and the browser PUTs to them without an Authorization
+# header, exactly as it would to S3.
+app.include_router(media.local_router,      prefix="/api/v1/media",                              tags=["Media Library"])
 
 
 # ---------------------------------------------------------------------------

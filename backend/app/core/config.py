@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     SENDGRID_API_KEY: str = ""
     FROM_EMAIL: str = "noreply@marketengine.ai"
 
+    # This service's own public base URL. Needed because the local storage
+    # backend hands the browser a URL to PUT to, and a relative one would
+    # resolve against the frontend's origin, not ours. Unused when S3 is
+    # configured -- those URLs come from AWS.
+    BACKEND_URL: str = "http://localhost:8000"
+
     # Frontend
     FRONTEND_URL: str = "http://localhost:5173"
     CORS_ORIGINS: list[str] = [
@@ -127,6 +133,8 @@ class Settings(BaseSettings):
         
         if self.FRONTEND_URL:
             self.FRONTEND_URL = self.FRONTEND_URL.strip().rstrip("/")
+        if self.BACKEND_URL:
+            self.BACKEND_URL = self.BACKEND_URL.strip().rstrip("/")
             
         if self.LINKEDIN_REDIRECT_URI:
             self.LINKEDIN_REDIRECT_URI = self.LINKEDIN_REDIRECT_URI.strip()

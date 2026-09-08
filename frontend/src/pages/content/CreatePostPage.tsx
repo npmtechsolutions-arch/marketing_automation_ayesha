@@ -5,6 +5,7 @@ import {
   Sparkles,
   Upload,
   X,
+  FolderOpen,
   Hash,
   Image as ImageIcon,
   Camera,
@@ -35,6 +36,8 @@ import {
   Megaphone,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import MediaPicker from "@/components/media/MediaPicker";
+import type { MediaItem } from "@/lib/media";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -238,6 +241,11 @@ export default function CreatePostPage() {
   // Media
   const [mediaTab, setMediaTab] = useState<MediaTab>("upload");
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  // Library files attached through the picker, tracked separately from the
+  // display URLs: the backend records these ids as usage, which is what lets
+  // the library know a file is still needed before someone deletes it.
+  const [libraryMedia, setLibraryMedia] = useState<MediaItem[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [aiImagePrompt, setAiImagePrompt] = useState("");
   const [imageStyle, setImageStyle] = useState<ImageStyle>("realistic");
   const [imageSize, setImageSize] = useState<ImageSize>("square");
@@ -735,6 +743,7 @@ export default function CreatePostPage() {
         hashtags: hashtags.length > 0 ? hashtags : undefined,
         target_account_ids: selectedAccounts,
         media_urls: allImages.length > 0 ? allImages : undefined,
+        media_ids: libraryMedia.length > 0 ? libraryMedia.map((m) => m.id) : undefined,
         instagram_post_type: igPostType,
         instagram_music_track: igMusicTrack || undefined,
         instagram_music_url: selectedTrack?.previewUrl || undefined,
@@ -827,6 +836,7 @@ export default function CreatePostPage() {
         hashtags: hashtags.length > 0 ? hashtags : undefined,
         target_account_ids: selectedAccounts,
         media_urls: allImages.length > 0 ? allImages : undefined,
+        media_ids: libraryMedia.length > 0 ? libraryMedia.map((m) => m.id) : undefined,
         instagram_post_type: igPostType,
         instagram_music_track: igMusicTrack || undefined,
         instagram_music_url: selectedTrack?.previewUrl || undefined,
@@ -1478,6 +1488,55 @@ export default function CreatePostPage() {
                               onChange={handleFileUpload}
                               className="hidden"
                             />
+
+                            {/* Attaching from the library records usage, so the
+                                library can warn before someone deletes a file a
+                                post still needs. A direct upload cannot. */}
+                            <button
+                              type="button"
+                              onClick={() => setPickerOpen(true)}
+                              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm"
+                              style={{
+                                backgroundColor: "var(--sidebar-hover-bg)",
+                                border: "1px solid var(--surface-border)",
+                                color: "var(--page-text)",
+                              }}
+                            >
+                              <FolderOpen className="w-4 h-4" />
+                              Choose from media library
+                            </button>
+
+                            {libraryMedia.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {libraryMedia.map((item) => (
+                                  <span
+                                    key={item.id}
+                                    className="text-[11px] px-2 py-1 rounded-lg flex items-center gap-1"
+                                    style={{
+                                      backgroundColor: "var(--sidebar-hover-bg)",
+                                      color: "var(--page-text)",
+                                    }}
+                                  >
+                                    {item.filename}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setLibraryMedia((current) =>
+                                          current.filter((m) => m.id !== item.id)
+                                        );
+                                        if (item.download_url) {
+                                          setUploadedImages((current) =>
+                                            current.filter((u) => u !== item.download_url)
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
 
                             {/* Image preview grid */}
                             {uploadedImages.length > 0 && (
@@ -2681,6 +2740,23 @@ export default function CreatePostPage() {
           )}
         </AnimatePresence>
       </div>
+      <MediaPicker
+        isOpen={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(chosen) => {
+          setLibraryMedia((current) => {
+            const seen = new Set(current.map((m) => m.id));
+            return [...current, ...chosen.filter((m) => !seen.has(m.id))];
+          });
+          // Also shown in the preview grid, which renders plain URLs.
+          setUploadedImages((current) => [
+            ...current,
+            ...chosen
+              .map((m) => m.download_url)
+              .filter((url): url is string => !!url && !current.includes(url)),
+          ]);
+        }}
+      />
     </DashboardLayout>
   );
 }

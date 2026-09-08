@@ -10,6 +10,7 @@ from app.models.organization import OrgRole, Organization, OrganizationMember
 from app.models.permission import Permission, RolePermission, UserPermission
 from app.models.plan import Feature, FeatureUnit, Plan, PlanFeature, UsageRecord
 from app.models.platform import SocialAccount, SocialPlatform
+from app.models.media import Media, MediaFolder, MediaKind, PostMedia
 from app.models.post import Post, PostStatus
 from app.models.publishing_job import (
     JobStatus,
@@ -47,6 +48,11 @@ __all__ = [
     "ActivityLog",
     "AIGeneration",
     "Webhook",
+    # Media library
+    "Media",
+    "MediaFolder",
+    "PostMedia",
+    "MediaKind",
     # Publishing jobs
     "PublishingJob",
     "PublishingLog",

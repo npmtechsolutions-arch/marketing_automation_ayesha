@@ -32,7 +32,7 @@ from app.schemas.publishing_job import (
     PublishingJobResponse,
     PublishingLogEntry,
 )
-from app.services import publishing
+from app.services import media_service, publishing
 from app.core.permissions import (  # noqa: F401
     CONTENT_APPROVE,
     CONTENT_CREATE,
@@ -223,6 +223,9 @@ async def create_post(
     )
     db.add(post)
     await db.flush()
+    # Record which library files this post uses, so the library can show a
+    # usage count and refuse to lose a file that a post still points at.
+    await media_service.sync_post_media(db, post.id, account_id, body.media_ids)
     await db.refresh(post)
 
     await log_activity(
@@ -444,10 +447,14 @@ async def update_post(
         else:
             update_data["target_accounts"] = None
 
+    # media_ids is not a column; it drives the PostMedia links instead.
+    update_data.pop("media_ids", None)
     for field, value in update_data.items():
         setattr(post, field, value)
 
     await db.flush()
+    # None means "not mentioned", so a caption-only edit leaves attachments be.
+    await media_service.sync_post_media(db, post.id, account_id, body.media_ids)
     await db.refresh(post)
 
     await log_activity(

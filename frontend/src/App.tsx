@@ -113,6 +113,7 @@ import ActivityPage from '@/pages/activity/ActivityPage';
 import TeamPage from '@/pages/team/TeamPage';
 import SettingsPage from '@/pages/settings/SettingsPage';
 import BillingPage from '@/pages/billing/BillingPage';
+import MediaLibraryPage from '@/pages/media/MediaLibraryPage';
 import NotificationsPage from '@/pages/notifications/NotificationsPage';
 import ProfilePage from '@/pages/profile/ProfilePage';
 import AcceptInvitePage from '@/pages/team/AcceptInvitePage';
@@ -377,6 +378,7 @@ function App() {
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
             <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
+            <Route path="/media" element={<ProtectedRoute><MediaLibraryPage /></ProtectedRoute>} />
             <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
 
             {/* Admin */}
