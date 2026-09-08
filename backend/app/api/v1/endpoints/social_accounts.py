@@ -648,14 +648,20 @@ async def verify_social_account(
             "profile_image_url": None,
         }
     
+    # One assignment of one new dict. Mutating a JSON column in place is
+    # invisible to SQLAlchemy's change tracking -- it compares the attribute's
+    # before and after values, and an in-place edit leaves them identical --
+    # which is how PUT /settings/ silently dropped every write it was given.
+    # This particular line happened to work, because the assignment above
+    # already made the attribute dirty, but it is the wrong pattern to leave
+    # lying around as an example.
     social_account.metadata_ = {
         **(social_account.metadata_ or {}),
         "followers": stats["followers"],
         "following": stats["following"],
         "posts_count": stats.get("posts_count", 0),
+        **({"views_count": stats["views_count"]} if "views_count" in stats else {}),
     }
-    if "views_count" in stats:
-        social_account.metadata_["views_count"] = stats["views_count"]
     
     if stats.get("profile_image_url"):
         social_account.profile_image_url = stats["profile_image_url"]

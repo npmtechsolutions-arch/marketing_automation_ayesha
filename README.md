@@ -392,6 +392,54 @@ Content sorts server-side rather than in the browser, since the table shows a ca
 and re-sorting the fetched page would reorder a slice instead of finding the actual top posts.
 
 
+## Workspace settings
+
+`GET`/`PUT /accounts/{id}/settings/`. The `settings` JSON blob holds per-workspace
+preferences that do not each deserve a column:
+
+| Key | Drives |
+|---|---|
+| `timezone` | Every date range on the dashboard and analytics |
+| `approvals_required` | Whether the review workflow is on |
+| `client_approval_required` | Whether approval also needs client sign-off |
+
+Unknown keys inside the blob are stored untouched — it is a deliberate extension point for
+client-side preferences. The three above are type-checked and, for `timezone`, validated against
+the IANA database and stored stripped, because a value that reads back wrong later is the same
+failure as one that was never written.
+
+**Unknown keys at the *top* level are a 422, not a silent 200.** `{"timezone": "..."}` is a
+plausible mistake — the key is real one level down — and Pydantic's default is to ignore extras.
+A write that reports success and changes nothing is indistinguishable from one that worked.
+
+### The JSON-column trap
+
+The merge builds a **new** dict:
+
+```python
+account.settings = {**(account.settings or {}), **body.settings}
+```
+
+It previously mutated the loaded dict in place and assigned it back to itself. SQLAlchemy decides
+whether to emit an `UPDATE` by comparing an attribute's before and after values; here they were the
+same object, so `history.has_changes()` was `False` and the flush wrote nothing. The endpoint
+returned 200 carrying the old values. A plain `JSON` column has no change tracking of its own —
+only a fresh object is visible as a change. (`MutableDict.as_mutable(JSON)` is the other fix; a new
+dict per write is less machinery and harder to get subtly wrong.)
+
+Two things hid this. No test had ever called the endpoint and the frontend does not use it, so the
+only exercise it got was manual. And on a *fresh* workspace `settings` is NULL, so `or {}` produced
+a new dict and the write landed — the bug only appeared on the second write, which means a
+per-field round-trip test against an empty blob passes against the broken code.
+[test_settings_writer.py](backend/tests/test_settings_writer.py) therefore seeds a non-empty blob
+in its fixture, and every round trip re-reads through a separate `GET` rather than trusting the
+`PUT`'s own reply, which renders from the in-memory object.
+
+The cost was not hypothetical: `approvals_required` lives only on this blob and is written only by
+this endpoint, so while the writer dropped its input the review workflow could not be switched on
+through the API at all.
+
+
 ## Review and approvals
 
 An optional workflow between drafting and publishing, enabled per workspace.

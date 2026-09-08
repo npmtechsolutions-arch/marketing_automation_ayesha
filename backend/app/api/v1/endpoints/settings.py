@@ -2,9 +2,10 @@
 
 import uuid
 from datetime import date
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,9 +53,71 @@ class AccountSettingsResponse(BaseModel):
     settings: dict | None = None
 
 
+# Settings keys the application actually consumes. Anything else is stored
+# untouched -- the blob is a deliberate extension point for client-side
+# preferences -- but these drive real behaviour, so a bad value here has to be
+# a 422 rather than something that reads back wrong later.
+_KNOWN_SETTINGS: dict[str, type] = {
+    "timezone": str,
+    "approvals_required": bool,
+    "client_approval_required": bool,
+}
+
+
 class AccountSettingsUpdate(BaseModel):
-    name: str | None = None
+    """A settings write.
+
+    ``extra="forbid"`` because the alternative is what this endpoint used to
+    do: accept ``{"timezone": "Australia/Sydney"}`` at the top level, ignore
+    it, and return 200. A write that reports success and changes nothing is
+    indistinguishable from one that worked, and the caller has no way to find
+    out. An unknown key is now a 422 naming the field.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(None, min_length=1, max_length=255)
     settings: dict | None = None
+
+    @field_validator("settings")
+    @classmethod
+    def _check_known_keys(cls, value: dict | None) -> dict | None:
+        """Type- and value-check the keys that drive behaviour.
+
+        An unusable timezone is the same accept-but-drop bug one layer down:
+        the dashboard falls back to UTC and logs, so the workspace is told the
+        write succeeded and then quietly gets the wrong day's numbers. Better
+        to refuse it at the door and keep the fallback for old rows.
+        """
+        if value is None:
+            return value
+
+        checked = dict(value)
+        for key, expected in _KNOWN_SETTINGS.items():
+            if key not in checked:
+                continue
+            given = checked[key]
+            # isinstance, not truthiness: bool("false") is True, so a workspace
+            # sending the string would have switched the workflow on while
+            # believing it had switched it off.
+            if not isinstance(given, expected):
+                wanted = "true or false" if expected is bool else expected.__name__
+                raise ValueError(f"settings.{key} must be {wanted}")
+
+        timezone = checked.get("timezone")
+        if isinstance(timezone, str):
+            timezone = timezone.strip()
+            try:
+                ZoneInfo(timezone)
+            except (ZoneInfoNotFoundError, ValueError) as exc:
+                raise ValueError(
+                    f"settings.timezone {checked['timezone']!r} is not a known "
+                    "IANA timezone"
+                ) from exc
+            # Store the normalised form, so the reader does not have to strip
+            # and a padded value cannot round-trip looking different.
+            checked["timezone"] = timezone
+        return checked
 
 
 class UsageResponse(BaseModel):
@@ -127,10 +190,17 @@ async def update_account_settings(
     if body.name is not None:
         account.name = body.name
     if body.settings is not None:
-        # Merge with existing settings rather than replacing
-        existing = account.settings or {}
-        existing.update(body.settings)
-        account.settings = existing
+        # Merge rather than replace -- and build a NEW dict to do it.
+        #
+        # This used to mutate the loaded dict in place and assign it back to
+        # itself. SQLAlchemy compares the attribute's before and after values
+        # to decide whether to emit an UPDATE, and here they were the same
+        # object, so ``history.has_changes()`` was False and the flush wrote
+        # nothing. The endpoint returned 200 with the old values, and the
+        # approval workflow could not be switched on through the API at all.
+        # A plain JSON column has no change tracking of its own; only a fresh
+        # object is visible as a change.
+        account.settings = {**(account.settings or {}), **body.settings}
 
     await db.flush()
     await db.refresh(account)
