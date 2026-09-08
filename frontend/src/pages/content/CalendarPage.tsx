@@ -29,6 +29,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import PlatformIcon from "@/components/shared/PlatformIcon";
 import PublishingJobs from "@/components/content/PublishingJobs";
+import ReviewPanel from "@/components/content/ReviewPanel";
+import { statusMeta, type BadgeVariant, type ReviewStatus } from "@/lib/review";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
 import api, { getAccountId, getAccountIdSync } from "@/lib/api";
 import { showSuccess, showError } from "@/components/ui/Toast";
@@ -36,7 +38,7 @@ import { useAuthStore } from "@/stores/authStore";
 
 // ---------- Types ----------
 type Platform = "facebook" | "instagram" | "linkedin" | "twitter" | "youtube";
-type PostStatus = "published" | "scheduled" | "draft" | "failed" | "publishing";
+type PostStatus = ReviewStatus;
 type CalendarView = "week" | "month";
 
 interface CalendarPost {
@@ -83,25 +85,38 @@ const STATUS_CHIP_STYLES: Record<PostStatus, string> = {
   published: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
   scheduled: "bg-blue-500/20 text-blue-300 border-blue-500/30",
   draft: "bg-slate-500/20 text-slate-300 border-slate-500/30",
+  preview: "bg-slate-500/20 text-slate-300 border-slate-500/30",
   failed: "bg-red-500/20 text-red-300 border-red-500/30",
   publishing: "bg-purple-500/20 text-purple-300 border-purple-500/30 animate-pulse",
+  partially_published: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  // Review states.
+  pending_approval: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  in_review: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  changes_requested: "bg-red-500/20 text-red-300 border-red-500/30",
+  client_review: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  approved: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
 };
 
 const STATUS_DOT_COLORS: Record<PostStatus, string> = {
   published: "bg-emerald-400",
   scheduled: "bg-blue-400",
   draft: "bg-slate-400",
+  preview: "bg-slate-400",
   failed: "bg-red-400",
   publishing: "bg-purple-400",
+  partially_published: "bg-amber-400",
+  pending_approval: "bg-amber-400",
+  in_review: "bg-amber-400",
+  changes_requested: "bg-red-400",
+  client_review: "bg-blue-400",
+  approved: "bg-emerald-400",
 };
 
-const STATUS_BADGE_VARIANT: Record<PostStatus, "success" | "info" | "default" | "danger" | "warning"> = {
-  published: "success",
-  scheduled: "info",
-  draft: "default",
-  failed: "danger",
-  publishing: "warning",
-};
+// Labels and colours come from lib/review so the calendar, the list and the
+// review panel cannot disagree about what "in_review" looks like.
+const STATUS_BADGE_VARIANT = new Proxy({} as Record<string, BadgeVariant>, {
+  get: (_target, key: string) => statusMeta(key).variant,
+});
 
 const PLATFORM_LABELS: Record<Platform, string> = {
   facebook: "Facebook",
@@ -1174,6 +1189,16 @@ export default function CalendarPage() {
                   </div>
                 </div>
               )}
+
+            {/* Review: where the post stands, who said what, and the actions
+                this role may take. Buttons come from the server's own
+                transition matrix, so none of them can 403. */}
+            {workspaceId && (
+              <ReviewPanel
+                postId={selectedPost.id}
+                onChanged={() => handlePostClick(selectedPost)}
+              />
+            )}
 
             {/* Per-platform publishing status.
                 Replaces a single error string with one row per target: its

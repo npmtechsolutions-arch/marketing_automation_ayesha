@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from app.models.campaign import Campaign
     from app.models.post_performance import PostPerformance
     from app.models.media import PostMedia
+    from app.models.post_comment import PostComment
     from app.models.post_variant import PostVariant
     from app.models.publishing_job import PublishingJob
     from app.models.strategy import Strategy
@@ -36,9 +37,30 @@ if TYPE_CHECKING:
 
 
 class PostStatus(str, enum.Enum):
+    """Where a post is in its life.
+
+    The review states form a workflow enforced server-side by
+    ``app.services.approvals`` -- a status is never set by assignment from an
+    endpoint, because "which transitions are legal" is a rule that belongs in
+    one place.
+    """
+
     DRAFT = "draft"
     PREVIEW = "preview"
+    # Superseded by IN_REVIEW. Postgres cannot drop an enum label, so this
+    # stays declared; the migration backfills existing rows and nothing writes
+    # it any more. Two names for one state is exactly the drift the workflow
+    # exists to avoid.
     PENDING_APPROVAL = "pending_approval"
+    # Internal review: submitted, waiting on someone with content.approve.
+    IN_REVIEW = "in_review"
+    # A reviewer asked for edits. Distinct from DRAFT so an author can tell
+    # "not started" from "sent back", and so the queue can show what is
+    # blocked on them.
+    CHANGES_REQUESTED = "changes_requested"
+    # Passed internal review, waiting on the external client. Only reachable
+    # when the workspace requires client approval.
+    CLIENT_REVIEW = "client_review"
     APPROVED = "approved"
     SCHEDULED = "scheduled"
     PUBLISHING = "publishing"
@@ -137,6 +159,16 @@ class Post(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Assignment. A person and a deadline rather than a separate task table:
+    # a post has at most one owner at a time, and a join table would add a
+    # query to every list view to answer "whose is this?".
+    assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
+    due_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Approval
     approved_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
@@ -181,6 +213,11 @@ class Post(Base):
     )
     approver: Mapped[Optional["User"]] = relationship(
         "User", foreign_keys=[approved_by]
+    )
+    comments: Mapped[list["PostComment"]] = relationship(
+        "PostComment",
+        back_populates="post",
+        cascade="all, delete-orphan",
     )
     variants: Mapped[list["PostVariant"]] = relationship(
         "PostVariant",

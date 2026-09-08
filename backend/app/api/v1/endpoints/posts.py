@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
+from app.models.account import Account
 from app.models.platform import SocialAccount
 from app.models.post import Post, PostStatus
 from app.schemas.common import MessageResponse, PaginatedResponse
@@ -25,6 +26,8 @@ from app.connectors.base import (
 )
 from app.connectors.registry import get_provider
 from app.models.platform import SocialAccount
+from app.models.post_comment import PostComment
+from app.models.team_member import InvitationStatus, TeamMember
 from app.models.post_variant import PostVariant
 from app.models.publishing_job import (
     JobStatus,
@@ -38,12 +41,21 @@ from app.schemas.post_variant import (
     PostVariantUpsert,
     ResolvedPreview,
 )
+from app.schemas.review import (
+    AssignmentUpdate,
+    CommentAuthor,
+    CommentCreate,
+    CommentResponse,
+    CommentUpdate,
+    ReviewAction,
+    ReviewState,
+)
 from app.schemas.publishing_job import (
     PublishingJobList,
     PublishingJobResponse,
     PublishingLogEntry,
 )
-from app.services import media_service, post_validation, publishing
+from app.services import approvals, media_service, post_validation, publishing
 from app.core.permissions import (  # noqa: F401
     CONTENT_APPROVE,
     CONTENT_CREATE,
@@ -51,7 +63,9 @@ from app.core.permissions import (  # noqa: F401
     CONTENT_DELETE,
     CONTENT_PUBLISH,
 )
-from app.core.permissions import restricts_content_to_approvals
+from app.core.permissions import (
+    role_has_permission,
+)
 
 router = APIRouter()
 
@@ -71,6 +85,19 @@ def _post_label(post: Post) -> str:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+async def _assert_visible(member, post) -> None:
+    """A CLIENT must not reach a post outside their review queue by id.
+
+    The list filter alone would leave every single-post route open to anyone
+    who guessed or was once sent a link.
+    """
+    allowed = approvals.visible_status_filter(member)
+    if allowed is not None and post.status not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Post not found"
+        )
+
 
 async def _get_post_or_404(
     post_id: uuid.UUID,
@@ -115,12 +142,14 @@ async def list_posts(
     )
 
     conditions = [Post.account_id == account_id, Post.deleted_at.is_(None)]
-    if restricts_content_to_approvals(member.role):
-        # A CLIENT is an external reviewer. Holding content.view lets them open
-        # the approval queue and nothing else -- without this they would see
-        # every draft in the workspace, which is precisely what the role exists
-        # to prevent.
-        conditions.append(Post.status == PostStatus.PENDING_APPROVAL)
+    client_statuses = approvals.visible_status_filter(member)
+    if client_statuses is not None:
+        # A CLIENT is an external reviewer. content.view lets them open the
+        # approval queue and see what they signed off; without this they would
+        # see every draft in the workspace, which is what the role exists to
+        # prevent. Applied to the query, not the response, so pagination counts
+        # are right too.
+        conditions.append(Post.status.in_(client_statuses))
 
     if status_filter:
         conditions.append(Post.status == status_filter)
@@ -394,8 +423,9 @@ async def get_post(
     current_user=Depends(get_current_active_user),
 ):
     """Get a single post with its performance data."""
-    await _verify_account_access(account_id, current_user, db)
+    member = await _verify_account_access(account_id, current_user, db)
     post = await _get_post_or_404(post_id, account_id, db, with_performances=True)
+    await _assert_visible(member, post)
     
     # Sync performance in real-time
     await _sync_post_performance(post, db)
@@ -540,6 +570,12 @@ async def publish_post(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This post has no target accounts to publish to.",
         )
+    # A gate that exists on publish but not on schedule is not a gate, so both
+    # go through the same check.
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+    approvals.assert_publishable(account, post)
 
     await publishing.create_jobs_for_post(db, post, run_at=datetime.now(timezone.utc))
     post.status = PostStatus.PUBLISHING
@@ -581,6 +617,11 @@ async def schedule_post(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This post has no target accounts to publish to.",
         )
+
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+    approvals.assert_publishable(account, post)
 
     # Jobs are created now with run_at in the future rather than when the time
     # arrives, so a scheduled post's pending work is visible (and cancellable)
@@ -656,82 +697,476 @@ async def duplicate_post(
     return PostResponse.model_validate(new_post)
 
 
+# ---------------------------------------------------------------------------
+# Review workflow
+#
+# Status is never assigned directly here: every move goes through
+# app.services.approvals.transition, which is the one place that knows which
+# transitions are legal and who may make them. Two endpoints disagreeing about
+# that is how a workflow stops meaning anything.
+# ---------------------------------------------------------------------------
+
+async def _review_context(account_id, post_id, current_user, db, *, permission):
+    member = await _verify_account_access(
+        account_id, current_user, db, permission=permission
+    )
+    post = await _get_post_or_404(post_id, account_id, db)
+    await _assert_visible(member, post)
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+    return member, post, account
+
+
+async def _run_transition(
+    account_id, post_id, current_user, db, action, comment, *, permission
+) -> PostResponse:
+    member, post, account = await _review_context(
+        account_id, post_id, current_user, db, permission=permission
+    )
+    previous = await approvals.transition(
+        db, post=post, account=account, member=member, actor=current_user,
+        action=action, comment=comment,
+    )
+
+    if comment and comment.strip():
+        db.add(
+            PostComment(
+                id=uuid.uuid4(),
+                post_id=post.id,
+                author_id=current_user.id,
+                body=comment.strip(),
+                mentions=[
+                    str(m)
+                    for m in await approvals.parse_mentions(db, comment, account_id)
+                ],
+            )
+        )
+        await db.flush()
+
+    await _notify_transition(db, post, account, current_user, action, previous)
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        account_id=account_id,
+        action=f"post.{action}",
+        category="post",
+        description=(
+            f"{action.replace('_', ' ').capitalize()}: '{_post_label(post)}' "
+            f"moved from {previous.value} to {post.status.value}"
+        ),
+        resource_type="post",
+        resource_id=str(post.id),
+        resource_name=_post_label(post),
+    )
+    await db.refresh(post)
+    return PostResponse.model_validate(post)
+
+
+async def _notify_transition(db, post, account, actor, action, previous) -> None:
+    """Tell the people whose turn it now is, and the people who were waiting."""
+    label = _post_label(post)
+    if action == "submit":
+        recipients = await approvals.approvers_for(db, post.account_id)
+        title, message = (
+            "A post needs your review",
+            f"{actor.full_name} submitted '{label}' for review.",
+        )
+    elif action == "approve" and post.status is PostStatus.CLIENT_REVIEW:
+        # Approval moved it onward rather than finishing it: the client is now
+        # the one being waited on.
+        recipients = await approvals.approvers_for(db, post.account_id, client=True)
+        recipients |= await approvals.review_audience(db, post, post.account_id)
+        title, message = (
+            "A post is ready for client review",
+            f"{actor.full_name} approved '{label}'; it is now with the client.",
+        )
+    elif action == "approve":
+        recipients = await approvals.review_audience(db, post, post.account_id)
+        title, message = (
+            "Your post was approved",
+            f"{actor.full_name} approved '{label}'.",
+        )
+    elif action == "request_changes":
+        recipients = await approvals.review_audience(db, post, post.account_id)
+        title, message = (
+            "Changes requested on your post",
+            f"{actor.full_name} asked for changes to '{label}'.",
+        )
+    else:
+        return
+
+    await approvals.notify(
+        db,
+        recipients=recipients,
+        account_id=post.account_id,
+        actor=actor,
+        post=post,
+        notification_type=f"post.{action}",
+        title=title,
+        message=message,
+    )
+
+
+@router.post("/{post_id}/submit-for-review", response_model=PostResponse)
+async def submit_for_review(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    payload: ReviewAction | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Send a draft into review."""
+    return await _run_transition(
+        account_id, post_id, current_user, db, "submit",
+        (payload.comment if payload else None), permission=CONTENT_CREATE,
+    )
+
+
 @router.post("/{post_id}/approve", response_model=PostResponse)
 async def approve_post(
     account_id: uuid.UUID,
     post_id: uuid.UUID,
+    payload: ReviewAction | None = None,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):
-    """Approve a post. Requires manager role or above."""
-    await _verify_account_access(account_id, current_user, db, permission=CONTENT_APPROVE)
-    post = await _get_post_or_404(post_id, account_id, db)
+    """Approve a post.
 
-    if post.status != PostStatus.PENDING_APPROVAL:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only posts with 'pending_approval' status can be approved",
-        )
-
-    post.status = PostStatus.APPROVED
-    post.approved_by = current_user.id
-    post.approved_at = datetime.now(timezone.utc)
-    post.rejection_reason = None
-    await db.flush()
-    await db.refresh(post)
-
-    await log_activity(
-        db,
-        user_id=current_user.id,
-        account_id=account_id,
-        action="post.approved",
-        category="post",
-        description=f"Approved post '{_post_label(post)}'",
-        resource_type="post",
-        resource_id=str(post.id),
-        resource_name=_post_label(post),
+    Where it lands depends on the workspace: with client approval enabled, a
+    manager's approval moves it to CLIENT_REVIEW and only the client's reaches
+    APPROVED. An internal approval must not be able to stand in for the
+    customer's.
+    """
+    return await _run_transition(
+        account_id, post_id, current_user, db, "approve",
+        (payload.comment if payload else None), permission=CONTENT_APPROVE,
     )
 
-    return PostResponse.model_validate(post)
 
-
-@router.post("/{post_id}/reject", response_model=PostResponse)
-async def reject_post(
+@router.post("/{post_id}/request-changes", response_model=PostResponse)
+async def request_changes(
     account_id: uuid.UUID,
     post_id: uuid.UUID,
-    reason: str = Query(..., min_length=1, description="Reason for rejection"),
+    payload: ReviewAction,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_active_user),
 ):
-    """Reject a post with a reason. Requires manager role or above."""
-    await _verify_account_access(account_id, current_user, db, permission=CONTENT_APPROVE)
-    post = await _get_post_or_404(post_id, account_id, db)
-
-    if post.status != PostStatus.PENDING_APPROVAL:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only posts with 'pending_approval' status can be rejected",
-        )
-
-    post.status = PostStatus.DRAFT
-    post.rejection_reason = reason
-    await db.flush()
-    await db.refresh(post)
-
-    await log_activity(
-        db,
-        user_id=current_user.id,
-        account_id=account_id,
-        action="post.rejected",
-        category="post",
-        description=f"Rejected post '{_post_label(post)}': {reason}",
-        resource_type="post",
-        resource_id=str(post.id),
-        resource_name=_post_label(post),
-        status="warning",
+    """Send a post back with a reason. The comment is required."""
+    return await _run_transition(
+        account_id, post_id, current_user, db, "request_changes",
+        payload.comment, permission=CONTENT_APPROVE,
     )
 
+
+@router.post("/{post_id}/withdraw", response_model=PostResponse)
+async def withdraw_from_review(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    payload: ReviewAction | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Pull a post back out of review, e.g. to keep editing it."""
+    return await _run_transition(
+        account_id, post_id, current_user, db, "withdraw",
+        (payload.comment if payload else None), permission=CONTENT_CREATE,
+    )
+
+
+@router.get("/{post_id}/review", response_model=ReviewState)
+async def get_review_state(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Everything the review panel needs, in one call."""
+    member, post, account = await _review_context(
+        account_id, post_id, current_user, db, permission=CONTENT_VIEW
+    )
+    config = approvals.settings_for(account)
+    comments = (
+        await db.execute(
+            select(PostComment)
+            .options(selectinload(PostComment.author))
+            .where(PostComment.post_id == post_id, PostComment.deleted_at.is_(None))
+            .order_by(PostComment.created_at)
+        )
+    ).scalars().all()
+
+    return ReviewState(
+        post_id=post.id,
+        status=post.status.value,
+        approvals_required=config.approvals_required,
+        client_approval_required=config.client_approval_required,
+        allowed_actions=approvals.allowed_actions(member, account, post),
+        assigned_to=post.assigned_to,
+        due_at=post.due_at,
+        approved_by=post.approved_by,
+        approved_at=post.approved_at,
+        rejection_reason=post.rejection_reason,
+        comments=[_comment_response(c) for c in comments],
+    )
+
+
+@router.patch("/{post_id}/assignment", response_model=PostResponse)
+async def update_assignment(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    payload: AssignmentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Assign a post and set a deadline."""
+    await _verify_account_access(
+        account_id, current_user, db, permission=CONTENT_CREATE
+    )
+    post = await _get_post_or_404(post_id, account_id, db)
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "assigned_to" in updates and updates["assigned_to"] is not None:
+        # Assigning someone who is not on the workspace would create a task
+        # nobody can see, and leak that the user id exists.
+        assignee = (
+            await db.execute(
+                select(TeamMember).where(
+                    TeamMember.account_id == account_id,
+                    TeamMember.user_id == updates["assigned_to"],
+                    TeamMember.invitation_status == InvitationStatus.ACCEPTED,
+                )
+            )
+        ).scalar_one_or_none()
+        if assignee is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="That person is not a member of this workspace.",
+            )
+
+    for field_name, value in updates.items():
+        setattr(post, field_name, value)
+    await db.flush()
+
+    if updates.get("assigned_to"):
+        await approvals.notify(
+            db,
+            recipients={updates["assigned_to"]},
+            account_id=account_id,
+            actor=current_user,
+            post=post,
+            notification_type="post.assigned",
+            title="A post was assigned to you",
+            message=f"{current_user.full_name} assigned '{_post_label(post)}' to you.",
+        )
+
+    await log_activity(
+        db, user_id=current_user.id, account_id=account_id,
+        action="post.assigned", category="post",
+        description=f"Assignment changed on '{_post_label(post)}'",
+        resource_type="post", resource_id=str(post.id),
+        resource_name=_post_label(post),
+    )
+    await db.refresh(post)
     return PostResponse.model_validate(post)
+
+
+# ---------------------------------------------------------------------------
+# Comments
+# ---------------------------------------------------------------------------
+
+def _comment_response(comment: PostComment) -> CommentResponse:
+    return CommentResponse(
+        id=comment.id,
+        post_id=comment.post_id,
+        author=(
+            CommentAuthor.model_validate(comment.author) if comment.author else None
+        ),
+        body=comment.body,
+        mentions=[uuid.UUID(str(m)) for m in (comment.mentions or [])],
+        parent_id=comment.parent_id,
+        created_at=comment.created_at,
+        edited_at=comment.edited_at,
+    )
+
+
+@router.get("/{post_id}/comments", response_model=list[CommentResponse])
+async def list_comments(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_VIEW)
+    await _get_post_or_404(post_id, account_id, db)
+
+    comments = (
+        await db.execute(
+            select(PostComment)
+            .options(selectinload(PostComment.author))
+            .where(PostComment.post_id == post_id, PostComment.deleted_at.is_(None))
+            .order_by(PostComment.created_at)
+        )
+    ).scalars().all()
+    return [_comment_response(c) for c in comments]
+
+
+@router.post(
+    "/{post_id}/comments",
+    response_model=CommentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_comment(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    payload: CommentCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Comment on a post, notifying anyone mentioned.
+
+    CONTENT_VIEW rather than CONTENT_CREATE: a CLIENT reviewing a post has to
+    be able to say why they are rejecting it, and they cannot create content.
+    """
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_VIEW)
+    post = await _get_post_or_404(post_id, account_id, db)
+
+    if payload.parent_id is not None:
+        parent = (
+            await db.execute(
+                select(PostComment).where(
+                    PostComment.id == payload.parent_id,
+                    PostComment.post_id == post_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if parent is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="The comment being replied to does not exist on this post.",
+            )
+
+    mentioned = await approvals.parse_mentions(db, payload.body, account_id)
+    comment = PostComment(
+        id=uuid.uuid4(),
+        post_id=post_id,
+        author_id=current_user.id,
+        body=payload.body,
+        mentions=[str(m) for m in mentioned],
+        parent_id=payload.parent_id,
+    )
+    db.add(comment)
+    await db.flush()
+
+    if mentioned:
+        await approvals.notify(
+            db,
+            recipients=set(mentioned),
+            account_id=account_id,
+            actor=current_user,
+            post=post,
+            notification_type="post.mentioned",
+            title="You were mentioned on a post",
+            message=f"{current_user.full_name} mentioned you on '{_post_label(post)}'.",
+        )
+
+    await db.refresh(comment)
+    comment.author = current_user
+    return _comment_response(comment)
+
+
+@router.patch("/{post_id}/comments/{comment_id}", response_model=CommentResponse)
+async def update_comment(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    payload: CommentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Edit your own comment.
+
+    Only the author: editing someone else's words in a review thread would let
+    a reviewer's objection be rewritten by the person it was aimed at.
+    """
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_VIEW)
+    await _get_post_or_404(post_id, account_id, db)
+
+    comment = await _get_comment_or_404(comment_id, post_id, db)
+    if comment.author_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only edit your own comments.",
+        )
+
+    comment.body = payload.body
+    comment.edited_at = datetime.now(timezone.utc)
+    # Mentions are re-parsed, but the people already notified are not notified
+    # again -- only newly added ones.
+    previous = {uuid.UUID(str(m)) for m in (comment.mentions or [])}
+    mentioned = await approvals.parse_mentions(db, payload.body, account_id)
+    comment.mentions = [str(m) for m in mentioned]
+    await db.flush()
+
+    added = set(mentioned) - previous
+    if added:
+        post = await _get_post_or_404(post_id, account_id, db)
+        await approvals.notify(
+            db, recipients=added, account_id=account_id, actor=current_user,
+            post=post, notification_type="post.mentioned",
+            title="You were mentioned on a post",
+            message=f"{current_user.full_name} mentioned you on '{_post_label(post)}'.",
+        )
+
+    comment.author = current_user
+    return _comment_response(comment)
+
+
+@router.delete("/{post_id}/comments/{comment_id}", response_model=MessageResponse)
+async def delete_comment(
+    account_id: uuid.UUID,
+    post_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Soft delete. Authors remove their own; managers can remove any."""
+    member = await _verify_account_access(
+        account_id, current_user, db, permission=CONTENT_VIEW
+    )
+    await _get_post_or_404(post_id, account_id, db)
+    comment = await _get_comment_or_404(comment_id, post_id, db)
+
+    if comment.author_id != current_user.id and not role_has_permission(
+        member.role, CONTENT_APPROVE
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own comments.",
+        )
+
+    comment.deleted_at = datetime.now(timezone.utc)
+    await db.flush()
+    return MessageResponse(message="Comment deleted.")
+
+
+async def _get_comment_or_404(
+    comment_id: uuid.UUID, post_id: uuid.UUID, db: AsyncSession
+) -> PostComment:
+    comment = (
+        await db.execute(
+            select(PostComment).where(
+                PostComment.id == comment_id,
+                PostComment.post_id == post_id,
+                PostComment.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if comment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found"
+        )
+    return comment
 
 
 # ---------------------------------------------------------------------------

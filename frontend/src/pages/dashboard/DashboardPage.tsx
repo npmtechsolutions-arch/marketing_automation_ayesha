@@ -29,6 +29,7 @@ import { motion } from "framer-motion";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/Button";
 import { GlassCard } from "@/components/ui/GlassCard";
+import PendingApprovals from "@/components/content/PendingApprovals";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -280,6 +281,12 @@ export default function DashboardPage() {
         </motion.div>
 
         {/* Main Charts & Side Panels */}
+        {/* What is waiting on somebody. Above the charts because an approval
+            queue that needs scrolling to reach is one that gets missed. */}
+        <motion.div variants={itemVariants}>
+          <PendingApprovals />
+        </motion.div>
+
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Performance Chart */}
           <motion.div variants={itemVariants} className="lg:col-span-2">

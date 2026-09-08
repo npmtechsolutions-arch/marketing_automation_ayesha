@@ -117,6 +117,13 @@ class PostResponse(PostBase):
     twitter_post_type: str | None = None
     performance: dict | None = None
 
+    # Review workflow. Exposed so the calendar and list views can show an
+    # approval badge without a second call per post.
+    assigned_to: UUID | None = None
+    due_at: datetime | None = None
+    approved_by: UUID | None = None
+    approved_at: datetime | None = None
+    rejection_reason: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

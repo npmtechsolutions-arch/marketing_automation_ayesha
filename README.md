@@ -286,6 +286,42 @@ Accepted types are narrow on purpose — every one is identifiable from its magi
 
 Storage config lives in `S3_BUCKET` / `S3_REGION` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_ENDPOINT_URL`. `BACKEND_URL` is only used by the local fallback.
 
+## Review and approvals
+
+An optional workflow between drafting and publishing, enabled per workspace.
+
+```
+DRAFT ──submit──> IN_REVIEW ──approve──> [CLIENT_REVIEW] ──approve──> APPROVED
+  ^                   │                        │                         │
+  └──withdraw─────────┴──request_changes───────┴─────────────────────────┘
+                             ↓
+                    CHANGES_REQUESTED ──submit──> IN_REVIEW
+```
+
+**Every transition goes through `approvals.transition()`.** It is the only code that writes `Post.status` for review purposes. Status used to be assigned wherever a handler felt like it, which works until two endpoints disagree about whether an approved post can go back to draft — and then the answer depends on which button the user clicked.
+
+**A manager's approval is not the client's.** With `client_approval_required`, internal sign-off moves a post to `CLIENT_REVIEW` and only the external reviewer reaches `APPROVED`. Collapsing those would let an internal approval stand in for the customer's, which is the failure that matters commercially.
+
+**The gate is per workspace, and applies to scheduling as well as publishing** — a gate on publish alone isn't a gate, the post just goes out later. Both default off, so a team that never enables approvals publishes exactly as before. `client_approval_required` implies `approvals_required`: client review without internal review would send drafts straight to an external reviewer with nobody having looked first.
+
+**CLIENT visibility is narrowed at the query level**, not in the response — so pagination totals are right too, and a client cannot learn how many drafts exist. They see `CLIENT_REVIEW`, `APPROVED` and `PUBLISHED`; single-post routes carry the same check, or every post would still be reachable by id. Reaching outside that set returns **404, not 403**: telling an external reviewer that an internal draft exists is itself a disclosure.
+
+**Mentions** are `@[uuid]` tokens rather than `@name` — names are ambiguous and change. Membership is re-checked at write time: mentioning an arbitrary id would otherwise notify a stranger and confirm to the mentioner that the id is real. The stored mention list is not re-derived on read, so editing a comment cannot retroactively change who was notified.
+
+| Method | Path |
+|---|---|
+| `POST` | `/posts/{id}/submit-for-review` |
+| `POST` | `/posts/{id}/approve` |
+| `POST` | `/posts/{id}/request-changes` (comment required) |
+| `POST` | `/posts/{id}/withdraw` |
+| `GET` | `/posts/{id}/review` |
+| `PATCH` | `/posts/{id}/assignment` |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/posts/{id}/comments` |
+
+`GET /review` returns `allowed_actions`, computed against the same matrix the endpoints enforce, so the panel cannot offer a button that 403s. Comments need only `content.view` — a CLIENT has to be able to say why they are rejecting something, and they cannot create content.
+
+> `PENDING_APPROVAL` is superseded by `IN_REVIEW`. Postgres cannot drop an enum label, so it stays declared and the migration backfills existing rows; nothing writes it any more.
+
 ## Per-platform variants
 
 One post, customised per platform. The base `Post` holds the master content an author writes once; a `PostVariant` overrides it for one platform — so you trim the version that goes to X without touching what LinkedIn receives.

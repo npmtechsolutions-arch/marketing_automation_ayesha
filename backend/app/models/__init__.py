@@ -12,6 +12,7 @@ from app.models.plan import Feature, FeatureUnit, Plan, PlanFeature, UsageRecord
 from app.models.platform import SocialAccount, SocialPlatform
 from app.models.media import Media, MediaFolder, MediaKind, PostMedia
 from app.models.post import Post, PostStatus
+from app.models.post_comment import PostComment
 from app.models.post_variant import PostVariant
 from app.models.publishing_job import (
     JobStatus,
@@ -50,6 +51,7 @@ __all__ = [
     "AIGeneration",
     "Webhook",
     "PostVariant",
+    "PostComment",
     # Media library
     "Media",
     "MediaFolder",

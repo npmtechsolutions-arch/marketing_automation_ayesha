@@ -227,18 +227,27 @@ async def test_client_sees_only_items_awaiting_approval(
     client, auth_header, db_session, user_factory, member_factory, workspace
 ):
     """content.view for a CLIENT is narrowed at the query level. A permission
-    bit alone would have exposed every draft in the workspace."""
+    bit alone would have exposed every draft in the workspace.
+
+    The visible set widened when the review workflow landed: a client now sees
+    what is waiting on them (CLIENT_REVIEW), what they already signed off
+    (APPROVED), and what went live (PUBLISHED). Internal review states stay
+    hidden -- IN_REVIEW is between the author and their manager.
+    """
     user = await _member_with(user_factory, member_factory, workspace, TeamRole.CLIENT)
     await _seed_post(db_session, workspace, status=PostStatus.DRAFT)
+    await _seed_post(db_session, workspace, status=PostStatus.IN_REVIEW)
+    await _seed_post(db_session, workspace, status=PostStatus.CHANGES_REQUESTED)
+    await _seed_post(db_session, workspace, status=PostStatus.CLIENT_REVIEW)
+    await _seed_post(db_session, workspace, status=PostStatus.APPROVED)
     await _seed_post(db_session, workspace, status=PostStatus.PUBLISHED)
-    await _seed_post(db_session, workspace, status=PostStatus.PENDING_APPROVAL)
 
     response = await client.get(
         f"/api/v1/accounts/{workspace['account'].id}/posts/", headers=auth_header(user)
     )
     assert response.status_code == 200
     statuses = {item["status"] for item in response.json()["items"]}
-    assert statuses == {"pending_approval"}, (
+    assert statuses == {"client_review", "approved", "published"}, (
         f"a client saw content outside the approval queue: {statuses}"
     )
 
