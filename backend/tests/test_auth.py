@@ -302,3 +302,34 @@ async def test_logging_in_again_after_logout_works(client, user_factory):
     )
     assert again.status_code == 200
     assert again.json()["access_token"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_accepts_an_empty_body_and_uses_the_cookie(client):
+    """A browser sends `{}` and relies on the httpOnly cookie.
+
+    The endpoint takes `TokenRefresh | None = Body(None)`, which makes an
+    *absent* body optional -- it does not make a present-but-empty one valid.
+    With `refresh_token` required, FastAPI validated the `{}` the frontend
+    posts and returned 422 before the cookie was ever read, so every session
+    ended at the first page reload.
+    """
+    email = f"refresh-{uuid.uuid4().hex[:10]}@example.com"
+    registered = await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "hunter2-correct-horse", "full_name": "R"},
+    )
+    assert registered.status_code in (200, 201), registered.text
+
+    response = await client.post("/api/v1/auth/refresh", json={})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["access_token"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_without_a_cookie_is_401_not_422(client):
+    """An anonymous visitor gets "not signed in", not a validation error. The
+    landing page fires this on every load."""
+    response = await client.post("/api/v1/auth/refresh", json={})
+    assert response.status_code == 401

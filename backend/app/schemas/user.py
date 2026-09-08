@@ -98,7 +98,22 @@ class PasswordResetConfirm(BaseModel):
 
 
 class TokenRefresh(BaseModel):
-    refresh_token: str
+    """A refresh request body.
+
+    The token is **optional** because for a browser it does not travel in the
+    body at all -- it is an httpOnly cookie the browser attaches, and the
+    endpoint reads it from there. The field exists for clients that have no
+    cookie jar and must name the token explicitly.
+
+    It was required, which broke every browser session: the frontend posts an
+    empty object, FastAPI saw a body present, validated it against this model,
+    and returned 422 on the missing field before the endpoint could look at the
+    cookie. ``Body(None)`` makes an *absent* body optional; it does not make a
+    present-but-empty one valid. So refresh always failed, and reloading any
+    page logged the user out.
+    """
+
+    refresh_token: str | None = None
 
 
 # ---------------------------------------------------------------------------
