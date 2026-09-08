@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays,
   ListChecks,
+  FileSpreadsheet,
   Plus,
   Sparkles,
   ChevronLeft,
@@ -31,6 +32,7 @@ import { Modal } from "@/components/ui/Modal";
 import PlatformIcon from "@/components/shared/PlatformIcon";
 import PublishingJobs from "@/components/content/PublishingJobs";
 import QueuePanel from "@/components/scheduling/QueuePanel";
+import BulkImportDialog from "@/components/content/BulkImportDialog";
 import ReviewPanel from "@/components/content/ReviewPanel";
 import { statusMeta, type BadgeVariant, type ReviewStatus } from "@/lib/review";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
@@ -332,6 +334,7 @@ export default function CalendarPage() {
   );
   const [view, setView] = useState<CalendarView>(initialView);
   const [showQueue, setShowQueue] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   useEffect(() => {
     const saved =
@@ -607,6 +610,19 @@ export default function CalendarPage() {
               Queue
             </button>
 
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm transition-colors"
+              style={{
+                backgroundColor: "var(--sidebar-hover-bg)",
+                color: "var(--page-text-secondary)",
+                border: "1px solid var(--surface-border)",
+              }}
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Import CSV
+            </button>
+
             {/* View toggle */}
             <div
               className="flex items-center p-1 rounded-xl backdrop-blur-sm"
@@ -653,6 +669,17 @@ export default function CalendarPage() {
             </Button>
           </div>
         </motion.div>
+
+        {showImport && workspaceId && (
+          <BulkImportDialog
+            accountId={workspaceId}
+            onClose={() => setShowImport(false)}
+            onImported={() => {
+              setShowImport(false);
+              fetchPosts();
+            }}
+          />
+        )}
 
         {showQueue && workspaceId && (
           <motion.div

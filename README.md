@@ -558,6 +558,80 @@ ordinary way to use an API — would otherwise be rejected. Naming both at once 
 an error rather than a guess, since guessing is how a post publishes to the
 wrong account.
 
+## Bulk import
+
+`POST /accounts/{id}/posts/bulk-import` takes a CSV with the columns `content`,
+`scheduled_at`, `platforms`, `media_urls` and `link`. Only `content` is
+required; a row with no date imports as a draft.
+`GET .../bulk-import/template` returns an example file.
+
+### Two phases, and the first writes nothing
+
+The default is a dry run: it parses the file, validates every row, and returns
+a per-row report having created nothing and spent no quota. Sending the same
+file with `confirm=true` creates the rows that passed. No server-side session
+is held between the two — the client re-sends the file — so a stale preview
+cannot be confirmed against a file that has since changed.
+
+A spreadsheet of fifty posts is exactly the input where a column is misnamed or
+a platform misspelt, and discovering that after fifteen rows have been created
+leaves a mess only the user can untangle.
+
+### Rows fail individually; the file fails as a whole
+
+A bad row is reported and skipped, and the rest import. Refusing forty-nine good
+rows over one bad one is not a service, and the report has already shown the
+user exactly which failed and why. A *missing column*, by contrast, fails the
+whole file: that is one mistake, not fifty.
+
+Every error names a field and says what to do instead — `'tomorrow-ish' is not
+a date and time we recognise. Use YYYY-MM-DD HH:MM` — because a row number and
+a shrug is not a report.
+
+### Validation is the composer's own
+
+Each row is turned into an **unsaved** `Post` and passed to
+`post_validation.validate_post`, the same function the composer calls. An import
+therefore cannot accept content the composer would reject, and the two cannot
+drift. Advisory problems (a missing alt text) come back as warnings and do not
+block the row.
+
+### One atomic reservation
+
+Monthly quota is taken once, for the whole importable set, before anything is
+created:
+
+```python
+await enforce_post_limit(db, account_id, adding=report["importable"])
+```
+
+Not a loop of single increments. Fifty separate calls let a concurrent import
+interleave and carry a workspace past its allowance, and leave a partial spend
+behind if the run fails halfway. Because the guard lives in the UPDATE's `WHERE`
+clause, an over-limit reservation is refused whole: nothing is created and
+nothing is spent, so the next, smaller import still fits.
+
+Rejected rows are not charged.
+
+### Details that came from using it
+
+* Times in the file are read on the **workspace's** clock, not the server's or
+  the uploader's — the same contract the composer and recurring schedules use.
+  A spreadsheet has no notion of timezone, so reading its times as UTC would
+  silently move every import for any workspace outside UTC.
+* The file is decoded as `utf-8-sig`, because Excel writes a byte-order mark and
+  without it the first column arrives named `\ufeffcontent` and every row looks
+  like it is missing its text.
+* Headers match case- and space-insensitively, since a spreadsheet round trip
+  turns `scheduled_at` into `Scheduled At`.
+* List columns accept `|` or `;` as well as `,` — a comma inside a CSV cell is a
+  fight nobody should have to win.
+* The template is **generated**, with dates a few days out and the platforms the
+  workspace has actually connected. The first version had fixed dates, so
+  downloading it and uploading it straight back — the obvious first thing to try
+  — failed every row on "that date is in the past". A test now requires the
+  template to import cleanly as its own input.
+
 
 ## Review and approvals
 

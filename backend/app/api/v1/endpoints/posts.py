@@ -4,7 +4,16 @@ import uuid
 from datetime import datetime, timezone
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -57,6 +66,7 @@ from app.schemas.publishing_job import (
 )
 from app.services import (
     approvals,
+    bulk_import,
     dashboard,
     media_service,
     post_validation,
@@ -1591,3 +1601,127 @@ async def validate_post_endpoint(
     return PostValidationResponse(
         **await post_validation.validate_post(db, post, account_id=account_id)
     )
+
+
+# ---------------------------------------------------------------------------
+# Bulk import
+# ---------------------------------------------------------------------------
+
+@router.get("/bulk-import/template")
+async def bulk_import_template(
+    account_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """The CSV shape the importer expects, with worked examples.
+
+    Served rather than documented because the failure this prevents -- a
+    column named slightly wrong -- is one nobody debugs from prose.
+    """
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_VIEW)
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+    connected = await bulk_import.connected_slugs(db, account_id)
+    body = bulk_import.template(
+        tz=dashboard.workspace_timezone(account), connected=connected
+    )
+    return StreamingResponse(
+        iter([body]),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="post-import-template.csv"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.post("/bulk-import")
+async def bulk_import_posts(
+    account_id: uuid.UUID,
+    file: UploadFile = File(..., description="CSV file"),
+    confirm: bool = Query(
+        False,
+        description=(
+            "False validates and returns a report without writing anything. "
+            "True creates the importable rows."
+        ),
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Import posts from a CSV.
+
+    Two phases. The default is a dry run: it parses, validates every row
+    against the same rules the composer uses, and returns a per-row report
+    without writing anything or spending any quota. Sending the same file with
+    ``confirm=true`` creates the rows that passed.
+
+    Rows that failed are skipped rather than aborting the run -- the report has
+    already shown the user exactly which ones and why, and refusing fifty good
+    rows over one bad one is not a service.
+
+    Monthly quota is taken as a **single reservation** for the whole importable
+    set before anything is created. Fifty separate increments would let a
+    concurrent import interleave and carry a workspace past its allowance, and
+    would leave a partial spend behind if the run failed halfway.
+    """
+    await _verify_account_access(account_id, current_user, db, permission=CONTENT_CREATE)
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="The file is empty."
+        )
+
+    try:
+        report = await bulk_import.analyse(
+            db, account, raw, user_id=current_user.id
+        )
+    except bulk_import.ImportError_ as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    results = report.pop("_results")
+
+    if not confirm:
+        return {**report, "confirmed": False, "created": 0}
+
+    if not report["importable"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No row in that file can be imported. Fix the errors and try again.",
+        )
+
+    # One reservation for the whole set, before any row is written.
+    await enforce_post_limit(db, account_id, adding=report["importable"])
+
+    created = await bulk_import.create(
+        db, account, results, user_id=current_user.id
+    )
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        account_id=account_id,
+        action="post.bulk_imported",
+        category="post",
+        description=(
+            f"Imported {len(created)} post(s) from CSV"
+            + (f", skipped {report['rejected']}" if report["rejected"] else "")
+        ),
+        resource_type="post",
+        resource_id=str(account_id),
+        resource_name=file.filename,
+    )
+
+    return {
+        **report,
+        "confirmed": True,
+        "created": len(created),
+        "post_ids": [str(p.id) for p in created],
+    }
