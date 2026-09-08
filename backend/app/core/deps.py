@@ -1,6 +1,6 @@
 from typing import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +9,7 @@ from app.core.security import decode_token, oauth2_scheme, oauth2_scheme_optiona
 
 
 async def get_current_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ):
@@ -45,6 +46,11 @@ async def get_current_user(
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Stashed for anything that runs outside the dependency chain and cannot
+    # take the user as an argument -- notably the 500 handler, which records
+    # who was making the request that failed.
+    request.state.user_id = str(user.id)
     return user
 
 

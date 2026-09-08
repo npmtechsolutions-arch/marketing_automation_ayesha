@@ -100,12 +100,28 @@ def _cors_headers_for(request: Request) -> dict[str, str]:
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    """Return a JSON 500 (with CORS headers) instead of a header-less error."""
+    """Return a JSON 500 (with CORS headers) instead of a header-less error.
+
+    Also persists the failure, so it can be looked at after the log line has
+    scrolled away. The write opens its own database session -- the request's
+    is usually in a failed transaction by now, which is precisely why this
+    request is the one worth recording. It never raises: a failure to store
+    the error must not replace the response.
+    """
     logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+
+    from app.services import error_log
+
+    error_id = await error_log.record(request, exc)
+
     detail = f"{type(exc).__name__}: {exc}" if settings.DEBUG else "Internal server error"
+    body = {"detail": detail}
+    if error_id is not None:
+        # A reference the user can quote, which turns "it broke" into a row.
+        body["error_id"] = str(error_id)
     return JSONResponse(
         status_code=500,
-        content={"detail": detail},
+        content=body,
         headers=_cors_headers_for(request),
     )
 

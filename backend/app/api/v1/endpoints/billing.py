@@ -13,6 +13,8 @@ from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.account import Account, SubscriptionStatus, SubscriptionTier
 from app.models.organization import Organization
+from app.models.subscription_event import SubscriptionEventSource
+from app.services import revenue
 from app.schemas.billing import (
     BillingInfo,
     CheckoutSession,
@@ -30,6 +32,20 @@ from app.core.permissions import (
 )
 
 router = APIRouter()
+
+
+def _subscription_state(organization) -> dict:
+    """The tier and status an organization holds right now.
+
+    Captured before a change and handed to ``revenue.record_transition``
+    afterwards, so the event log carries both ends of every move rather than
+    just where the organization landed.
+    """
+    return {
+        "from_tier": organization.subscription_tier.value,
+        "from_status": organization.subscription_status.value,
+    }
+
 
 
 # ---------------------------------------------------------------------------
@@ -365,8 +381,14 @@ async def change_plan(
             detail=f"You are already on the {tier.value.title()} plan.",
         )
 
+    before = _subscription_state(organization)
     await _apply_tier(db, organization, tier)
     organization.subscription_status = SubscriptionStatus.ACTIVE
+    await revenue.record_transition(
+        db, organization, **before,
+        source=SubscriptionEventSource.CHECKOUT,
+        note="plan change",
+    )
     await db.flush()
     return await _build_billing_info(organization, db)
 
@@ -501,6 +523,7 @@ async def stripe_webhook(
             )
             organization = result.scalar_one_or_none()
             if organization and subscription_id:
+                before = _subscription_state(organization)
                 organization.stripe_subscription_id = subscription_id
                 organization.subscription_status = SubscriptionStatus.ACTIVE
 
@@ -512,6 +535,11 @@ async def stripe_webhook(
                 except Exception:
                     pass
 
+                await revenue.record_transition(
+                    db, organization, **before,
+                    source=SubscriptionEventSource.WEBHOOK,
+                    note=event_type,
+                )
                 await db.flush()
 
     elif event_type == "customer.subscription.updated":
@@ -523,6 +551,7 @@ async def stripe_webhook(
         )
         organization = result.scalar_one_or_none()
         if organization:
+            before = _subscription_state(organization)
             status_mapping = {
                 "active": SubscriptionStatus.ACTIVE,
                 "past_due": SubscriptionStatus.PAST_DUE,
@@ -546,6 +575,11 @@ async def stripe_webhook(
             except Exception:
                 pass
 
+            await revenue.record_transition(
+                db, organization, **before,
+                source=SubscriptionEventSource.WEBHOOK,
+                note=event_type,
+            )
             await db.flush()
 
     elif event_type == "customer.subscription.deleted":
@@ -555,9 +589,15 @@ async def stripe_webhook(
         )
         organization = result.scalar_one_or_none()
         if organization:
+            before = _subscription_state(organization)
             organization.subscription_status = SubscriptionStatus.CANCELLED
             await _apply_tier(db, organization, SubscriptionTier.FREE)
             organization.stripe_subscription_id = None
+            await revenue.record_transition(
+                db, organization, **before,
+                source=SubscriptionEventSource.WEBHOOK,
+                note=event_type,
+            )
             await db.flush()
 
     elif event_type == "invoice.payment_failed":
@@ -567,7 +607,13 @@ async def stripe_webhook(
         )
         organization = result.scalar_one_or_none()
         if organization:
+            before = _subscription_state(organization)
             organization.subscription_status = SubscriptionStatus.PAST_DUE
+            await revenue.record_transition(
+                db, organization, **before,
+                source=SubscriptionEventSource.WEBHOOK,
+                note=event_type,
+            )
             await db.flush()
 
     return {"status": "ok"}

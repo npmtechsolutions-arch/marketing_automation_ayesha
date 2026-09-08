@@ -24,6 +24,9 @@ import {
   HelpCircle,
   ShieldCheck,
   SlidersHorizontal,
+  DollarSign,
+  HeartPulse,
+  AlertOctagon,
   Sparkles,
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
@@ -54,6 +57,9 @@ const secondaryNavItems = [
 const adminNavItems = [
   { label: "Admin Panel", icon: ShieldCheck, path: "/admin" },
   { label: "Plans & Limits", icon: SlidersHorizontal, path: "/admin/plans" },
+  { label: "Revenue", icon: DollarSign, path: "/admin/revenue" },
+  { label: "Connection Health", icon: HeartPulse, path: "/admin/health" },
+  { label: "API Errors", icon: AlertOctagon, path: "/admin/errors" },
 ];
 
 const sidebarVariants = {

@@ -9,6 +9,7 @@ import {
   AlertCircle,
   Plus,
   Pencil,
+  Tag,
   Archive,
   RefreshCw,
 } from "lucide-react";
@@ -110,6 +111,12 @@ export default function AdminPlansPage() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
+  // The plan's own fields, edited separately from its limits: PATCH /plans/{id}
+  // and PUT /plans/{id}/limits are different endpoints with different audit
+  // entries, and price changes move MRR while limit changes do not.
+  const [detailsPlanId, setDetailsPlanId] = useState<string | null>(null);
+  const [detailsDraft, setDetailsDraft] = useState({ name: "", price_monthly: "0", stripe_price_id: "" });
+
   const [creating, setCreating] = useState(false);
   const [newPlan, setNewPlan] = useState({ key: "", name: "", price_monthly: "0" });
 
@@ -168,6 +175,43 @@ export default function AdminPlansPage() {
       showSuccess(`${plan.name} limits updated. They take effect immediately.`);
     } catch (err: any) {
       showError(errorDetail(err, "Could not save the limits."));
+    }
+    setSaving(false);
+  };
+
+  const startEditingDetails = (plan: Plan) => {
+    setDetailsDraft({
+      name: plan.name,
+      price_monthly: String(plan.price_monthly ?? 0),
+      stripe_price_id: plan.stripe_price_id ?? "",
+    });
+    setDetailsPlanId(plan.id);
+  };
+
+  const saveDetails = async (plan: Plan) => {
+    const price = Number(detailsDraft.price_monthly);
+    if (!detailsDraft.name.trim()) {
+      showError("A plan needs a name.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      showError("Price must be a number of zero or more.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res: any = await api.patch(`/admin/plans/${plan.id}`, {
+        name: detailsDraft.name.trim(),
+        price_monthly: price,
+        // Empty means "not sold through Stripe", which is null rather than "".
+        stripe_price_id: detailsDraft.stripe_price_id.trim() || null,
+      });
+      const updated = (res.data ?? res) as Plan;
+      setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setDetailsPlanId(null);
+      showSuccess(`${updated.name} updated. Revenue reporting uses the new price immediately.`);
+    } catch (err: any) {
+      showError(errorDetail(err, "Could not update the plan."));
     }
     setSaving(false);
   };
@@ -311,6 +355,9 @@ export default function AdminPlansPage() {
                       <Button variant="secondary" icon={<Pencil className="w-4 h-4" />} onClick={() => startEditing(plan)}>
                         Edit limits
                       </Button>
+                      <Button variant="secondary" icon={<Tag className="w-4 h-4" />} onClick={() => startEditingDetails(plan)}>
+                        Edit details
+                      </Button>
                       {plan.is_active && (
                         <Button variant="ghost" icon={<Archive className="w-4 h-4" />} onClick={() => retirePlan(plan)}>
                           Retire
@@ -320,6 +367,57 @@ export default function AdminPlansPage() {
                   )}
                 </div>
               </div>
+
+              {detailsPlanId === plan.id && (
+                <div
+                  className="mb-5 grid gap-3 rounded-xl p-4 sm:grid-cols-3"
+                  style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
+                >
+                  <label className="text-xs" style={{ color: "var(--page-text-secondary)" }}>
+                    Name
+                    <input
+                      value={detailsDraft.name}
+                      onChange={(e) => setDetailsDraft({ ...detailsDraft, name: e.target.value })}
+                      className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-sm"
+                      style={{ backgroundColor: "var(--input-bg)", color: "var(--page-text)", border: "1px solid var(--surface-border)" }}
+                    />
+                  </label>
+                  <label className="text-xs" style={{ color: "var(--page-text-secondary)" }}>
+                    Price / month (USD)
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={detailsDraft.price_monthly}
+                      onChange={(e) => setDetailsDraft({ ...detailsDraft, price_monthly: e.target.value })}
+                      className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-sm tabular-nums"
+                      style={{ backgroundColor: "var(--input-bg)", color: "var(--page-text)", border: "1px solid var(--surface-border)" }}
+                    />
+                  </label>
+                  <label className="text-xs" style={{ color: "var(--page-text-secondary)" }}>
+                    Stripe price ID (blank if not sold online)
+                    <input
+                      value={detailsDraft.stripe_price_id}
+                      onChange={(e) => setDetailsDraft({ ...detailsDraft, stripe_price_id: e.target.value })}
+                      placeholder="price_..."
+                      className="mt-1 w-full rounded-lg px-2.5 py-1.5 font-mono text-xs"
+                      style={{ backgroundColor: "var(--input-bg)", color: "var(--page-text)", border: "1px solid var(--surface-border)" }}
+                    />
+                  </label>
+                  <div className="flex items-end gap-2 sm:col-span-3">
+                    <Button variant="primary" loading={saving} icon={<Check className="w-4 h-4" />} onClick={() => saveDetails(plan)}>
+                      Save details
+                    </Button>
+                    <Button variant="ghost" icon={<X className="w-4 h-4" />} onClick={() => setDetailsPlanId(null)}>
+                      Cancel
+                    </Button>
+                    <p className="ml-auto text-xs" style={{ color: "var(--page-text-muted)" }}>
+                      Changing the price changes what the revenue report shows, for
+                      every organization on this plan.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
                 {orderedFeatures.map((feature) => {

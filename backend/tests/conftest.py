@@ -101,6 +101,28 @@ async def db_session(db_engine) -> AsyncSession:
         yield session
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _redirect_independent_sessions(db_engine, monkeypatch):
+    """Point ``AsyncSessionLocal`` at the test database.
+
+    Most code takes its session from the ``get_db`` dependency, which the
+    client fixture overrides. A few places deliberately open their own --
+    ``error_log.record`` must, because the request's session is in a failed
+    transaction by the time a 500 handler runs. Without this those writes go
+    to the real database configured in the environment: the suite would
+    quietly accumulate rows in a developer's Postgres, and any error raised
+    inside a test would try to use a different event loop's connection and
+    fail with an unrelated message.
+    """
+    import app.core.database as database
+
+    factory = async_sessionmaker(
+        bind=db_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    monkeypatch.setattr(database, "AsyncSessionLocal", factory)
+    yield
+
+
 @pytest_asyncio.fixture
 async def client(db_engine, db_session) -> AsyncClient:
     """An HTTP client for the real FastAPI app, wired to the test database.

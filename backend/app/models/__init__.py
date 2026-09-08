@@ -1,6 +1,7 @@
 """SQLAlchemy models for the Marketing Automation platform."""
 
 from app.models.analytics_daily import AnalyticsDaily
+from app.models.api_error import ApiError
 from app.models.account import Account, SubscriptionStatus, SubscriptionTier
 from app.models.ai_generation import AIGeneration, AIGenerationStatus, GenerationType
 from app.models.audit_log import ActivityLog
@@ -23,12 +24,19 @@ from app.models.publishing_job import (
 )
 from app.models.post_performance import PostPerformance
 from app.models.strategy import Strategy
+from app.models.subscription_event import (
+    SubscriptionEvent,
+    SubscriptionEventSource,
+)
 from app.models.team_member import InvitationStatus, TeamMember, TeamRole
 from app.models.user import User
 from app.models.user_session import UserSession
 from app.models.webhook import Webhook, WebhookStatus
 
 __all__ = [
+    "ApiError",
+    "SubscriptionEvent",
+    "SubscriptionEventSource",
     # Core models
     "User",
     "Account",

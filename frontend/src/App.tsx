@@ -130,6 +130,9 @@ import DataDeletionPage from '@/pages/public/DataDeletionPage';
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import AdminUsersPage from '@/pages/admin/AdminUsersPage';
 import AdminPlansPage from '@/pages/admin/AdminPlansPage';
+import AdminRevenuePage from '@/pages/admin/AdminRevenuePage';
+import AdminHealthPage from '@/pages/admin/AdminHealthPage';
+import AdminErrorsPage from '@/pages/admin/AdminErrorsPage';
 import AuditLogsPage from '@/pages/admin/AuditLogsPage';
 import ApiDocsPage from '@/pages/admin/ApiDocsPage';
 
@@ -385,6 +388,9 @@ function App() {
             <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
             <Route path="/admin/plans" element={<AdminRoute><AdminPlansPage /></AdminRoute>} />
+            <Route path="/admin/revenue" element={<AdminRoute><AdminRevenuePage /></AdminRoute>} />
+            <Route path="/admin/health" element={<AdminRoute><AdminHealthPage /></AdminRoute>} />
+            <Route path="/admin/errors" element={<AdminRoute><AdminErrorsPage /></AdminRoute>} />
             <Route path="/admin/audit-logs" element={<AdminRoute><AuditLogsPage /></AdminRoute>} />
             <Route path="/admin/api-docs" element={<AdminRoute><ApiDocsPage /></AdminRoute>} />
 

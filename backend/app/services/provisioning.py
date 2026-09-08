@@ -94,6 +94,20 @@ async def provision_organization_with_workspace(
     db.add(organization)
     await db.flush()
 
+    # The organization's first entry in the subscription log. Without it the
+    # revenue trend has no baseline for this customer -- it would contribute
+    # nothing to every day until it first upgraded, and then appear to have
+    # materialised out of nowhere.
+    from app.models.subscription_event import SubscriptionEventSource
+    from app.services import revenue
+
+    await revenue.record_transition(
+        db, organization,
+        from_tier=None, from_status=None,
+        source=SubscriptionEventSource.SYSTEM,
+        note="signup",
+    )
+
     db.add(
         OrganizationMember(
             id=uuid.uuid4(),

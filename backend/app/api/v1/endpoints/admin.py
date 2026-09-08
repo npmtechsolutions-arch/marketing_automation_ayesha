@@ -1,7 +1,7 @@
 """Admin panel endpoints (superadmin only)."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -13,14 +13,16 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.account import Account
+from app.models.api_error import ApiError
 from app.models.organization import Organization, SubscriptionTier
 from app.models.audit_log import ActivityLog as AuditLog
 from app.models.plan import Feature, Plan, PlanFeature
+from app.models.platform import AccountHealth, SocialAccount, SocialPlatform
 from app.models.post import Post
 from app.models.team_member import TeamMember
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
-from app.services import entitlement_service
+from app.services import entitlement_service, error_log, revenue
 
 router = APIRouter()
 
@@ -37,6 +39,48 @@ async def require_superadmin(current_user=Depends(get_current_active_user)):
             detail="Superadmin access required",
         )
     return current_user
+
+
+def _jsonable(value):
+    """Audit values go into a JSON column, so Decimals and enums must not.
+
+    A Decimal price raises on serialisation; an enum would store its repr.
+    """
+    from decimal import Decimal
+    if isinstance(value, Decimal):
+        return float(value)
+    if hasattr(value, "value") and not isinstance(value, (str, int, float, bool)):
+        return value.value
+    return value
+
+
+def _audit(
+    current_user,
+    action: str,
+    description: str,
+    *,
+    resource_type: str,
+    resource_id: str,
+    old_values: dict | None = None,
+    new_values: dict | None = None,
+) -> "AuditLog":
+    """Build an audit row for an admin write.
+
+    A helper rather than a copy per endpoint: the plan endpoints shipped
+    without any audit trail at all, and four hand-written blocks is how the
+    fifth one gets forgotten too. Every superadmin write in this module goes
+    through here.
+    """
+    return AuditLog(
+        user_id=current_user.id,
+        action=action,
+        category="admin",
+        description=description,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        old_values=old_values,
+        new_values=new_values,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -344,18 +388,14 @@ async def platform_stats(
     )
     accounts_by_tier = {row[0].value: row[1] for row in tier_result.all()}
 
-    # Revenue estimate (based on tier counts)
-    tier_prices = {
-        "free": 0,
-        "starter": 29,
-        "growth": 79,
-        "pro": 199,
-        "enterprise": 499,
-    }
-    revenue = sum(
-        tier_prices.get(tier, 0) * count
-        for tier, count in accounts_by_tier.items()
-    )
+    # MRR comes from the same place /admin/revenue reads it: the plans table,
+    # counting only ACTIVE subscriptions.
+    #
+    # This was a hard-coded price dict -- 29/79/199/499 against real plan
+    # prices of 49/149/399/0 -- applied to every organization regardless of
+    # whether it was paying. Two admin screens quoting different revenue is
+    # the drift that moving pricing into the database in 1.3 existed to end.
+    mrr = (await revenue.summary(db))["mrr"]
 
     return PlatformStatsResponse(
         total_users=total_users,
@@ -364,7 +404,7 @@ async def platform_stats(
         total_accounts=total_accounts,
         total_posts=total_posts,
         published_posts=published_posts,
-        total_revenue_estimate=float(revenue),
+        total_revenue_estimate=mrr,
         accounts_by_tier=accounts_by_tier,
     )
 
@@ -611,6 +651,22 @@ async def create_plan(
                 limit_value=payload.limits.get(key, 0),
             )
         )
+    db.add(
+        _audit(
+            current_user,
+            "create_plan",
+            f"Created plan '{payload.name}' ({payload.key}) at {payload.price_monthly}/mo",
+            resource_type="plan",
+            resource_id=str(plan.id),
+            new_values={
+                "key": payload.key,
+                "name": payload.name,
+                "price_monthly": float(payload.price_monthly),
+                "is_active": payload.is_active,
+                "limits": payload.limits,
+            },
+        )
+    )
     await db.flush()
     entitlement_service.invalidate_all()
     return await _plan_response(db, plan)
@@ -629,8 +685,24 @@ async def update_plan(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update"
         )
+    # Captured before the writes, so the audit row can say what changed rather
+    # than only what it changed to.
+    previous = {field: getattr(plan, field) for field in updates}
     for field, value in updates.items():
         setattr(plan, field, value)
+
+    db.add(
+        _audit(
+            current_user,
+            "update_plan",
+            f"Updated plan '{plan.name}' ({plan.key}): "
+            + ", ".join(sorted(updates)),
+            resource_type="plan",
+            resource_id=str(plan.id),
+            old_values={k: _jsonable(v) for k, v in previous.items()},
+            new_values={k: _jsonable(v) for k, v in updates.items()},
+        )
+    )
     await db.flush()
     entitlement_service.invalidate_all()
     return await _plan_response(db, plan)
@@ -651,6 +723,16 @@ async def update_plan_limits(
     """
     plan = await _get_plan_or_404(db, plan_id)
     await _validate_feature_keys(db, payload.limits.keys())
+
+    before = {
+        row.feature_key: row.limit_value
+        for row in (
+            await db.execute(
+                select(PlanFeature).where(PlanFeature.plan_id == plan.id)
+            )
+        ).scalars()
+        if row.feature_key in payload.limits
+    }
 
     for feature_key, limit_value in payload.limits.items():
         if limit_value is not None and limit_value < 0:
@@ -681,6 +763,18 @@ async def update_plan_limits(
         else:
             existing.limit_value = limit_value
 
+    db.add(
+        _audit(
+            current_user,
+            "update_plan_limits",
+            f"Changed limits on plan '{plan.name}' ({plan.key}): "
+            + ", ".join(sorted(payload.limits)),
+            resource_type="plan",
+            resource_id=str(plan.id),
+            old_values=before,
+            new_values=dict(payload.limits),
+        )
+    )
     await db.flush()
     entitlement_service.invalidate_all()
     return await _plan_response(db, plan)
@@ -700,6 +794,294 @@ async def deactivate_plan(
     """
     plan = await _get_plan_or_404(db, plan_id)
     plan.is_active = False
+    db.add(
+        _audit(
+            current_user,
+            "deactivate_plan",
+            f"Retired plan '{plan.name}' ({plan.key})",
+            resource_type="plan",
+            resource_id=str(plan.id),
+            old_values={"is_active": True},
+            new_values={"is_active": False},
+        )
+    )
     await db.flush()
     entitlement_service.invalidate_all()
     return None
+
+
+# ---------------------------------------------------------------------------
+# Revenue (scope 19.1)
+# ---------------------------------------------------------------------------
+
+@router.get("/revenue")
+async def revenue_metrics(
+    days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_superadmin),
+):
+    """MRR, ARR, plan mix, churn and trial conversion.
+
+    Prices come from the ``plans`` table, so a change made in the plans UI is
+    reflected here immediately -- the point of moving pricing out of a Python
+    dict in 1.3 was that the report and the biller read one number.
+    """
+    return {
+        **await revenue.summary(db),
+        "churn": await revenue.churn(db, days=days),
+        "trials": await revenue.trial_conversions(db, days=days),
+        # Movement figures are only as complete as the event log behind them.
+        "tracking_since": (
+            lambda value: value.isoformat() if value else None
+        )(await revenue.tracking_since(db)),
+    }
+
+
+@router.get("/revenue/trend")
+async def revenue_trend(
+    days: int = Query(90, ge=7, le=365),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_superadmin),
+):
+    """Daily MRR, for the chart.
+
+    Reconstructed from ``subscription_events``, which is why the payload
+    carries ``tracking_since``: before that instant there is no history, and a
+    chart that drew zero there would show a revenue cliff that never happened.
+    """
+    return await revenue.trend(db, days=days)
+
+
+# ---------------------------------------------------------------------------
+# Connected-account health (scope 19.2)
+# ---------------------------------------------------------------------------
+
+@router.get("/connection-health")
+async def connection_health(
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_superadmin),
+):
+    """Counts by health state, plus every failed connection with its owner.
+
+    The per-workspace strip added in 1.9 tells one customer their connection is
+    broken. This is the other direction: which customers are broken right now,
+    so support can reach them before they notice a post did not go out.
+    """
+    counts = {state.value: 0 for state in AccountHealth}
+    rows = (
+        await db.execute(
+            select(SocialAccount.health, func.count().label("total"))
+            .where(SocialAccount.is_active.is_(True))
+            .group_by(SocialAccount.health)
+        )
+    ).all()
+    for row in rows:
+        key = row.health.value if hasattr(row.health, "value") else str(row.health)
+        counts[key] = int(row.total)
+
+    failed = (
+        await db.execute(
+            select(
+                SocialAccount.id,
+                SocialAccount.account_name,
+                SocialAccount.health_detail,
+                SocialAccount.health_changed_at,
+                SocialPlatform.slug.label("platform"),
+                Account.id.label("workspace_id"),
+                Account.name.label("workspace"),
+                Organization.id.label("organization_id"),
+                Organization.name.label("organization"),
+                Organization.subscription_tier,
+            )
+            .select_from(SocialAccount)
+            .join(SocialPlatform, SocialPlatform.id == SocialAccount.platform_id)
+            .join(Account, Account.id == SocialAccount.account_id)
+            .outerjoin(Organization, Organization.id == Account.organization_id)
+            .where(
+                SocialAccount.is_active.is_(True),
+                SocialAccount.health == AccountHealth.FAILED,
+            )
+            # Oldest failure first: a connection that has been broken for a
+            # week is more urgent than one that broke this morning.
+            .order_by(SocialAccount.health_changed_at.asc().nulls_last())
+            .limit(limit)
+        )
+    ).all()
+
+    return {
+        "counts": counts,
+        "total": sum(counts.values()),
+        "failed": [
+            {
+                "id": str(row.id),
+                "account_name": row.account_name,
+                "platform": row.platform,
+                "detail": row.health_detail,
+                "checked_at": (
+                    row.health_changed_at.isoformat() if row.health_changed_at else None
+                ),
+                "workspace_id": str(row.workspace_id),
+                "workspace": row.workspace,
+                "organization_id": (
+                    str(row.organization_id) if row.organization_id else None
+                ),
+                "organization": row.organization,
+                "plan": (
+                    row.subscription_tier.value
+                    if row.subscription_tier is not None
+                    and hasattr(row.subscription_tier, "value")
+                    else row.subscription_tier
+                ),
+            }
+            for row in failed
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# API errors (scope 19.3)
+# ---------------------------------------------------------------------------
+
+@router.get("/errors")
+async def list_api_errors(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    exception_class: str | None = Query(None),
+    path: str | None = Query(None),
+    since: datetime | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_superadmin),
+):
+    """Recorded 5xx responses, newest first.
+
+    ``path`` matches a prefix rather than exactly, so filtering on
+    ``/api/v1/accounts`` finds every workspace's failures instead of needing
+    the id.
+    """
+    filters = []
+    if exception_class:
+        filters.append(ApiError.exception_class == exception_class)
+    if path:
+        filters.append(ApiError.path.startswith(path))
+    if since:
+        filters.append(ApiError.created_at >= since)
+
+    total = (
+        await db.execute(select(func.count()).select_from(ApiError).where(*filters))
+    ).scalar_one()
+
+    rows = (
+        await db.execute(
+            select(ApiError)
+            .where(*filters)
+            .order_by(ApiError.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).scalars().all()
+
+    return {
+        "items": [
+            {
+                "id": str(row.id),
+                "path": row.path,
+                "method": row.method,
+                "status_code": row.status_code,
+                "exception_class": row.exception_class,
+                "message": row.message,
+                "user_id": str(row.user_id) if row.user_id else None,
+                "organization_id": (
+                    str(row.organization_id) if row.organization_id else None
+                ),
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "retention_days": error_log.RETENTION_DAYS,
+    }
+
+
+@router.get("/errors/summary")
+async def api_error_summary(
+    days: int = Query(7, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_superadmin),
+):
+    """What is failing most, and how often, over the window."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    by_class = (
+        await db.execute(
+            select(
+                ApiError.exception_class,
+                func.count().label("total"),
+                func.max(ApiError.created_at).label("last_seen"),
+            )
+            .where(ApiError.created_at >= since)
+            .group_by(ApiError.exception_class)
+            .order_by(func.count().desc())
+            .limit(20)
+        )
+    ).all()
+
+    by_path = (
+        await db.execute(
+            select(ApiError.path, func.count().label("total"))
+            .where(ApiError.created_at >= since)
+            .group_by(ApiError.path)
+            .order_by(func.count().desc())
+            .limit(20)
+        )
+    ).all()
+
+    return {
+        "days": days,
+        "total": await error_log.count_since(db, since),
+        "by_exception": [
+            {
+                "exception_class": row.exception_class,
+                "count": int(row.total),
+                "last_seen": row.last_seen.isoformat() if row.last_seen else None,
+            }
+            for row in by_class
+        ],
+        "by_path": [
+            {"path": row.path, "count": int(row.total)} for row in by_path
+        ],
+    }
+
+
+@router.get("/errors/{error_id}")
+async def get_api_error(
+    error_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_superadmin),
+):
+    """One error, with its traceback.
+
+    Separate from the list because a traceback is several kilobytes and putting
+    fifty of them in a page payload would make the list unusable.
+    """
+    row = (
+        await db.execute(select(ApiError).where(ApiError.id == error_id))
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Error not found"
+        )
+    return {
+        "id": str(row.id),
+        "path": row.path,
+        "method": row.method,
+        "status_code": row.status_code,
+        "exception_class": row.exception_class,
+        "message": row.message,
+        "traceback": row.traceback,
+        "user_id": str(row.user_id) if row.user_id else None,
+        "organization_id": str(row.organization_id) if row.organization_id else None,
+        "created_at": row.created_at.isoformat(),
+    }

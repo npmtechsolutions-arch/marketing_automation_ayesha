@@ -21,7 +21,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.post import Post, PostStatus
-from app.services import account_health, analytics_sync, publishing
+from app.services import account_health, analytics_sync, error_log, publishing
 
 logger = logging.getLogger(__name__)
 
@@ -164,9 +164,36 @@ async def maybe_sync_analytics() -> None:
             await analytics_sync.sync_day(session)
             await analytics_sync.refresh_post_metrics(session)
             await analytics_sync.prune(session)
+            await session.commit()
         except Exception:
             await session.rollback()
             logger.exception("Analytics sync failed")
+
+
+_last_error_prune: float = 0.0
+ERROR_PRUNE_INTERVAL_SECONDS = 24 * 60 * 60
+
+
+async def maybe_prune_api_errors() -> None:
+    """Drop recorded 5xx rows past their retention window, once a day.
+
+    In its own pass rather than folded into the analytics one: an analytics
+    failure must not stop the error table from being trimmed, and vice versa.
+    """
+    global _last_error_prune
+
+    now = asyncio.get_running_loop().time()
+    if _last_error_prune and now - _last_error_prune < ERROR_PRUNE_INTERVAL_SECONDS:
+        return
+    _last_error_prune = now
+
+    async with AsyncSessionLocal() as session:
+        try:
+            await error_log.prune(session)
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            logger.exception("Pruning api_errors failed")
 
 
 async def scheduled_post_worker():
@@ -181,6 +208,7 @@ async def scheduled_post_worker():
             await recover_stale_jobs()
             await maybe_sweep_account_health()
             await maybe_sync_analytics()
+            await maybe_prune_api_errors()
         except Exception:
             # One bad pass must not end the loop, or scheduled posts stop
             # going out until someone restarts the process.

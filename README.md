@@ -621,6 +621,90 @@ Customers see the same numbers on the billing page, from `GET /api/v1/organizati
 
 **Limits are never stored on the organization row.** `organizations` carried `monthly_post_limit`, `max_team_members`, `max_platforms` and `max_workspaces`, denormalised from `TIER_LIMITS`. Migration `f2a90c4d7b18` drops them. They had stopped driving enforcement but were still being served — so a superadmin raising a cap would change `plan_features` while those columns kept the old number, and the UI would show a limit that disagreed with what enforcement did. Every endpoint that reports a limit (`/organizations/{id}/usage`, `/accounts/{id}/settings/`, `/accounts/{id}/settings/usage`, `/accounts/{id}/billing/`) now resolves it through `EntitlementService`, so there is one answer rather than four.
 
+## Admin panel
+
+Every route under `/api/v1/admin` requires `is_superadmin` **and** an active account, through
+one shared `require_superadmin` dependency. These expose the whole customer book, so the gate is
+tested per route rather than per module.
+
+### Revenue
+
+`GET /admin/revenue` and `/admin/revenue/trend`. MRR is the sum of `plans.price_monthly` over
+organizations whose subscription is ACTIVE and not soft-deleted; ARR is that times twelve.
+
+Three things are deliberately excluded from MRR, because each is a way for a dashboard to flatter
+itself:
+
+* **TRIALING** has not paid — that is what the conversion figure measures.
+* **PAST_DUE** has an uncollected invoice. It is reported beside MRR as `at_risk_mrr`, never inside it.
+* **Soft-deleted organizations**, which are not customers.
+
+Enterprise is priced by negotiation and its plan row carries no amount, so MRR *understates* the
+real figure. Rather than quietly omit the largest customers, the payload returns
+`unpriced_active_organizations` and the UI says so above the number.
+
+Prices are read from the `plans` table, so editing a plan in the admin UI moves the revenue report
+with no deploy. `/admin/stats` previously carried its own hard-coded price dict — 29/79/199/499
+against real prices of 49/149/399/0, applied to every organization regardless of whether it was
+paying — so two admin screens quoted different revenue. It now reads the same function.
+
+### Why there is a subscription event log
+
+`organizations` stores only the *current* tier and status. That answers "what is being billed now"
+and nothing with a date in it: churn last 30 days, trial conversions, and an MRR trend all need to
+know *when* something changed. `updated_at` cannot stand in — it moves on every write, so an
+organization that cancelled a year ago and was renamed yesterday would count as this month's churn.
+
+`subscription_events` records one row per transition, written at all six places tier or status
+changes: the checkout confirmation, four Stripe webhook branches, and signup. A no-op change writes
+nothing, so a redelivered webhook does not read as churn followed by a re-signup.
+
+`mrr_amount` is copied onto the event rather than derived later. A price change should alter what
+customers pay next month, not silently rewrite what the business earned last quarter — which is
+exactly what joining history to today's `plans` row would do.
+
+The log starts when this shipped, so `tracking_since` accompanies every movement figure and the
+chart says "no history yet" instead of drawing a line at zero that implies the business had none.
+
+### Connected-account health
+
+`GET /admin/connection-health` — counts per `AccountHealth` state (every state present even at
+zero, since a missing key reads as "unknown" and an explicit zero reads as "none"), plus every
+FAILED connection with its workspace, organization and plan. Ordered longest-broken first: a
+connection down for a week matters more than one that broke this morning. The 1.9 strip tells one
+customer they are broken; this tells support which customers are.
+
+### API error monitoring
+
+The 500 handler writes an `api_errors` row and returns its id in the response body, so "it broke"
+becomes a row lookup. Only *unhandled* exceptions land there — a 403 or a validation error is the
+application working, and storing those would bury the real failures.
+
+Two details carry the weight:
+
+* **The write opens its own database session.** By the time the handler runs, the request's session
+  has usually seen a failed statement, and on Postgres every subsequent statement in that
+  transaction raises `InFailedSQLTransaction`. Reusing it would fail silently — and the request
+  that most needs recording is precisely the one whose session is broken.
+* **Recording never raises.** Every failure inside it is caught; the response goes out regardless.
+
+Tracebacks are truncated from the *front*, keeping the tail: the last frames are the ones that
+raised, while the first are ASGI plumbing identical on every row. Rows are pruned after 90 days by
+a daily pass in the worker, separate from the analytics pass so one failing does not block the
+other. `GET /admin/errors` filters by exception class and path prefix; the list omits tracebacks
+and `/admin/errors/{id}` carries them, because fifty multi-kilobyte traces would make the list
+unusable.
+
+### No invented numbers
+
+`AdminDashboard` previously rendered entirely hard-coded data: user counts with month-over-month
+percentages, twelve months of revenue split across plan names the product does not have, and a
+"recent signups" table of invented people with invented email addresses. The last is the worst,
+being indistinguishable from real customer data. It is all gone. Where a figure genuinely is not
+known yet — month-over-month deltas, which need history the event log has only started collecting
+— the page shows no delta rather than a plausible one.
+
+
 ## Running the tests
 
 ```bash
