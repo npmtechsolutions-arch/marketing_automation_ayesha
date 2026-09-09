@@ -249,3 +249,23 @@ export function defaultScheduleFields(
   const anHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
   return wallClockIn(anHourFromNow.toISOString(), timeZone);
 }
+
+/** An instant, as a Date whose *local* fields read the workspace's wall clock.
+ *
+ *  The calendar builds every post's position from `new Date(iso)` and then
+ *  `getHours()`, which are the viewer's clock. A post published at 21:29 UTC in
+ *  a UTC workspace showed as "Sep 9 at 2:59 AM" to a viewer in India -- and,
+ *  worse than the label, it landed on the wrong day in the grid, because the
+ *  day cells are compared with the same local fields.
+ *
+ *  This returns a deliberately *floating* Date: the wall clock the workspace
+ *  would show, expressed in the fields the calendar already reads. It is not
+ *  the same instant, and must never be sent back to the server or converted
+ *  with `toISOString()` -- `localDateTime()` is the write path.
+ */
+export function wallClockDate(iso: string, timeZone: string): Date {
+  const { date, time } = wallClockIn(iso, timeZone);
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  return new Date(year, month - 1, day, hour, minute, 0, 0);
+}

@@ -183,6 +183,7 @@ export default function CreatePostPage() {
   // written against. UTC until settings load: a wrong-but-stated default beats
   // silently using the viewer's machine.
   const [workspaceTimezone, setWorkspaceTimezone] = useState("UTC");
+  const [approvalsRequired, setApprovalsRequired] = useState(false);
   // The instant as the server holds it, kept separately from the date/time
   // inputs. The two effects below race -- the post can arrive before the
   // workspace timezone does -- so the conversion waits until both are known
@@ -194,11 +195,17 @@ export default function CreatePostPage() {
       const activeAccountId = await getAccountId();
       if (!activeAccountId) return;
       try {
-        const res = await api.get<{ settings?: { timezone?: string } }>(
+        const res = await api.get<{ settings?: { timezone?: string; approvals_required?: boolean } }>(
           `/accounts/${activeAccountId}/settings/`
         );
         const zone = res.data?.settings?.timezone;
         if (zone) setWorkspaceTimezone(zone);
+        // Whether publishing is gated. Without this the composer offered only
+        // actions the server would refuse, and the 409 it returned told the
+        // user to "submit for review first" with nothing on screen to do it.
+        const gated = Boolean(res.data?.settings?.approvals_required);
+        setApprovalsRequired(gated);
+        setPostMode((mode) => (gated && mode === "now" ? "review" : mode));
       } catch {
         // Leave it at UTC; scheduling still works, the label is just generic.
       }
@@ -224,7 +231,7 @@ export default function CreatePostPage() {
   }, [workspaceTimezone, scheduledAtIso]);
 
   useEffect(() => {
-    const editState = location.state as { post?: any; mode?: "edit" | "duplicate" } | null;
+    const editState = location.state as { post?: any; mode?: "edit" | "duplicate"; startAt?: WizardStep } | null;
     if (editState?.post) {
       const p = editState.post;
       if (editState.mode === "edit") {
@@ -281,6 +288,9 @@ export default function CreatePostPage() {
       } else {
         setPostMode("now");
       }
+      // Land on the step the caller asked for. "Reschedule" wants the date
+      // field, not account selection.
+      if (editState.startAt) setCurrentStep(editState.startAt);
     }
   }, [location.state]);
   // Wizard state
@@ -340,7 +350,10 @@ export default function CreatePostPage() {
             "instagram"
           ).toLowerCase() as Platform,
           name: sa.account_name || sa.name || sa.username || sa.platform_type,
-          handle: sa.username ? `@${sa.username}` : sa.handle || "",
+          // account_handle is what the API actually sends; neither `username`
+          // nor `handle` exists on the response, so this was empty for every
+          // account. Invisible until the preview started showing it.
+          handle: sa.account_handle || (sa.username ? `@${sa.username}` : sa.handle || ""),
           verified: sa.is_verified || false,
           followers: sa.followers_count ?? sa.metadata?.followers ?? 0,
           avatar: sa.profile_image_url || sa.profile_picture_url || undefined,
@@ -381,7 +394,7 @@ export default function CreatePostPage() {
   const [previewDevice, setPreviewDevice] = useState<DeviceType>("mobile");
 
   // Step 4 - Schedule
-  const [postMode, setPostMode] = useState<"now" | "schedule" | "queue">("now");
+  const [postMode, setPostMode] = useState<"now" | "schedule" | "queue" | "draft" | "review">("now");
   // Repeating is not a fourth publish mode: it needs a saved post to copy
   // from, so it appears as its own section once the post exists.
   const [showRepeat, setShowRepeat] = useState(false);
@@ -788,6 +801,11 @@ export default function CreatePostPage() {
     ])
   );
 
+  // The first selected account, which is the one the preview stands in for.
+  // A multi-target post can only show one, and the first chosen is the one the
+  // user is most likely picturing.
+  const previewAccount = accounts.find((a) => selectedAccounts.includes(a.id));
+
   const handleConfirmPost = useCallback(async () => {
     const accountId = getAccountIdSync();
     if (!accountId) {
@@ -832,8 +850,16 @@ export default function CreatePostPage() {
         post = res.data || res;
       }
 
-      // 2. Publish or Schedule
-      if (postMode === "now") {
+      // 2. Publish, schedule, or stop short of both.
+      if (postMode === "draft") {
+        // The post is already created; there is nothing further to do. The
+        // composer had no way to leave a post unpublished, so every path
+        // committed to publishing and a gated workspace hit a 409.
+        showSuccess("Saved as a draft.");
+      } else if (postMode === "review") {
+        await api.post(`/accounts/${accountId}/posts/${post.id}/submit-for-review`);
+        showSuccess("Sent for review.");
+      } else if (postMode === "now") {
         await api.post(`/accounts/${accountId}/posts/${post.id}/publish`);
         showSuccess("Post published successfully!");
       } else if (postMode === "queue") {
@@ -2529,15 +2555,17 @@ export default function CreatePostPage() {
                     )}
                   >
                     <DevicePreview
+                      // The account chosen in step 1, so the preview shows what
+                      // it will look like there rather than under a placeholder.
+                      accountName={previewAccount?.name ?? null}
+                      accountHandle={previewAccount?.handle ?? null}
+                      accountAvatarUrl={previewAccount?.avatar ?? null}
                       content={content}
                       images={allImages}
                       videoUrl={videoPreviewUrl || null}
                       hashtags={hashtags}
                       device={previewDevice}
-                      platformName={
-                        accounts.find((a) => selectedAccounts.includes(a.id))
-                          ?.platform ?? "Social Feed"
-                      }
+                      platformName={previewAccount?.platform ?? "Social Feed"}
                       igPostType={igPostType}
                       igMusicTrack={igMusicTrack}
                     />
@@ -2753,7 +2781,57 @@ export default function CreatePostPage() {
                 </div>
               )}
 
+              {/* Getting a post *out of* the composer without publishing it.
+                  There was no way to do either, so every route out of step 4
+                  committed to publishing -- and in a workspace that requires
+                  approval, all three were refused with a 409 telling the user
+                  to submit for review, which nothing on screen could do. */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <button
+                  onClick={() => setPostMode("draft")}
+                  className={cn(
+                    "text-left rounded-2xl border p-4 transition-all",
+                    postMode === "draft"
+                      ? "border-purple-500/40 bg-purple-500/10"
+                      : "hover:border-white/20"
+                  )}
+                  style={postMode === "draft" ? undefined : { backgroundColor: "var(--sidebar-hover-bg)", borderColor: "var(--surface-border)" }}
+                >
+                  <p className="text-sm font-semibold" style={{ color: "var(--page-heading)" }}>
+                    Save as draft
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: "var(--page-text-muted)" }}>
+                    Keep working on it later. Nothing is published.
+                  </p>
+                </button>
+                <button
+                  onClick={() => setPostMode("review")}
+                  className={cn(
+                    "text-left rounded-2xl border p-4 transition-all",
+                    postMode === "review"
+                      ? "border-purple-500/40 bg-purple-500/10"
+                      : "hover:border-white/20"
+                  )}
+                  style={postMode === "review" ? undefined : { backgroundColor: "var(--sidebar-hover-bg)", borderColor: "var(--surface-border)" }}
+                >
+                  <p className="text-sm font-semibold" style={{ color: "var(--page-heading)" }}>
+                    Submit for review
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: "var(--page-text-muted)" }}>
+                    {approvalsRequired
+                      ? "Required in this workspace before a post can be published."
+                      : "Send it to an approver before it goes out."}
+                  </p>
+                </button>
+              </div>
+
               {/* Post options */}
+              {approvalsRequired && (
+                <p className="mb-3 text-xs" style={{ color: "var(--page-text-muted)" }}>
+                  This workspace requires approval before publishing, so the
+                  options below are available once the post has been approved.
+                </p>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Add to queue */}
                 <button
@@ -2959,15 +3037,21 @@ export default function CreatePostPage() {
                   icon={
                     postMode === "now" ? (
                       <Rocket className="w-4 h-4" />
+                    ) : postMode === "draft" || postMode === "review" ? (
+                      <Check className="w-4 h-4" />
                     ) : (
                       <CalendarDays className="w-4 h-4" />
                     )
                   }
                   iconPosition="right"
                 >
-                  {postMode === "now"
-                    ? "Confirm & Post"
-                    : "Confirm & Schedule"}
+                  {{
+                    now: "Confirm & Post",
+                    draft: "Save draft",
+                    review: "Submit for review",
+                    queue: "Confirm & Queue",
+                    schedule: "Confirm & Schedule",
+                  }[postMode]}
                 </Button>
               </div>
             </motion.div>

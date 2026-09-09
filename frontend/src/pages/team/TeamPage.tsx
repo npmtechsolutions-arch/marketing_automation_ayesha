@@ -776,6 +776,10 @@ export default function TeamPage() {
             <>
               <Input
                 label="Email Address"
+                // An email field, so mobile offers the right keyboard and the
+                // browser catches a typo before the server does.
+                type="email"
+                autoComplete="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 placeholder="colleague@company.com"

@@ -37,6 +37,7 @@ import BulkImportDialog from "@/components/content/BulkImportDialog";
 import BestTimesHeatmap from "@/components/scheduling/BestTimesHeatmap";
 import ReviewPanel from "@/components/content/ReviewPanel";
 import { statusMeta, type BadgeVariant, type ReviewStatus } from "@/lib/review";
+import { wallClockDate } from "@/lib/scheduling";
 import { STATUS_BUCKETS, bucketOf, isEditableDraft, mapStatus, type StatusBucket } from "@/lib/postStatus";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
 import api, { getAccountId, getAccountIdSync } from "@/lib/api";
@@ -320,17 +321,30 @@ const NO_METRICS_PLATFORMS = new Set<Platform>(["twitter", "linkedin"]);
 
 // Map platform name to Platform type
 function mapPlatform(name: string): Platform {
-  const n = (name || "").toLowerCase();
-  if (n.includes("instagram")) return "instagram";
-  if (n.includes("facebook")) return "facebook";
-  if (n.includes("linkedin")) return "linkedin";
-  if (n.includes("twitter") || n.includes("x")) return "twitter";
-  if (n.includes("youtube")) return "youtube";
-  return "instagram";
+  // Matched on substrings, and `n.includes("x")` caught any platform whose
+  // *name contains the letter x*. Harmless with today's five and a trap for
+  // the sixth. Exact slugs, with the spellings X actually goes by.
+  const n = (name || "").trim().toLowerCase().replace(/\s+/g, "");
+  const bySlug: Record<string, Platform> = {
+    instagram: "instagram",
+    facebook: "facebook",
+    linkedin: "linkedin",
+    youtube: "youtube",
+    twitter: "twitter",
+    x: "twitter",
+    "x(twitter)": "twitter",
+    "x-twitter": "twitter",
+    x_twitter: "twitter",
+  };
+  return bySlug[n] ?? "instagram";
 }
 
 export default function CalendarPage() {
   const user = useAuthStore((s) => s.user);
+  // Every position and time on this page is the workspace's wall clock, not
+  // the viewer's. A post published at 21:29 UTC in a UTC workspace used to
+  // show as "2:59 AM" to a viewer in India and land in the wrong day cell.
+  const [workspaceTimezone, setWorkspaceTimezone] = useState("UTC");
   const initialView: CalendarView = (
     (localStorage.getItem("calendar_default_view") as CalendarView) ||
     user?.preferences?.appearance?.calendarView ||
@@ -374,19 +388,29 @@ export default function CalendarPage() {
     }
   };
 
-  const handleEditPost = async () => {
+  /** Open the post in the composer.
+   *
+   *  `startAt` is which step to land on. "Reschedule" used to call this with no
+   *  step and drop the user at step 1 of 4 -- account selection -- with no date
+   *  control in sight until they clicked through three screens they had not
+   *  asked to revisit. It now opens on the step that actually holds the date.
+   */
+  const openInComposer = async (startAt?: 1 | 4) => {
     if (!selectedPost) return;
     const activeAccountId = await getAccountId();
     if (!activeAccountId) return;
     try {
       const res: any = await api.get(`/accounts/${activeAccountId}/posts/${selectedPost.id}`);
       const fullPost = res.data;
-      navigate("/create-post", { state: { post: fullPost, mode: "edit" } });
+      navigate("/create-post", { state: { post: fullPost, mode: "edit", startAt } });
     } catch (err) {
       console.error("Failed to load post details for edit:", err);
       showError("Failed to load post details for editing");
     }
   };
+
+  const handleEditPost = () => openInComposer(1);
+  const handleReschedulePost = () => openInComposer(4);
 
   const handleDuplicatePost = async () => {
     if (!selectedPost) return;
@@ -470,6 +494,17 @@ export default function CalendarPage() {
       return;
     }
     setIsLoading(true);
+    // Fetched here rather than in its own effect so posts are never mapped
+    // against a stale clock: the timezone is known before the first post is
+    // positioned, instead of the grid rendering in UTC and jumping.
+    let zone = workspaceTimezone;
+    try {
+      const settings: any = await api.get(`/accounts/${activeAccountId}/settings/`);
+      zone = (settings.data ?? settings)?.settings?.timezone || "UTC";
+      setWorkspaceTimezone(zone);
+    } catch {
+      // Leave it as it is; the calendar still renders, on UTC.
+    }
     try {
       const res: any = await api.get(`/accounts/${activeAccountId}/posts/?per_page=100`);
       const items = res.data?.items ?? res.data ?? [];
@@ -481,7 +516,12 @@ export default function CalendarPage() {
 
         // Determine date from scheduled_at, published_at, or created_at
         const rawDate = p.scheduled_at ?? p.published_at ?? p.created_at;
-        const date = rawDate ? new Date(rawDate) : new Date();
+        // A floating Date carrying the workspace's wall clock, so getHours()
+        // and the day-cell comparisons below read that clock rather than the
+        // browser's. Never sent back to the server.
+        const date = rawDate
+          ? wallClockDate(rawDate, zone)
+          : new Date();
 
         return {
           id: p.id,
@@ -1230,6 +1270,11 @@ export default function CalendarPage() {
                 {formatDate(selectedPost.date)}
                 {selectedPost.hour !== undefined &&
                   ` at ${formatTime(selectedPost.hour, selectedPost.minute ?? 0)}`}
+                {/* Which clock, so a reader in another country knows whose
+                    9 AM this is. */}
+                <span style={{ color: "var(--page-text-muted)" }}>
+                  {` (${workspaceTimezone})`}
+                </span>
               </span>
             </div>
 
@@ -1396,7 +1441,7 @@ export default function CalendarPage() {
                 variant="secondary"
                 icon={<RefreshCw className="w-4 h-4" />}
                 size="sm"
-                onClick={handleEditPost}
+                onClick={handleReschedulePost}
               >
                 Reschedule
               </Button>

@@ -7,7 +7,29 @@ import { cn } from "@/lib/utils";
 // ────────────────────────────────────────────────────────
 type DeviceType = "mobile" | "tablet" | "web";
 
+/** "Dana FB" -> "DF". Two letters, like every avatar in the app. */
+function initialsOf(name?: string | null): string {
+  const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "YB";
+  return (words[0][0] + (words[1]?.[0] ?? "")).toUpperCase();
+}
+
+/** Handles are stored with or without the @, depending on who typed them. */
+function handleOf(handle?: string | null): string {
+  const h = (handle ?? "").trim();
+  if (!h) return "@your-account";
+  return h.startsWith("@") ? h : `@${h}`;
+}
+
 interface DevicePreviewProps {
+  /** The account this will actually be posted from.
+   *
+   *  The preview rendered every post under "Your Brand · @yourbrand" -- a
+   *  placeholder -- while step 1 had the user pick a specific account. Showing
+   *  what it will look like on that account is the whole job of a preview. */
+  accountName?: string | null;
+  accountHandle?: string | null;
+  accountAvatarUrl?: string | null;
   content: string;
   images: string[];
   videoUrl?: string | null;
@@ -22,6 +44,9 @@ interface DevicePreviewProps {
 // Post Content (shared across device frames)
 // ────────────────────────────────────────────────────────
 function PostContent({
+  accountName,
+  accountHandle,
+  accountAvatarUrl,
   content,
   images,
   hashtags,
@@ -29,6 +54,9 @@ function PostContent({
   compact = false,
   igMusicTrack = null,
 }: {
+  accountName?: string | null;
+  accountHandle?: string | null;
+  accountAvatarUrl?: string | null;
   content: string;
   images: string[];
   hashtags: string[];
@@ -67,15 +95,32 @@ function PostContent({
             )}
             style={{ color: "#ffffff" }}
           >
-            YB
+            {accountAvatarUrl ? (
+              <img src={accountAvatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+            ) : (
+              initialsOf(accountName)
+            )}
           </div>
           <div className="flex-1 min-w-0 text-left">
-            <p className={cn("font-semibold truncate", compact ? "text-xs" : "text-sm")} style={{ color: "#ffffff" }}>
-              Your Brand
+            {/* Both sides of this conflict were right about different things.
+                The preview shows the *real* account being previewed rather
+                than a hardcoded "Your Brand" -- a mock-up that invents an
+                account name is the same class of defect as an invented
+                metric. The explicit colours come from the device-preview fix:
+                this is a dark phone mockup, so its text stays white whatever
+                the app's theme is doing. */}
+            <p
+              className={cn("font-semibold truncate", compact ? "text-xs" : "text-sm")}
+              style={{ color: "#ffffff" }}
+            >
+              {accountName || "Your account"}
             </p>
             <div className="flex flex-col">
-              <p className={cn("truncate", compact ? "text-[9px]" : "text-[10px]")} style={{ color: "#94a3b8" }}>
-                @yourbrand &middot; Just now
+              <p
+                className={cn("truncate", compact ? "text-[9px]" : "text-[10px]")}
+                style={{ color: "#94a3b8" }}
+              >
+                {handleOf(accountHandle)} &middot; Just now
               </p>
               {platformName.toLowerCase().includes("instagram") && igMusicTrack && (
                 <p className={cn("font-medium truncate flex items-center gap-1 mt-0.5", compact ? "text-[8px]" : "text-[9.5px]")} style={{ color: "#c084fc" }}>
@@ -546,6 +591,9 @@ function ReelPreviewContent({
 // Main DevicePreview Component
 // ────────────────────────────────────────────────────────
 export default function DevicePreview({
+  accountName = null,
+  accountHandle = null,
+  accountAvatarUrl = null,
   content,
   images,
   videoUrl = null,
@@ -568,6 +616,9 @@ export default function DevicePreview({
     />
   ) : (
     <PostContent
+      accountName={accountName}
+      accountHandle={accountHandle}
+      accountAvatarUrl={accountAvatarUrl}
       content={content}
       images={images}
       hashtags={hashtags}

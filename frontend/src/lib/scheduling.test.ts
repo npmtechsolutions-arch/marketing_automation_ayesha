@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultScheduleFields, wallClockIn } from "./scheduling";
+import { defaultScheduleFields, wallClockDate, wallClockIn } from "./scheduling";
 
 /** The composer's schedule fields say, directly beneath them:
  *
@@ -64,5 +64,43 @@ describe("defaultScheduleFields", () => {
     const result = defaultScheduleFields("Not/AZone", now);
     expect(result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(result.time).toMatch(/^\d{2}:\d{2}$/);
+  });
+});
+
+describe("wallClockDate", () => {
+  // 21:29 UTC on 9 September 2026 -- the exact instant from the walkthrough.
+  const published = "2026-09-09T21:29:00Z";
+
+  it("reads the workspace's wall clock in the fields the calendar uses", () => {
+    const d = wallClockDate(published, "UTC");
+
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(8); // September
+    expect(d.getDate()).toBe(9);
+    expect(d.getHours()).toBe(21);
+    expect(d.getMinutes()).toBe(29);
+  });
+
+  it("puts a post on the workspace's day, not the viewer's", () => {
+    // The defect: on an IST machine this instant read as 02:59 on the 10th, so
+    // the post sat in the wrong day cell as well as showing the wrong time.
+    const utc = wallClockDate(published, "UTC");
+    const sydney = wallClockDate(published, "Australia/Sydney");
+
+    expect(utc.getDate()).toBe(9);
+    // 21:29 UTC is already 07:29 the next morning in Sydney -- genuinely a
+    // different day *for that workspace*, which is the point.
+    expect(sydney.getDate()).toBe(10);
+    expect(sydney.getHours()).toBe(7);
+  });
+
+  it("is the same reading the composer would show for that instant", () => {
+    for (const zone of ["UTC", "Australia/Sydney", "America/Los_Angeles"]) {
+      const d = wallClockDate(published, zone);
+      const { date, time } = wallClockIn(published, zone);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      expect(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`).toBe(date);
+      expect(`${pad(d.getHours())}:${pad(d.getMinutes())}`).toBe(time);
+    }
   });
 });

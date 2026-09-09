@@ -175,6 +175,18 @@ function itemsOf(response: any): any[] {
   return response?.items ?? response?.data?.items ?? [];
 }
 
+/** The tenant load currently in flight, if any.
+ *
+ *  `getAccountId()` calls `loadTenants()` whenever the store has no active
+ *  workspace yet, and on a first page load a dozen components call it within
+ *  the same tick -- so the dashboard issued `GET /organizations/` **nine
+ *  times**, and `/accounts` with it. They all wanted the same answer.
+ *
+ *  Concurrent callers now share one request. Cleared when it settles, so a
+ *  later call (after a workspace switch, say) still refetches.
+ */
+let tenantsInFlight: Promise<void> | null = null;
+
 export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   user: null,
   // Nothing is restored synchronously; bootstrap() re-establishes the session
@@ -353,6 +365,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   // resolveAccountId() unconditionally wrote items[0].id on every load, which
   // would have silently undone a user's switch on every page refresh.
   loadTenants: async () => {
+    if (tenantsInFlight) return tenantsInFlight;
+    tenantsInFlight = (async () => {
     try {
       const [orgsResponse, workspacesResponse] = await Promise.all([
         api.get("/organizations/"),
@@ -380,6 +394,14 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       });
     } catch (err) {
       console.warn("Could not load organizations/workspaces:", err);
+    }
+    })();
+    try {
+      await tenantsInFlight;
+    } finally {
+      // Cleared whether it worked or not, so a retry is possible and a later
+      // load (after a workspace switch) is not served a stale promise.
+      tenantsInFlight = null;
     }
   },
 

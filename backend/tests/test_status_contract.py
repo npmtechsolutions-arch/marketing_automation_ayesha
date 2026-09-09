@@ -14,6 +14,8 @@ import pathlib
 import re
 import uuid
 
+from sqlalchemy import select
+
 from app.models.post import PostStatus
 
 FRONTEND = pathlib.Path("../frontend/src")
@@ -161,3 +163,122 @@ def test_the_team_page_does_not_hardcode_a_plan():
     assert "planLimit = " not in source, "seat limit is hardcoded again"
     for literal in ("Growth Plan", "Free Plan", "Pro Plan", "Starter Plan"):
         assert literal not in source, f"plan name {literal!r} is hardcoded again"
+
+
+# ---------------------------------------------------------------------------
+# The approval workflow has to be reachable (#18/#19)
+# ---------------------------------------------------------------------------
+
+async def test_approvals_can_be_switched_on_and_read_back(
+    client, auth_header, user_factory, account_factory, organization_factory,
+):
+    """The whole approval workflow was unreachable.
+
+    `approvals_required` was read by approvals.settings_for and enforced by
+    assert_publishable, but the string appeared nowhere in the frontend -- no
+    toggle, no settings row. The only way to turn it on was a hand-written PUT
+    with the right nested blob. There is a Workspace settings tab now; this
+    pins the contract it depends on.
+    """
+    owner = await user_factory()
+    organization = await organization_factory(owner)
+    account = await account_factory(owner, organization=organization)
+    url = f"/api/v1/accounts/{account.id}/settings/"
+
+    written = await client.put(
+        url, headers=auth_header(owner),
+        json={"settings": {"approvals_required": True}},
+    )
+    assert written.status_code == 200, written.text
+    assert written.json()["settings"]["approvals_required"] is True
+
+    read_back = await client.get(url, headers=auth_header(owner))
+    assert read_back.json()["settings"]["approvals_required"] is True
+
+
+async def test_setting_one_workspace_flag_does_not_drop_the_others(
+    client, auth_header, user_factory, account_factory, organization_factory,
+):
+    """The tab saves one key at a time, so the merge has to hold.
+
+    A replace rather than a merge would mean flipping the approvals toggle
+    silently discarded the workspace's timezone -- and every scheduled time in
+    it would move.
+    """
+    owner = await user_factory()
+    organization = await organization_factory(owner)
+    account = await account_factory(owner, organization=organization)
+    url = f"/api/v1/accounts/{account.id}/settings/"
+
+    await client.put(url, headers=auth_header(owner),
+                     json={"settings": {"timezone": "Australia/Sydney"}})
+    await client.put(url, headers=auth_header(owner),
+                     json={"settings": {"approvals_required": True}})
+
+    settings = (await client.get(url, headers=auth_header(owner))).json()["settings"]
+    assert settings["timezone"] == "Australia/Sydney"
+    assert settings["approvals_required"] is True
+
+
+async def test_the_composer_can_comply_with_the_gate_it_hits(
+    client, auth_header, db_session, user_factory, account_factory,
+    organization_factory, social_platform_factory, social_account_factory,
+):
+    """With approvals on, publishing 409s and tells the user to submit for
+    review. That instruction has to be followable.
+
+    The composer offered Queue / Post Now / Schedule and nothing else, so every
+    route out of it was refused and the only way forward was to know that the
+    action lived on a different page. It now offers "Submit for review", which
+    is this endpoint.
+    """
+    from app.models.post import Post, PostStatus
+
+    owner = await user_factory()
+    organization = await organization_factory(owner)
+    account = await account_factory(owner, organization=organization)
+    await client.put(
+        f"/api/v1/accounts/{account.id}/settings/", headers=auth_header(owner),
+        json={"settings": {"approvals_required": True}},
+    )
+    platform = await social_platform_factory(owner, account, slug="facebook")
+    social = await social_account_factory(owner, account, slug="facebook")
+
+    created = await client.post(
+        f"/api/v1/accounts/{account.id}/posts/", headers=auth_header(owner),
+        json={"content": "needs review", "target_account_ids": [str(social.id)]},
+    )
+    assert created.status_code == 201, created.text
+    post_id = created.json()["id"]
+
+    # The gate the composer runs into.
+    refused = await client.post(
+        f"/api/v1/accounts/{account.id}/posts/{post_id}/publish",
+        headers=auth_header(owner),
+    )
+    assert refused.status_code == 409
+    assert "review" in refused.json()["detail"].lower()
+
+    # ...and the action it now offers instead.
+    submitted = await client.post(
+        f"/api/v1/accounts/{account.id}/posts/{post_id}/submit-for-review",
+        headers=auth_header(owner),
+    )
+    assert submitted.status_code == 200, submitted.text
+
+    post = (
+        await db_session.execute(select(Post).where(Post.id == uuid.UUID(post_id)))
+    ).scalar_one()
+    await db_session.refresh(post)
+    assert post.status is not PostStatus.DRAFT
+
+
+def test_the_workspace_settings_tab_writes_every_setting_that_is_read():
+    """Anything approvals.settings_for reads must be settable somewhere.
+
+    That was the defect: three keys drove real behaviour and no screen wrote
+    any of them.
+    """
+    tab = (FRONTEND / "pages" / "settings" / "SettingsPage.tsx").read_text()
+    for key in ("timezone", "approvals_required", "client_approval_required"):
+        assert key in tab, f"{key} is read by the server and set by no screen"

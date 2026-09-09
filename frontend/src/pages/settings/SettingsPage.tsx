@@ -45,6 +45,7 @@ const settingsNav = [
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "business", label: "Business Profile", icon: Building2 },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "workspace", label: "Workspace", icon: Building2 },
 ] as const;
 
 type SettingsTab = (typeof settingsNav)[number]["id"];
@@ -1075,12 +1076,156 @@ function AppearanceTab() {
 
 // ── Main ─────────────────────────────────────────────────────────────
 
+
+/** Every IANA zone the browser knows, or a short list if it will not say.
+ *
+ *  The server accepts any name ZoneInfo recognises and falls back to UTC for
+ *  one it does not, so offering the browser's own list keeps the two in step
+ *  without shipping a table that goes stale.
+ */
+function timezoneOptions(): { value: string; label: string }[] {
+  const supported = (Intl as unknown as {
+    supportedValuesOf?: (key: string) => string[];
+  }).supportedValuesOf;
+  const zones = supported
+    ? supported("timeZone")
+    : ["UTC", "America/Los_Angeles", "America/New_York", "Europe/London",
+       "Europe/Berlin", "Asia/Kolkata", "Asia/Singapore", "Australia/Sydney"];
+  const withUtc = zones.includes("UTC") ? zones : ["UTC", ...zones];
+  return withUtc.map((tz) => ({ value: tz, label: tz.replace(/_/g, " ") }));
+}
+
+// ── Workspace ───────────────────────────────────────────────────────
+//
+// Three settings drove real behaviour and could be set by nobody. The composer
+// read `timezone` for every scheduled time, `assert_publishable` enforced
+// `approvals_required` on every publish, and ReviewPanel rendered whatever
+// `client_approval_required` said -- but no screen in the app wrote any of
+// them. The whole approval workflow was unreachable: the only way to turn it
+// on was a hand-written PUT with the right nested blob.
+function WorkspaceTab() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [readOnly, setReadOnly] = useState(false);
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [timezone, setTimezone] = useState("UTC");
+  const [approvalsRequired, setApprovalsRequired] = useState(false);
+  const [clientApprovalRequired, setClientApprovalRequired] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const id = await getAccountId();
+      setAccountId(id);
+      if (!id) { setLoading(false); return; }
+      try {
+        const res: any = await api.get(`/accounts/${id}/settings/`);
+        const blob = (res.data ?? res)?.settings ?? {};
+        setTimezone(blob.timezone ?? "UTC");
+        setApprovalsRequired(Boolean(blob.approvals_required));
+        setClientApprovalRequired(Boolean(blob.client_approval_required));
+      } catch {
+        showError("Could not load workspace settings.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // Saved one key at a time, and only what changed. The endpoint merges rather
+  // than replaces, so a concurrent change to another setting is not clobbered.
+  const save = async (patch: Record<string, unknown>) => {
+    if (!accountId) return;
+    setSaving(true);
+    try {
+      await api.put(`/accounts/${accountId}/settings/`, { settings: patch });
+      showSuccess("Workspace settings saved.");
+    } catch (err: any) {
+      if (err?.response?.status === 403) {
+        setReadOnly(true);
+        showError("Only owners and admins can change workspace settings.");
+      } else {
+        showError(apiError(err, "Could not save workspace settings."));
+      }
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggle = async (
+    key: "approvals_required" | "client_approval_required",
+    value: boolean,
+    apply: (v: boolean) => void,
+  ) => {
+    apply(value);
+    // Put it back if the server refuses, rather than leaving the switch
+    // showing a state the workspace is not in.
+    try { await save({ [key]: value }); } catch { apply(!value); }
+  };
+
+  if (loading) return <p className="text-sm text-gray-400">Loading workspace settings…</p>;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-white mb-1">Workspace</h2>
+        <p className="text-sm text-gray-400">
+          Settings that apply to everyone in this workspace, not just to you.
+        </p>
+      </div>
+
+      <GlassCard>
+        <h3 className="text-base font-semibold text-white mb-1">Timezone</h3>
+        <p className="text-sm text-gray-400 mb-4">
+          Every scheduled time, posting-queue slot and report period is read on
+          this clock — not on the clock of whoever happens to be looking.
+        </p>
+        <Select
+          value={timezone}
+          disabled={readOnly || saving}
+          onChange={(next) => {
+            const previous = timezone;
+            setTimezone(next);
+            save({ timezone: next }).catch(() => setTimezone(previous));
+          }}
+          options={timezoneOptions()}
+        />
+      </GlassCard>
+
+      <GlassCard>
+        <h3 className="text-base font-semibold text-white mb-5">Approvals</h3>
+        <div className="space-y-4">
+          <Toggle
+            checked={approvalsRequired}
+            disabled={readOnly || saving}
+            onCheckedChange={(v) =>
+              toggle("approvals_required", v, setApprovalsRequired)
+            }
+            label="Require approval before publishing"
+            description="Posts must be approved by someone with the approve permission before they can be published or scheduled."
+          />
+          <Toggle
+            checked={clientApprovalRequired}
+            disabled={readOnly || saving || !approvalsRequired}
+            onCheckedChange={(v) =>
+              toggle("client_approval_required", v, setClientApprovalRequired)
+            }
+            label="Require client sign-off as well"
+            description="After internal approval, a client reviewer must also approve. Needs the setting above."
+          />
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
 const tabComponents: Record<SettingsTab, JSX.Element> = {
   profile: <ProfileTab />,
   security: <SecurityTab />,
   notifications: <NotificationsTab />,
   business: <BusinessProfileTab />,
   appearance: <AppearanceTab />,
+  workspace: <WorkspaceTab />,
 };
 
 export default function SettingsPage() {

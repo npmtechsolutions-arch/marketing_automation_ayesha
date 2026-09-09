@@ -25,17 +25,18 @@ import { cn } from "@/lib/utils";
 
 const ACTION_META: Record<
   string,
-  { label: string; icon: typeof Send; variant: "primary" | "secondary" | "ghost"; needsComment?: boolean }
+  { label: string; done: string; icon: typeof Send; variant: "primary" | "secondary" | "ghost"; needsComment?: boolean }
 > = {
-  submit: { label: "Submit for review", icon: Send, variant: "primary" },
-  approve: { label: "Approve", icon: CheckCircle2, variant: "primary" },
+  submit: { label: "Submit for review", done: "Sent for review.", icon: Send, variant: "primary" },
+  approve: { label: "Approve", done: "Approved.", icon: CheckCircle2, variant: "primary" },
   request_changes: {
     label: "Request changes",
+    done: "Changes requested.",
     icon: XCircle,
     variant: "secondary",
     needsComment: true,
   },
-  withdraw: { label: "Withdraw", icon: Undo2, variant: "ghost" },
+  withdraw: { label: "Withdraw", done: "Withdrawn from review.", icon: Undo2, variant: "ghost" },
 };
 
 /**
@@ -83,7 +84,9 @@ export function ReviewPanel({
       setDraft("");
       await load();
       onChanged?.();
-      showSuccess(`${meta?.label ?? action} done.`);
+      // Each action says what happened, rather than having "done." bolted
+      // onto a button label -- which produced "Submit for review done."
+      showSuccess(meta?.done ?? "Done.");
     } catch (err: any) {
       showError(errorDetail(err, "That action was refused."));
     }
