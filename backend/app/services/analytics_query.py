@@ -373,7 +373,17 @@ async def audience(
     """
     social_ids = await _account_ids(db, account.id)
     if not social_ids:
-        return {"series": [], "growth": None, "growth_percent": None, "current": None}
+        # The same keys as the populated return below. These were "growth" and
+        # "growth_percent" while the real path returned "change" and
+        # "change_percent", so a workspace with no connected account crashed
+        # _executive_summary with KeyError: 'change' -- and every report for a
+        # brand-new workspace failed with "Could not gather the numbers".
+        return {
+            "series": [],
+            "current": None,
+            "change": None,
+            "change_percent": None,
+        }
 
     start, end = _window_dates(window)
     rows = (

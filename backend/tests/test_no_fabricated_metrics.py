@@ -140,3 +140,47 @@ def test_no_connector_generates_random_numbers():
         "connectors must not generate numbers a user could mistake for "
         "measurements:\n" + "\n".join(offenders)
     )
+
+
+# ---------------------------------------------------------------------------
+# Absence has to survive all the way to the page a client is sent
+# ---------------------------------------------------------------------------
+
+async def test_a_report_with_nothing_measured_renders_dashes_not_zeroes(
+    db_session, user_factory, account_factory, organization_factory,
+):
+    """The end of the null-vs-zero path, in the artefact that leaves the building.
+
+    A workspace whose platforms report nothing -- because they are X and
+    LinkedIn, or because a sync has not run yet -- must produce a report that
+    says so. Four headline cards reading "0" is a claim that nobody saw
+    anything, which is the confident zero this project keeps removing, and it
+    is the version a client actually reads.
+
+    Found worth pinning during a Walk B pre-flight, which turned up 112
+    fabricated `analytics_daily` rows still feeding this page: the report under
+    test rendered "62,233 followers" for a workspace with no real connection at
+    all. Migration c5f18ba2d703 removed them.
+    """
+    from datetime import date, timedelta
+
+    from app.services import report_render, reporting
+
+    owner = await user_factory()
+    organization = await organization_factory(owner)
+    account = await account_factory(owner, organization=organization)
+
+    today = date.today()
+    period = reporting.Period(today - timedelta(days=7), today, "Nothing measured")
+    payload = await reporting.aggregate(db_session, account, period)
+
+    for name in ("reach", "impressions", "followers", "engagement_rate"):
+        assert payload["metrics"][name]["value"] is None, f"{name} was invented"
+
+    html = report_render.render_html(payload, reporting.DEFAULT_BRANDING)
+    values = re.findall(r'<div class="value">([^<]*)</div>', html)
+
+    assert values, "the report rendered no headline cards at all"
+    assert all(v.strip() == "—" for v in values), (
+        f"a headline card claims a measurement that was never taken: {values}"
+    )
