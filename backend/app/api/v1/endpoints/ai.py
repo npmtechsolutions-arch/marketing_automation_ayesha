@@ -583,29 +583,34 @@ async def generate_content(
         )
 
     except Exception as exc:
+        # A failure is recorded as a failure.
+        #
+        # This used to substitute mock text with the exception interpolated
+        # into it -- "⚠️ (Note: ... Error: {exc})" -- and mark the row
+        # COMPLETED. Two things were wrong with that. An internal error string
+        # landed in the user's post, ready to be published to their audience if
+        # they did not read it closely. And the usage log recorded every outage
+        # as a success, so it could not answer "how often does this break".
+        #
+        # 502 with a message the composer can show, matching the /ai/rewrite
+        # family. The author's prompt is untouched and they can try again.
         import logging
+
         logging.getLogger("app.api.v1.endpoints.ai").warning(
-            "AI generation failed, falling back to mock content. Error: %s", exc
+            "AI generation failed via %s: %s", provider, exc
         )
-        mock = _mock_content_response(body.prompt, body.platforms, body.tone or "professional")
-        mock["content"] = (
-            f"Here is fallback content for: {body.prompt}\n\n"
-            f"⚠️ (Note: AI generator service connection failed, returned a fallback response. Error: {exc})"
-        )
-        gen.response = json.dumps(mock)
-        gen.status = AIGenerationStatus.COMPLETED
-        gen.error_message = f"Fallback triggered. Original error: {exc}"[:500]
+        gen.status = AIGenerationStatus.FAILED
+        gen.error_message = f"{type(exc).__name__}: {exc}"[:500]
         gen.duration_ms = int((time.time() - start) * 1000)
         await db.flush()
-        await db.refresh(gen)
 
-        return AIContentResponse(
-            content=mock["content"],
-            hashtags=mock["hashtags"],
-            image_url=mock["image_url"],
-            platform_variations=mock["platform_variations"],
-            generation_id=gen.id,
-        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "The AI service did not respond. Nothing has been generated -- "
+                "try again in a moment."
+            ),
+        ) from exc
 
 
 @router.post("/regenerate-image", response_model=RegenerateImageResponse)

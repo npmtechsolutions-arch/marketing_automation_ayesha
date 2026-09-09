@@ -180,9 +180,24 @@ class EmailService:
         account_name: str,
         token: str,
         role: str = "member",
+        account_id: str | None = None,
     ) -> bool:
-        """Invite someone to join an account."""
-        invite_url = f"{settings.FRONTEND_URL}/accept-invite?token={token}"
+        """Invite someone to join an account.
+
+        ``account_id`` is part of the link, not decoration. The accept page
+        looks the invitation up at
+        ``/accounts/{account_id}/team/invite-info?token=...`` -- the id is in
+        the path -- so a link carrying only the token gives it nothing to ask
+        with, and the recipient sees "Missing account or invitation token in
+        link". The link was built without it, so no invitation could ever be
+        accepted.
+        """
+        invite_url = (
+            f"{settings.FRONTEND_URL}/accept-invite"
+            f"?account={account_id}&token={token}"
+            if account_id
+            else f"{settings.FRONTEND_URL}/accept-invite?token={token}"
+        )
         subject = f"{inviter_name} invited you to {account_name} on MarketEngine"
         context = {
             "subject": subject,

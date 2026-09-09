@@ -977,6 +977,15 @@ export default function CreatePostPage() {
       (a, b) => (PLATFORM_CHAR_LIMITS[a] ?? 1e9) - (PLATFORM_CHAR_LIMITS[b] ?? 1e9)
     )[0] ?? null;
 
+  // The counter shows the *tightest* targeted platform's real limit. It was
+  // hardcoded to 2,200 for everyone, so someone targeting X was told 2,200 was
+  // fine and found out at publish time -- the counter contradicting the
+  // validator that would reject the post.
+  const charLimit = assistPlatform
+    ? PLATFORM_CHAR_LIMITS[assistPlatform] ?? 2200
+    : 2200;
+  const overLimit = content.length > charLimit;
+
   const accountsByPlatform = accounts.reduce(
     (acc, account) => {
       if (!acc[account.platform]) acc[account.platform] = [];
@@ -1207,13 +1216,16 @@ export default function CreatePostPage() {
                           }
                         />
                       <span
-                        className={cn(
-                          "text-xs tabular-nums",
-                          content.length > 2200 && "text-red-400"
-                        )}
-                        style={content.length > 2200 ? undefined : { color: "var(--page-text-muted)" }}
+                        className={cn("text-xs tabular-nums", overLimit && "text-red-400")}
+                        style={overLimit ? undefined : { color: "var(--page-text-muted)" }}
+                        title={
+                          assistPlatform
+                            ? `The ${assistPlatform} limit, the tightest of the platforms you have selected`
+                            : "Select an account to see its real limit"
+                        }
                       >
-                        {content.length} / 2,200
+                        {content.length} / {charLimit.toLocaleString()}
+                        {assistPlatform ? ` · ${assistPlatform}` : ""}
                       </span>
                       </div>
                     </div>

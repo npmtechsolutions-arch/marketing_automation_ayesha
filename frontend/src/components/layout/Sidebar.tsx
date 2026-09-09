@@ -72,6 +72,9 @@ const sidebarVariants = {
 };
 
 function UserSection({ collapsed }: { collapsed: boolean }) {
+  const activeWorkspaceRole = useAuthStore(
+    (s) => s.workspaces.find((w) => w.id === s.activeWorkspaceId)?.role
+  );
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -115,8 +118,13 @@ function UserSection({ collapsed }: { collapsed: boolean }) {
             <p className="truncate text-sm font-semibold" style={{ color: "var(--page-heading)" }}>
               {user?.full_name ?? "User"}
             </p>
+            {/* The role in the *active workspace*, not on the user: one
+                person is an owner here and a viewer there. This read
+                `user.role`, a field the API never sent, so it always fell
+                through to "Member" -- telling the person who created the
+                workspace they were a member of it. */}
             <p className="truncate text-xs capitalize" style={{ color: "var(--page-text-muted)" }}>
-              {user?.role ?? "Member"}
+              {activeWorkspaceRole ?? "Member"}
             </p>
           </div>
         )}

@@ -240,6 +240,7 @@ async def invite_team_member(
         account.name,
         invitation_token,
         role_enum.value,
+        str(account.id),
     )
 
     return TeamMemberResponse.model_validate(team_member)

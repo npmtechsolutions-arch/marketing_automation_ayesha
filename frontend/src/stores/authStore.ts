@@ -51,6 +51,8 @@ export interface Workspace {
   name: string;
   slug: string;
   organization_id: string;
+  /** The caller's role in this workspace. Owners report "owner". */
+  role?: string | null;
 }
 
 export interface LoginResult {
@@ -70,6 +72,36 @@ interface AuthActions {
   loadUser: () => Promise<void>;
   loadTenants: () => Promise<void>;
   switchWorkspace: (workspaceId: string) => void;
+}
+
+// A marker saying a session probably exists, so an anonymous visitor is not
+// made to fire a doomed refresh on every first page load.
+//
+// It carries no secret and grants nothing: the refresh still requires the
+// httpOnly cookie, which JavaScript cannot read or forge. All this decides is
+// whether it is worth *asking*. An attacker who sets it gets a 401 instead of
+// a skipped call, which is what an anonymous visitor was already getting --
+// only noisily, in everyone's console, on the public landing page.
+const SESSION_HINT_KEY = "has_session";
+
+function rememberSession(exists: boolean): void {
+  try {
+    if (exists) localStorage.setItem(SESSION_HINT_KEY, "1");
+    else localStorage.removeItem(SESSION_HINT_KEY);
+  } catch {
+    // Private browsing, or storage disabled. The cost is the old behaviour:
+    // one failed refresh per load, which is noise rather than breakage.
+  }
+}
+
+function sessionLikely(): boolean {
+  try {
+    return localStorage.getItem(SESSION_HINT_KEY) === "1";
+  } catch {
+    // Cannot tell, so assume yes: a spurious 401 is better than refusing to
+    // restore a session that is genuinely there.
+    return true;
+  }
 }
 
 export function syncUserPreferences(user: User | null): void {
@@ -265,6 +297,16 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   // token, otherwise this is simply a signed-out visitor.
   bootstrap: async () => {
     if (get().isBootstrapped) return;
+
+    // No sign of a session, so do not ask. This used to fire on the public
+    // landing page for every anonymous visitor, producing a failed request and
+    // a console error on a first visit -- which also trained us to ignore a
+    // console error that later turned out to be the S1 refresh bug.
+    if (!sessionLikely()) {
+      set({ isBootstrapped: true, isAuthenticated: false });
+      return;
+    }
+
     set({ isLoading: true });
     try {
       const accessToken = await refreshAccessToken();
@@ -272,6 +314,9 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       await get().loadUser();
       await get().loadTenants();
     } catch {
+      // The cookie is gone or expired. Forget the hint so the next load is
+      // quiet rather than repeating this.
+      rememberSession(false);
       set({ user: null, accessToken: null, isAuthenticated: false });
     } finally {
       set({ isLoading: false, isBootstrapped: true });
@@ -377,3 +422,18 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     }
   },
 }));
+
+// Keep the hint in step with the store, rather than asking every sign-in path
+// to remember it.
+//
+// The first version of this called rememberSession(true) inside setSession() --
+// and both login() and register() build their state with a direct set(), so
+// neither ever reached it. The marker stayed absent, bootstrap skipped the
+// refresh, and reloading any page signed you out: the exact S1 the refresh fix
+// had just cured, reintroduced by its own follow-up. Subscribing to the flag
+// means a new path cannot forget.
+useAuthStore.subscribe((state, previous) => {
+  if (state.isAuthenticated !== previous.isAuthenticated) {
+    rememberSession(state.isAuthenticated);
+  }
+});

@@ -436,3 +436,37 @@ async def test_the_mock_path_works_without_any_key(
     assert response.status_code == 200, response.text
     assert response.json()["provider"] == "mock"
     assert response.json()["result"]
+
+
+async def test_generate_content_fails_loudly_rather_than_faking_a_result(
+    client, auth_header, workspace, fake_provider, db_session
+):
+    """Walkthrough defect #7.
+
+    /generate-content used to catch a provider error, substitute mock text with
+    the exception interpolated into it, and record the row COMPLETED. So an
+    internal error string could land in the user's post -- publishable to their
+    audience if they did not read it closely -- and the usage log recorded
+    every outage as a success.
+    """
+    ws = await workspace()
+    fake_provider(fail=True)
+
+    response = await client.post(
+        f"{BASE}/{ws['account_id']}/ai/generate-content",
+        headers=auth_header(ws["owner"]),
+        json={"prompt": "a post about coffee", "platforms": ["instagram"]},
+    )
+
+    assert response.status_code == 502, response.text
+    detail = response.json()["detail"]
+    assert "provider exploded" not in detail, "the raw exception reached the caller"
+    assert "Nothing has been generated" in detail
+
+    row = (
+        await db_session.execute(
+            select(AIGeneration).where(AIGeneration.account_id == ws["account_id"])
+        )
+    ).scalars().first()
+    assert row.status is AIGenerationStatus.FAILED
+    assert "provider exploded" in (row.error_message or "")

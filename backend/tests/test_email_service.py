@@ -11,6 +11,7 @@ no token reaches the logs on any path.
 
 import logging
 import uuid
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -342,7 +343,19 @@ async def test_invite_enqueues_a_send_with_the_accept_link(
     assert sendgrid.recipient == invitee_email
 
     text = sendgrid.body("text/plain")
-    assert f"{settings.FRONTEND_URL}/accept-invite?token=" in text
+    # The whole contract, not half of it. This assertion used to require only
+    # "?token=", which the old link satisfied -- and no invitation could be
+    # accepted, because AcceptInvitePage reads ?account= too and looks the
+    # invitation up at /accounts/{account_id}/team/invite-info, where the id is
+    # in the path. A test that pins half a contract passes while the feature is
+    # unusable, which is exactly what happened here.
+    link = next(
+        word for word in text.split() if "/accept-invite?" in word
+    )
+    query = parse_qs(urlparse(link).query)
+    assert query["account"] == [str(account.id)]
+    assert query["token"] and query["token"][0]
+    assert link.startswith(f"{settings.FRONTEND_URL}/accept-invite?")
     assert "Dana Owner" in text
     assert "Acme Marketing" in text
 
@@ -370,7 +383,8 @@ async def test_invite_does_not_log_the_invitation_token(
     # Pull the real token out of the sent message and confirm the application's
     # own logging never writes it.
     text = sendgrid.body("text/plain")
-    token = text.split("accept-invite?token=")[1].split()[0]
+    link = next(word for word in text.split() if "/accept-invite?" in word)
+    token = parse_qs(urlparse(link).query)["token"][0]
     assert token, "could not extract the invitation token"
 
     # Scoped to the application's own loggers ("app.*"). The database layer is

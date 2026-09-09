@@ -333,3 +333,23 @@ async def test_refresh_without_a_cookie_is_401_not_422(client):
     landing page fires this on every load."""
     response = await client.post("/api/v1/auth/refresh", json={})
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_the_accounts_list_reports_the_callers_role(client, auth_header, user_factory,
+                                                          account_factory, organization_factory):
+    """Walkthrough defect #6.
+
+    The sidebar read `user.role`, which the API never sent, so it always fell
+    back to "Member" -- telling the person who created the workspace they were
+    a member of it. Role is per-workspace, so it belongs on the account, and an
+    owner has no TeamMember row to read it from.
+    """
+    owner = await user_factory(password="hunter2-correct-horse")
+    organization = await organization_factory(owner)
+    await account_factory(owner, organization=organization)
+
+    body = (await client.get("/api/v1/accounts/", headers=auth_header(owner))).json()
+
+    assert body["items"], body
+    assert body["items"][0]["role"] == "owner"

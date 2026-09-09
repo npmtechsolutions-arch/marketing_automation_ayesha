@@ -121,8 +121,37 @@ async def list_accounts(
     result = await db.execute(accounts_query)
     accounts = result.scalars().all()
 
+    # One query for every membership on this page rather than one per row.
+    memberships = {
+        row.account_id: row.role
+        for row in (
+            await db.execute(
+                select(TeamMember.account_id, TeamMember.role).where(
+                    TeamMember.user_id == current_user.id,
+                    TeamMember.account_id.in_([a.id for a in accounts] or [None]),
+                )
+            )
+        ).all()
+    }
+
+    def _role(account: Account) -> str | None:
+        """The caller's role in this workspace.
+
+        Read from TeamMember alone. An owner has one with role OWNER --
+        provisioning creates it -- and this endpoint only returns accounts
+        where the caller has an accepted membership, so an owner without a row
+        would not appear here at all. An extra `owner_id == current_user.id`
+        branch looked prudent and was unreachable; no test could distinguish
+        it, so it is not here.
+        """
+        role = memberships.get(account.id)
+        return role.value if hasattr(role, "value") else role
+
     return PaginatedResponse[AccountResponse](
-        items=[AccountResponse.model_validate(a) for a in accounts],
+        items=[
+            AccountResponse.model_validate(a).model_copy(update={"role": _role(a)})
+            for a in accounts
+        ],
         total=total,
         page=page,
         per_page=per_page,

@@ -384,23 +384,46 @@ export default function RegisterPage() {
 
           {/* Terms */}
           <motion.div variants={fadeUp}>
-            <label className="flex items-start gap-2.5 cursor-pointer group">
-              <div
+            {/* A real checkbox, visually hidden but focusable, with the label
+                bound to it by htmlFor.
+
+                It was a <div onClick> with tabIndex -1: a keyboard-only user
+                could fill every field, could not reach the control, and the
+                form refused to submit with "You must agree to the terms". They
+                could not register at all. Clicking the label text did nothing
+                either, because a label with no input has no control to
+                forward to -- leaving a 16x16px target as the only way in. */}
+            <label htmlFor="agree-to-terms"
+                   className="flex items-start gap-2.5 cursor-pointer group">
+              <input
+                id="agree-to-terms"
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                aria-describedby={errors.terms ? "terms-error" : undefined}
+                aria-invalid={Boolean(errors.terms && !agreedToTerms)}
+                className="peer sr-only"
+              />
+              <span
+                aria-hidden="true"
                 className={cn(
                   "mt-0.5 w-4 h-4 rounded border transition-all duration-200 flex items-center justify-center flex-shrink-0",
+                  // The focus ring is on this stand-in, since the real input is
+                  // visually hidden -- without it a keyboard user can reach the
+                  // control and cannot see that they have.
+                  "peer-focus-visible:ring-2 peer-focus-visible:ring-purple-400/70 peer-focus-visible:ring-offset-1",
                   agreedToTerms
                     ? "bg-gradient-to-r from-purple-600 to-blue-600 border-transparent"
                     : "border-white/20 bg-white/5 group-hover:border-white/30",
                   errors.terms && !agreedToTerms && "border-red-500/50"
                 )}
-                onClick={() => setAgreedToTerms((p) => !p)}
               >
                 {agreedToTerms && (
                   <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 )}
-              </div>
+              </span>
               <span className="text-xs leading-relaxed" style={{ color: "var(--page-text-secondary)" }}>
                 I agree to the{" "}
                 <Link
@@ -425,7 +448,7 @@ export default function RegisterPage() {
               </span>
             </label>
             {errors.terms && (
-              <p className="mt-1.5 text-xs text-red-400 pl-6">{errors.terms}</p>
+              <p id="terms-error" className="mt-1.5 text-xs text-red-400 pl-6">{errors.terms}</p>
             )}
           </motion.div>
 
