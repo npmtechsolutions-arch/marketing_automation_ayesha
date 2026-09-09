@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -62,6 +62,30 @@ export default function TopBar() {
   const activeWorkspaceId = useAuthStore((s) => s.activeWorkspaceId);
   const switchWorkspace = useAuthStore((s) => s.switchWorkspace);
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
+
+  // Workspaces grouped by organization, derived from the workspaces themselves
+  // so nothing can be dropped for want of an organization row. The heading
+  // prefers the org's own name, falls back to the name the workspace carries
+  // (which /accounts sends precisely so an invited collaborator sees one), and
+  // only then to a neutral label -- never to hiding the workspace.
+  const workspaceGroups = useMemo(() => {
+    const groups = new Map<string, { organizationId: string; label: string; workspaces: typeof workspaces }>();
+    for (const workspace of workspaces) {
+      const id = workspace.organization_id;
+      if (!groups.has(id)) {
+        groups.set(id, {
+          organizationId: id,
+          label:
+            organizations.find((o) => o.id === id)?.name ??
+            workspace.organization_name ??
+            "Workspaces",
+          workspaces: [],
+        });
+      }
+      groups.get(id)!.workspaces.push(workspace);
+    }
+    return [...groups.values()];
+  }, [workspaces, organizations]);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -169,31 +193,47 @@ export default function TopBar() {
                   className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border p-1.5 backdrop-blur-xl"
                   role="menu"
                 >
-                  {/* Grouped by organization: which company a workspace belongs
-                      to is the thing the hierarchy exists to make visible. */}
-                  {organizations.map((org) => {
-                    const owned = workspaces.filter((w) => w.organization_id === org.id);
-                    if (owned.length === 0) return null;
+                  {/* Driven by `workspaces`, which is the authoritative list:
+                      /accounts returns every workspace the caller can reach.
+                      Organizations are a *grouping* on top of it, and this used
+                      to iterate them instead -- so any workspace whose
+                      organization was missing from `organizations` silently
+                      vanished from the menu.
+
+                      Two separate faults did exactly that. `itemsOf` could not
+                      unwrap the bare array /organizations/ returns, so the list
+                      was always empty and the menu was blank for everyone; and
+                      accepting a *workspace* invitation never makes you an
+                      organization member, so an invitee's one workspace was the
+                      one they could never select. The list a person can act on
+                      must not be filtered by a list that is merely decorative. */}
+                  {workspaceGroups.map((group) => {
+                    const org = organizations.find((o) => o.id === group.organizationId);
                     return (
-                      <div key={org.id} className="py-1">
+                      <div key={group.organizationId} className="py-1">
                         <div className="flex items-center justify-between px-3 py-1.5">
                           <p
                             className="text-xs font-semibold uppercase tracking-wide truncate"
                             style={{ color: "var(--page-text-muted)" }}
                           >
-                            {org.name}
+                            {group.label}
                           </p>
-                          <span
-                            className="ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase"
-                            style={{
-                              backgroundColor: "var(--sidebar-hover-bg)",
-                              color: "var(--page-text-secondary)",
-                            }}
-                          >
-                            {org.subscription_tier}
-                          </span>
+                          {/* Only for an organization the caller is actually a
+                              member of. A workspace collaborator is not, and
+                              has no plan to be shown. */}
+                          {org && (
+                            <span
+                              className="ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase"
+                              style={{
+                                backgroundColor: "var(--sidebar-hover-bg)",
+                                color: "var(--page-text-secondary)",
+                              }}
+                            >
+                              {org.subscription_tier}
+                            </span>
+                          )}
                         </div>
-                        {owned.map((workspace) => (
+                        {group.workspaces.map((workspace) => (
                           <button
                             key={workspace.id}
                             role="menuitem"

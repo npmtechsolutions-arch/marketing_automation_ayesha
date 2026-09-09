@@ -146,29 +146,69 @@ async def test_days_are_separate_rows(db_session, workspace):
 # Per-platform null handling
 # ---------------------------------------------------------------------------
 
-async def test_each_provider_reports_only_what_its_api_exposes():
-    """X has no reach on our tier and LinkedIn no saves. A provider filling
-    every field would hide the case the storage layer exists to handle."""
+def test_every_metric_a_connector_maps_is_a_real_column():
+    """A provider reporting a name that is not a column is silently dropped.
+
+    This replaces a test that drove ``get_analytics`` with ``access_token =
+    "mock_token"`` and asserted on the result -- which only ever exercised
+    ``mock_account_metrics``, the fabrication removed in this change. It read
+    as a guard on provider honesty and was really pinning the field lists of
+    invented data, so deleting the invention broke it.
+
+    The invariant worth keeping is the last thing it asserted, and this checks
+    it against the real code path: every target name in a connector's
+    ``metrics_from`` mapping -- the mapping the live API response is read
+    through -- must be a column ``upsert_day`` can store.
+    """
+    import ast
+    import pathlib
+
+    offenders = []
+    for path in sorted(pathlib.Path("app/connectors").glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "metrics_from"
+                and len(node.args) == 2
+                and isinstance(node.args[1], ast.Dict)
+            ):
+                continue
+            for key in node.args[1].keys:
+                if isinstance(key, ast.Constant) and key.value not in METRIC_FIELDS:
+                    offenders.append(f"{path.name}:{node.lineno}: {key.value!r}")
+
+    assert not offenders, (
+        "these metric names are not analytics_daily columns, so upsert_day "
+        "would drop them without a word:\n" + "\n".join(offenders)
+    )
+
+
+async def test_a_platform_with_no_account_analytics_refuses_rather_than_guessing():
+    """NotSupportedError, not an empty-looking success.
+
+    collect_account treats the refusal as "nothing to record, and nothing
+    wrong". A provider that instead returned plausible defaults would write a
+    day of numbers nobody measured.
+    """
     from unittest.mock import MagicMock
 
+    from app.connectors.base import NotSupportedError
     from app.connectors.registry import get_provider, known_slugs
 
     account = MagicMock()
     account.access_token = "mock_token"
     account.config = {}
 
-    reported = {}
     for slug in known_slugs():
-        reported[slug] = set(await get_provider(slug).get_analytics(account, None, None))
-
-    assert "reach" not in reported["twitter"], "X does not expose reach on this tier"
-    assert "saves" not in reported["linkedin"]
-    assert "reach" in reported["instagram"]
-    assert reported["linkedin"] == {"followers"}
-    # Every reported key must be a real column, or the upsert silently drops it.
-    for slug, keys in reported.items():
-        assert keys <= set(METRIC_FIELDS), f"{slug} reported an unknown metric"
-
+        try:
+            reported = await get_provider(slug).get_analytics(account, None, None)
+        except NotSupportedError:
+            continue
+        assert reported == {}, (
+            f"{slug} produced metrics for an account with a placeholder token: "
+            f"{reported}"
+        )
 
 async def test_a_null_platform_does_not_drag_the_total_down(db_session, workspace):
     """Two accounts, one reporting reach. The total is the one real figure --

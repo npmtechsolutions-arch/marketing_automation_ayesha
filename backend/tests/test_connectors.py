@@ -469,9 +469,20 @@ async def test_the_provider_receives_the_resolved_variant(
     assert media == []
 
 
-async def test_performance_rows_are_seeded_for_successes_only(
+async def test_publishing_records_no_metrics_until_some_are_measured(
     db_session, publishable, fake_provider
 ):
+    """Publishing used to seed a zeroed PostPerformance row per success.
+
+    A row of zeros is a measurement saying the post reached nobody, not an
+    empty state. On X and LinkedIn -- which expose no per-post metrics fetch --
+    it was never replaced, so those posts kept a permanent, confident "0 reach"
+    that looked exactly like a real result. Rows are now written by
+    _sync_post_performance when real numbers arrive.
+
+    The partial-failure case this test was built around still matters, and is
+    covered by the job statuses rather than by seeded rows.
+    """
     from sqlalchemy import select
 
     from app.models.post_performance import PostPerformance
@@ -488,8 +499,7 @@ async def test_performance_rows_are_seeded_for_successes_only(
             select(PostPerformance).where(PostPerformance.post_id == post_id)
         )
     ).scalars().all()
-    assert len(rows) == 1
-
+    assert rows == []
 
 # ---------------------------------------------------------------------------
 # Capabilities endpoint

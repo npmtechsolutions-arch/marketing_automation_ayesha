@@ -24,7 +24,6 @@ could slow logins.
 from __future__ import annotations
 
 import logging
-import random
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, ClassVar, Literal, Optional
@@ -362,50 +361,6 @@ def variant_for_slug(post: Any, slug: str) -> Any:
     return None
 
 
-def mock_metrics_untokened(platform_type: str) -> dict[str, Any]:
-    """Metrics for an account whose token is a development placeholder.
-
-    Moved verbatim from platform_service.py:1155-1168. Note it carries
-    ``engagement_rate`` and ``click_through_rate``; :func:`mock_metrics_fallback`
-    does not. The two blocks were written separately and drifted -- preserved
-    as-is rather than reconciled, so this stays a pure move.
-    """
-    import random
-    return {
-        "platform": platform_type,
-        "impressions": random.randint(500, 8000),
-        "reach": random.randint(300, 5000),
-        "likes": random.randint(50, 800),
-        "comments": random.randint(10, 150),
-        "shares": random.randint(5, 80),
-        "saves": random.randint(5, 50),
-        "clicks": random.randint(20, 300),
-        "engagement_rate": round(random.uniform(2.0, 9.0), 2),
-        "click_through_rate": round(random.uniform(0.5, 4.0), 2),
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-def mock_metrics_fallback(platform_type: str) -> dict[str, Any]:
-    """Metrics for a platform with no implemented API (LinkedIn, X).
-
-    Moved verbatim from platform_service.py:1431-1441. A dashboard number for
-    those two platforms is fabricated; that is pre-existing and is centralised
-    here so it is at least findable.
-    """
-    return {
-        "platform": platform_type,
-        "impressions": random.randint(500, 8000),
-        "reach": random.randint(300, 5000),
-        "likes": random.randint(50, 800),
-        "comments": random.randint(10, 150),
-        "shares": random.randint(5, 80),
-        "saves": random.randint(5, 50),
-        "clicks": random.randint(20, 300),
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-
 def is_mock_token(token: str | None) -> bool:
     """Whether a token is a development placeholder rather than a real one.
 
@@ -726,34 +681,6 @@ def mock_inbox_items(platform: str, kind: str) -> list[dict[str, Any]]:
         }
         for index, (author, body) in enumerate(samples)
     ]
-
-def mock_account_metrics(platform: str) -> dict[str, Any]:
-    """Plausible account metrics for a development token.
-
-    Only the metrics that platform genuinely reports, so a dev environment
-    exercises the same null handling production will -- a mock that fills every
-    field would hide the case the storage layer exists to get right.
-    """
-    reported = {
-        "instagram": ("followers", "following", "posts_count", "reach",
-                      "impressions", "profile_visits"),
-        "facebook": ("followers", "impressions", "profile_visits"),
-        "linkedin": ("followers",),
-        "twitter": ("followers", "following", "posts_count"),
-        "youtube": ("followers", "posts_count", "video_views"),
-    }.get(platform, ("followers",))
-
-    base = {
-        "followers": random.randint(500, 50_000),
-        "following": random.randint(50, 2_000),
-        "posts_count": random.randint(10, 800),
-        "reach": random.randint(200, 20_000),
-        "impressions": random.randint(400, 60_000),
-        "profile_visits": random.randint(10, 3_000),
-        "video_views": random.randint(100, 90_000),
-    }
-    return {name: base[name] for name in reported if name in base}
-
 
 def metrics_from(payload: dict[str, Any], mapping: dict[str, str]) -> dict[str, Any]:
     """Pull our metric names out of a platform's response.

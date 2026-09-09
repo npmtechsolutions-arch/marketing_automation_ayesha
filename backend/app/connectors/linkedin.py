@@ -21,7 +21,6 @@ from app.connectors.base import (
     SocialProvider,
     is_mock_token,
     metrics_from,
-    mock_account_metrics,
     mock_inbox_items,
     parse_platform_time,
     retry_after_seconds,
@@ -33,7 +32,6 @@ from app.connectors.base import (
     provider_request,
     require_refresh_token,
     classify_retryable,
-    mock_metrics_fallback,
 )
 from app.connectors.media import (
     _content_with_hashtags,
@@ -282,12 +280,16 @@ class LinkedInProvider(SocialProvider):
     async def get_post_metrics(
         self, external_post_id: str, social_account: Any
     ) -> dict[str, Any]:
-        """LinkedIn has no implemented metrics fetch.
+        """LinkedIn exposes no implemented metrics fetch, so this reports nothing.
 
-        Returns fabricated numbers, exactly as before -- see
-        :func:`app.connectors.base.mock_metrics_fallback`.
+        Same history and same reasoning as
+        :meth:`app.connectors.twitter.TwitterConnector.get_post_metrics`: this
+        returned fabricated integers on real accounts. A real implementation
+        would use the ``socialActions`` and ``organizationalEntityShareStatistics``
+        endpoints, both of which need an approved Marketing Developer Platform
+        application.
         """
-        return mock_metrics_fallback(self.slug)
+        raise NotSupportedError(self.slug, "get_post_metrics")
 
     async def refresh_token(self, social_account: Any) -> TokenRefreshResult:
         """Moved from social_accounts.py:754-810."""
@@ -385,7 +387,9 @@ async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
 
     token = getattr(platform, "access_token", None)
     if is_mock_token(token):
-        return mock_account_metrics("linkedin")
+        # No real account behind a placeholder token, so no metrics. Absent
+        # metrics stay absent and store as NULL -- see collect_account().
+        return {}
 
     config = getattr(platform, "config", None) or {}
     urn = config.get("author_urn") or ""

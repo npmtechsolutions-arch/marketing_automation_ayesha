@@ -37,4 +37,20 @@ class AccountResponse(AccountBase):
     # workspace was told they were a member of it.
     role: str | None = None
 
+    # The owning organization's display name, so the workspace switcher can
+    # group by company without a second call -- and, more to the point, without
+    # depending on GET /organizations/.
+    #
+    # That endpoint lists organizations the caller is an accepted *organization*
+    # member of, which is correct and deliberately strict. But accepting a
+    # *workspace* invitation creates a TeamMember row and no OrganizationMember
+    # row, so an invited collaborator reaches the workspace and not its
+    # organization. The switcher grouped workspaces under organizations and
+    # dropped any whose organization was missing, which meant the one workspace
+    # such a person was invited to was the one they could never select.
+    #
+    # A name is not access: nothing here grants organization permissions, and
+    # /organizations/{id} still refuses them.
+    organization_name: str | None = None
+
     model_config = ConfigDict(from_attributes=True)

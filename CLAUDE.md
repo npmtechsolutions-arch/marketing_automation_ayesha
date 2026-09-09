@@ -36,6 +36,14 @@ Every entry earned its place by a specific incident.
   at 00:17 IST: always wrong, visible five and a half hours a day. Compute the
   date on the same clock the code under test uses.
 
+- **`npx tsc --noEmit` in `frontend/` checks nothing.** The root `tsconfig.json`
+  has `"files": []` and only project *references*, so the bare invocation
+  type-checks an empty program and exits 0 no matter what is broken. Use
+  **`npx tsc -p tsconfig.app.json --noEmit`** (or `tsc -b`). Verified the only
+  way worth trusting: writing `const probe: number = "nope"` into `src/` and
+  confirming the command fails. It had been reported green through a whole
+  phase before anyone made it fail on purpose.
+
 - **SQLite accepts SQL that Postgres rejects.** The suite runs on in-memory
   SQLite. `round(double precision, int)` does not exist in Postgres — only
   `round(numeric, int)` — so a query passed all 600-odd tests and 500'd in

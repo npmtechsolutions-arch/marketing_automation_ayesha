@@ -378,7 +378,14 @@ async def _sync_post_performance(post: Post, db: AsyncSession):
 
             await _ensure_valid_token(sa, db)
             provider = get_provider(sa.platform.slug if sa.platform else None)
-            metrics = await provider.get_post_metrics(ext_id, sa)
+            try:
+                metrics = await provider.get_post_metrics(ext_id, sa)
+            except NotSupportedError:
+                # X and LinkedIn expose no implemented per-post metrics fetch.
+                # Not an error and not worth a warning every sync: no row is
+                # written, and an absent row reads as "not measured" rather
+                # than as a measured zero.
+                continue
             if not metrics:
                 continue
 

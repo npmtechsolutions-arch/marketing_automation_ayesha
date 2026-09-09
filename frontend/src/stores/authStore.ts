@@ -53,6 +53,11 @@ export interface Workspace {
   organization_id: string;
   /** The caller's role in this workspace. Owners report "owner". */
   role?: string | null;
+  /** The owning organization's name, for grouping in the switcher.
+   *
+   *  Sent by /accounts so a workspace can be grouped without the caller being
+   *  an organization member -- which an invited collaborator is not. */
+  organization_name?: string | null;
 }
 
 export interface LoginResult {
@@ -146,9 +151,27 @@ function writeStored(key: string, value: string | null): void {
   }
 }
 
-/** Unwrap the several response shapes the accounts endpoint has returned. */
+/** Unwrap the several response shapes these endpoints return.
+ *
+ *  Four shapes are in play, because `api` here is the raw axios instance (the
+ *  `get`/`post` helpers in lib/api unwrap `.data`, the default export does
+ *  not), and because `/accounts` is paginated while `/organizations/` returns
+ *  a bare array:
+ *
+ *    [...]                        a bare array
+ *    { items: [...] }             an unwrapped paginated body
+ *    { data: { items: [...] } }   an axios response around one
+ *    { data: [...] }              an axios response around a bare array
+ *
+ *  The last was missing, and it is exactly the shape `/organizations/`
+ *  produces. `organizations` was therefore *always* empty, and the workspace
+ *  switcher -- which iterates organizations and hangs workspaces beneath them
+ *  -- listed nothing for anyone, ever. The account list worked, so the store
+ *  looked fine; only the dropdown was blank, which read as a styling bug.
+ */
 function itemsOf(response: any): any[] {
   if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.data)) return response.data;
   return response?.items ?? response?.data?.items ?? [];
 }
 

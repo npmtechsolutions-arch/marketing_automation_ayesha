@@ -336,7 +336,19 @@ async def test_manual_required_survives_derivation(db_session, post_with_targets
     assert post.status is PostStatus.FAILED
 
 
-async def test_successful_jobs_seed_performance_rows(db_session, post_with_targets):
+async def test_publishing_does_not_invent_a_zeroed_performance_row(
+    db_session, post_with_targets
+):
+    """A published post starts with no metrics, not with zeroes.
+
+    Publishing used to seed a fully zeroed PostPerformance row per platform.
+    That is not an empty state -- it says the post was measured and reached
+    nobody. On X and LinkedIn, which expose no per-post metrics fetch, the
+    zeroes were never replaced, so those posts kept a permanent confident
+    "0 reach" that looked exactly like a real result.
+
+    The row is created when real numbers arrive instead.
+    """
     from app.models.post_performance import PostPerformance
 
     ctx = await post_with_targets(target_count=2)
@@ -346,13 +358,13 @@ async def test_successful_jobs_seed_performance_rows(db_session, post_with_targe
     )
 
     await publishing.derive_post_status(db_session, ctx["post_id"])
+
     rows = (
         await db_session.execute(
             select(PostPerformance).where(PostPerformance.post_id == ctx["post_id"])
         )
     ).scalars().all()
-    assert len(rows) == 1
-
+    assert rows == []
 
 # ---------------------------------------------------------------------------
 # Endpoints

@@ -595,51 +595,27 @@ async def _derive_and_commit(db: AsyncSession, post_id: uuid.UUID) -> None:
 async def _seed_performance_rows(
     db: AsyncSession, post: Post, succeeded: list[PublishingJob]
 ) -> None:
-    """Create the zeroed metric rows the analytics page reads.
+    """Deliberately does nothing. Kept as the record of why.
 
-    Unchanged in spirit from the old inline publish; it just runs off the jobs
-    now. Keyed on platform slug because PostPerformance has no FK to the
-    social account -- two accounts on one platform still collide, which is a
-    pre-existing modelling gap, not something introduced here.
+    This used to insert a fully zeroed PostPerformance row for every platform a
+    post published to, "the zeroed metric rows the analytics page reads". A row
+    of zeros is not an empty state -- it is a measurement claiming that nobody
+    saw the post and nobody engaged with it.
+
+    For most posts the zeros were replaced within a sync and nobody noticed.
+    For X and LinkedIn they never were: those platforms expose no per-post
+    metrics fetch, so a post there kept a permanent, confident "0 reach, 0
+    likes" that was indistinguishable from a real result. Removing the
+    fabricated metrics in the connectors would have achieved nothing while this
+    still ran.
+
+    An absent row is the honest state, and every reader already handles it:
+    ``Post.performance`` returns None, ``analytics_query.posts`` inner-joins so
+    the post simply is not listed yet, and the calendar now says the platform
+    reports no metrics instead of drawing zeros. The row is created by
+    ``_sync_post_performance`` when real numbers arrive.
     """
-    from app.models.post_performance import PostPerformance
-
-    if not succeeded:
-        return
-
-    existing = {
-        row.platform_type
-        for row in (
-            await db.execute(
-                select(PostPerformance).where(PostPerformance.post_id == post.id)
-            )
-        ).scalars().all()
-    }
-
-    for job in succeeded:
-        account = (
-            await db.execute(
-                select(SocialAccount)
-                .options(selectinload(SocialAccount.platform))
-                .where(SocialAccount.id == job.social_account_id)
-            )
-        ).scalar_one_or_none()
-        slug = (
-            account.platform.slug if account and account.platform else "instagram"
-        ).lower()
-        if slug in existing:
-            continue
-        existing.add(slug)
-        db.add(
-            PostPerformance(
-                id=uuid.uuid4(),
-                post_id=post.id,
-                platform_type=slug,
-                impressions=0, reach=0, likes=0, comments=0, shares=0,
-                saves=0, clicks=0, video_views=0,
-                engagement_rate=0.0, click_through_rate=0.0,
-            )
-        )
+    return
 
 
 # --- the worker ------------------------------------------------------------

@@ -1246,6 +1246,39 @@ being indistinguishable from real customer data. It is all gone. Where a figure 
 known yet — month-over-month deltas, which need history the event log has only started collecting
 — the page shows no delta rather than a plausible one.
 
+The connectors carried four more, found by a browser walkthrough rather than by review, and they
+were worse: engagement numbers on real posts, which reach analytics dashboards and the PDFs
+agencies send to their clients.
+
+* `TwitterConnector.get_post_metrics` and its LinkedIn twin returned random integers
+  **unconditionally** — not gated on a development token, not on `DEBUG`. Their own docstrings said
+  "Returns fabricated numbers." Three consecutive reads of one post gave 755, 72 and 674 likes.
+* Every connector's `except Exception` in the metrics fetch logged *"falling back to mock"* and
+  returned random integers, so an expired token, a rate limit or a provider outage produced
+  plausible engagement **and hid the failure that caused it**.
+* The "development placeholder" paths were reachable in production: `is_mock_token()` matches any
+  token merely *containing* `"test"` and returns `True` for an empty one, so a live credential or a
+  token that failed to decrypt was served invented data.
+* Publishing seeded a fully zeroed `PostPerformance` row per platform. A row of zeros is not an
+  empty state — it says the post was measured and reached nobody. On X and LinkedIn the zeros were
+  never replaced, so those posts kept a permanent, confident "0 reach" indistinguishable from a real
+  result. Removing the first three would have achieved nothing while this remained.
+
+All four are gone. X and LinkedIn now raise `NotSupportedError`, which is the base class's own
+default and the honest answer; a failed fetch reports nothing and leaves the last real measurement
+standing; a placeholder token reports nothing; and a performance row is created when real numbers
+arrive rather than at publish time. `random` is no longer imported anywhere under `app/connectors/`,
+and `tests/test_no_fabricated_metrics.py` fails if it returns.
+
+Absence is carried to the pixels: `Post.performance` is null with no rows, `analytics_query.posts`
+inner-joins so an unmeasured post is simply not listed, and the calendar says *"Twitter does not
+expose per-post metrics, so there is nothing to report"* rather than drawing zeroes. Migration
+`b8d3aa61c94f` deletes what was already stored — every X and LinkedIn row, since neither connector
+ever had a real fetch, and every row still entirely zero. Facebook, Instagram and YouTube rows are
+left alone: each had a real fetch with a fabricated fallback, so their rows mix measurement and
+invention with nothing to separate them, and deleting real data to be rid of invented data is its
+own loss.
+
 
 ## Running the tests
 

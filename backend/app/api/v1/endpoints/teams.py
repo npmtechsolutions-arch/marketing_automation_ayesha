@@ -122,8 +122,23 @@ async def list_team_members(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """List all team members for an account."""
-    await _get_member_or_403(db, current_user.id, account_id, permission=TEAM_VIEW)
+    """List all team members for an account.
+
+    Pending rows carry ``invitation_token``, which is what the team page needs
+    to offer a "copy invitation link" button. It is only sent to callers who
+    could issue the invitation in the first place -- inviting requires
+    ``team.manage``, while merely listing the team requires ``team.view``, which
+    almost every role holds.
+
+    That is a narrowing rather than a fix for a live hole: ``accept-invite``
+    checks the invitation email against the caller's own, so a token taken from
+    this response is not redeemable by whoever took it. Sending a secret to
+    seven roles when one of them needs it is still not worth doing.
+    """
+    member = await _get_member_or_403(
+        db, current_user.id, account_id, permission=TEAM_VIEW
+    )
+    may_see_tokens = role_has_permission(member.role, TEAM_MANAGE)
 
     # Count
     count_query = select(func.count()).where(TeamMember.account_id == account_id)
@@ -142,7 +157,12 @@ async def list_team_members(
     members = result.scalars().all()
 
     return PaginatedResponse[TeamMemberResponse](
-        items=[TeamMemberResponse.model_validate(m) for m in members],
+        items=[
+            TeamMemberResponse.model_validate(m).model_copy(
+                update={} if may_see_tokens else {"invitation_token": None}
+            )
+            for m in members
+        ],
         total=total,
         page=page,
         per_page=per_page,

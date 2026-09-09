@@ -306,6 +306,12 @@ function EngagementMetric({
 }
 
 // ---------- Main Component ----------
+/** Platforms with no per-post metrics API, so a published post there will
+ *  never have engagement to show. Kept beside mapPlatform because both answer
+ *  "what does this platform actually do". The backend is the authority --
+ *  their connectors raise NotSupportedError -- this only phrases it. */
+const NO_METRICS_PLATFORMS = new Set<Platform>(["twitter", "linkedin"]);
+
 // Map backend status strings to CalendarPost status
 function mapStatus(backendStatus: string): PostStatus {
   const s = backendStatus.toLowerCase();
@@ -430,12 +436,19 @@ export default function CalendarPage() {
         const updatedPost: CalendarPost = {
           ...post,
           status: mapStatus(p.status),
-          engagement: {
-            likes: p.performance?.likes ?? 0,
-            comments: p.performance?.comments ?? 0,
-            shares: p.performance?.shares ?? 0,
-            views: p.performance?.views ?? 0,
-          },
+          // Undefined, not zeroes, when the API reports no performance at
+          // all. `performance` is null when a post has no measurements --
+          // X and LinkedIn expose no per-post metrics API, so their posts
+          // never will. Coalescing that to 0 renders "0 likes", which reads
+          // as "nobody engaged" when the truth is "this cannot be measured".
+          engagement: p.performance
+            ? {
+                likes: p.performance.likes ?? 0,
+                comments: p.performance.comments ?? 0,
+                shares: p.performance.shares ?? 0,
+                views: p.performance.views ?? 0,
+              }
+            : undefined,
           errorMessage: p.error_message || p.posting_results?.[0]?.error || null,
         };
         setSelectedPost(updatedPost);
@@ -486,12 +499,19 @@ export default function CalendarPage() {
           imageUrl: Array.isArray(p.media_urls) && p.media_urls[0]
             ? (p.media_urls[0].startsWith("data:") ? undefined : p.media_urls[0])
             : undefined,
-          engagement: {
-            likes: p.performance?.likes ?? 0,
-            comments: p.performance?.comments ?? 0,
-            shares: p.performance?.shares ?? 0,
-            views: p.performance?.views ?? 0,
-          },
+          // Undefined, not zeroes, when the API reports no performance at
+          // all. `performance` is null when a post has no measurements --
+          // X and LinkedIn expose no per-post metrics API, so their posts
+          // never will. Coalescing that to 0 renders "0 likes", which reads
+          // as "nobody engaged" when the truth is "this cannot be measured".
+          engagement: p.performance
+            ? {
+                likes: p.performance.likes ?? 0,
+                comments: p.performance.comments ?? 0,
+                shares: p.performance.shares ?? 0,
+                views: p.performance.views ?? 0,
+              }
+            : undefined,
           errorMessage: p.error_message || p.posting_results?.[0]?.error || null,
           instagramMusicTrack: p.instagram_music_track,
           instagramPostType: p.instagram_post_type,
@@ -1268,6 +1288,19 @@ export default function CalendarPage() {
                   </div>
                 </div>
               )}
+
+            {/* An absent measurement is worth a sentence. Without one, a
+                published post with no engagement panel just looks unfinished,
+                and the obvious "fix" is to draw zeros -- which is the defect
+                this replaced. */}
+            {selectedPost.status === "published" && !selectedPost.engagement && (
+              <p className="text-xs" style={{ color: "var(--page-text-muted)" }}>
+                No engagement data.{" "}
+                {NO_METRICS_PLATFORMS.has(selectedPost.platform)
+                  ? `${PLATFORM_LABELS[selectedPost.platform]} does not expose per-post metrics, so there is nothing to report.`
+                  : "Metrics have not come back from the platform yet."}
+              </p>
+            )}
 
             {/* Review: where the post stands, who said what, and the actions
                 this role may take. Buttons come from the server's own

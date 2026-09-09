@@ -21,7 +21,6 @@ from app.connectors.base import (
     ProviderAPIError,
     SocialProvider,
     metrics_from,
-    mock_account_metrics,
     mock_inbox_items,
     parse_platform_time,
     retry_after_seconds,
@@ -31,7 +30,6 @@ from app.connectors.base import (
     TokenRefreshResult,
     classify_retryable,
     is_mock_token,
-    mock_metrics_untokened,
 )
 from app.connectors.media import (
     _content_with_hashtags,
@@ -306,7 +304,15 @@ async def _fetch_metrics(post_id: str, platform: Any) -> dict[str, Any]:
 
     access_token = getattr(platform, "access_token", None)
     if is_mock_token(access_token):
-        return mock_metrics_untokened(platform_type)
+        # A placeholder token means there is no account to measure, so nothing
+        # is reported. This used to return mock_metrics_untokened() -- random
+        # integers -- which is not a development-only hazard: is_mock_token()
+        # matches any token merely *containing* "test", and returns True for an
+        # empty one, so a real credential with "test" in it, or an account whose
+        # token failed to decrypt, would have been served fabricated engagement.
+        # An empty result writes no performance row, which reads as "not
+        # measured" everywhere downstream.
+        return {}
 
     is_instagram_token = access_token.startswith("IG")
     base_url = "https://graph.instagram.com/v18.0" if is_instagram_token else "https://graph.facebook.com/v18.0"
@@ -387,22 +393,21 @@ async def _fetch_metrics(post_id: str, platform: Any) -> dict[str, Any]:
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
             }
     except Exception as e:
-        logger.warning("Error fetching live Instagram metrics for %s, falling back to mock: %s", post_id, e)
-        import random
-        return {
-            "platform": "instagram",
-            "impressions": random.randint(500, 8000),
-            "reach": random.randint(300, 5000),
-            "likes": random.randint(50, 800),
-            "comments": random.randint(10, 150),
-            "shares": random.randint(5, 80),
-            "saves": random.randint(5, 50),
-            "clicks": 0,
-            "video_views": random.randint(100, 2000),
-            "engagement_rate": round(random.uniform(2.0, 9.0), 2),
-            "click_through_rate": 0.0,
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-        }
+        # A failed fetch reports nothing. This used to log "falling back to
+        # mock" and return random integers -- on a real account, with real
+        # credentials, precisely when something was wrong. An expired token, a
+        # rate limit or a provider outage produced plausible engagement that
+        # was indistinguishable from a measurement, and hid the failure that
+        # caused it.
+        #
+        # An empty result leaves any existing performance row untouched, so the
+        # last real measurement stands with its original fetched_at rather than
+        # being overwritten by an invention.
+        logger.warning(
+            "Could not fetch live %s metrics for %s; reporting nothing: %s",
+            "Instagram", post_id, e,
+        )
+        return {}
 
 
 
@@ -559,7 +564,9 @@ async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
 
     token = getattr(platform, "access_token", None)
     if is_mock_token(token):
-        return mock_account_metrics("instagram")
+        # No real account behind a placeholder token, so no metrics. Absent
+        # metrics stay absent and store as NULL -- see collect_account().
+        return {}
 
     config = getattr(platform, "config", None) or {}
     ig_id = config.get("instagram_business_account_id") or config.get("page_id")

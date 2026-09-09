@@ -31,6 +31,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Select } from "@/components/ui/Select";
 import { cn } from "@/lib/utils";
 import api, { getAccountId } from "@/lib/api";
+import { showError } from "@/components/ui/Toast";
 
 // ── Types ───────────────────────────────────────────────────────────
 type Role =
@@ -51,6 +52,8 @@ interface TeamMember {
   role: Role;
   invitation_email: string | null;
   invitation_status: InvitationStatus;
+  /** Only sent to callers who may manage the team; null otherwise. */
+  invitation_token?: string | null;
   invited_by: string | null;
   created_at: string;
   accepted_at: string | null;
@@ -157,6 +160,7 @@ export default function TeamPage() {
   const [updatingRole, setUpdatingRole] = useState(false);
 
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const activeMembers = members.filter((m) => m.invitation_status === "accepted");
   const pendingMembers = members.filter((m) => m.invitation_status === "pending");
@@ -230,6 +234,20 @@ export default function TeamPage() {
       setInviteError(typeof detail === "string" ? detail : "Failed to send invitation. Please try again.");
     } finally {
       setInviting(false);
+    }
+  };
+
+  const inviteUrlFor = (member: TeamMember) =>
+    `${window.location.origin}/accept-invite?account=${member.account_id}&token=${member.invitation_token}`;
+
+  const handleCopyInvite = async (member: TeamMember) => {
+    try {
+      await navigator.clipboard.writeText(inviteUrlFor(member));
+      setCopiedId(member.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      // A denied clipboard permission should not look like a failed invite.
+      showError("Could not copy. Select the link and copy it manually.");
     }
   };
 
@@ -405,7 +423,7 @@ export default function TeamPage() {
                   <div className="flex items-start gap-2 mt-1 pt-3" style={{ borderTop: "1px solid var(--surface-border)" }}>
                     <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
                     <p className="text-xs text-amber-400/80">
-                      <strong>Note:</strong> No automatic email is sent. You must manually share the invitation link with the person. Pending invitations are shown below until they accept.
+                      <strong>Note:</strong> An invitation email is sent automatically, but email is not guaranteed to arrive. Copy the link below and share it directly if they do not receive it. Pending invitations are shown until they accept.
                     </p>
                   </div>
                 </div>
@@ -564,6 +582,26 @@ export default function TeamPage() {
                         <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border", role.color, role.bg, role.border)}>
                           {role.label}
                         </span>
+                        {/* The link is shown once, in the invite dialog's
+                            success state. Dismiss that and it was gone: the
+                            pending row offered only "Cancel", and the token
+                            appeared nowhere else. With the emailed link broken
+                            (fixed separately), an invitation whose dialog had
+                            been closed could not be delivered at all. */}
+                        {member.invitation_token && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            icon={
+                              copiedId === member.id
+                                ? <Check className="w-3.5 h-3.5" />
+                                : <Link className="w-3.5 h-3.5" />
+                            }
+                            onClick={() => handleCopyInvite(member)}
+                          >
+                            {copiedId === member.id ? "Copied" : "Copy Invitation Link"}
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"

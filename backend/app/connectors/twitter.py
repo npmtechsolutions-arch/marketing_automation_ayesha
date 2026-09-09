@@ -14,13 +14,13 @@ from typing import Any
 from app.connectors.base import (
     Capabilities,
     MediaRef,
+    NotSupportedError,
     ResolvedContent,
     PublishResult,
     PlatformRateLimited,
     SocialProvider,
     is_mock_token,
     metrics_from,
-    mock_account_metrics,
     mock_inbox_items,
     parse_platform_time,
     retry_after_seconds,
@@ -32,7 +32,6 @@ from app.connectors.base import (
     provider_request,
     require_refresh_token,
     classify_retryable,
-    mock_metrics_fallback,
 )
 from app.connectors.media import (
     _content_with_hashtags,
@@ -211,12 +210,23 @@ class TwitterProvider(SocialProvider):
     async def get_post_metrics(
         self, external_post_id: str, social_account: Any
     ) -> dict[str, Any]:
-        """X (Twitter) has no implemented metrics fetch.
+        """X exposes no implemented metrics fetch, so this reports nothing.
 
-        Returns fabricated numbers, exactly as before -- see
-        :func:`app.connectors.base.mock_metrics_fallback`.
+        It used to return ``mock_metrics_fallback(self.slug)`` -- random
+        integers -- unconditionally, on real accounts with real credentials.
+        Those numbers reached post cards, the analytics dashboards and the PDFs
+        agencies send to their clients, indistinguishable from measurements.
+        Three consecutive reads of one post returned 755, 72 and 674 likes.
+
+        ``NotSupportedError`` is the honest answer and the base class's own
+        default: the caller writes no performance row, and an absent row means
+        "not measured" everywhere downstream, where a stored 0 would have meant
+        "measured, and nobody engaged".
+
+        Implementing this for real needs the X API v2 ``tweets`` endpoint with
+        ``tweet.fields=public_metrics``, which requires an elevated access tier.
         """
-        return mock_metrics_fallback(self.slug)
+        raise NotSupportedError(self.slug, "get_post_metrics")
 
     async def refresh_token(self, social_account: Any) -> TokenRefreshResult:
         """Moved from social_accounts.py:812-868.
@@ -335,7 +345,9 @@ async def _account_metrics(platform: Any, since, until) -> dict[str, Any]:
 
     token = getattr(platform, "access_token", None)
     if is_mock_token(token):
-        return mock_account_metrics("twitter")
+        # No real account behind a placeholder token, so no metrics. Absent
+        # metrics stay absent and store as NULL -- see collect_account().
+        return {}
 
     out: dict[str, Any] = {}
     async with httpx.AsyncClient() as client:

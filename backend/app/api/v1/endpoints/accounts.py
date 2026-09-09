@@ -147,9 +147,31 @@ async def list_accounts(
         role = memberships.get(account.id)
         return role.value if hasattr(role, "value") else role
 
+    # Organization names for the page, in one query, so the switcher can group
+    # by company without calling /organizations/ -- which an invited
+    # collaborator is legitimately not a member of. See the field's comment on
+    # AccountResponse.
+    org_names = {
+        row.id: row.name
+        for row in (
+            await db.execute(
+                select(Organization.id, Organization.name).where(
+                    Organization.id.in_(
+                        [a.organization_id for a in accounts] or [None]
+                    )
+                )
+            )
+        ).all()
+    }
+
     return PaginatedResponse[AccountResponse](
         items=[
-            AccountResponse.model_validate(a).model_copy(update={"role": _role(a)})
+            AccountResponse.model_validate(a).model_copy(
+                update={
+                    "role": _role(a),
+                    "organization_name": org_names.get(a.organization_id),
+                }
+            )
             for a in accounts
         ],
         total=total,
