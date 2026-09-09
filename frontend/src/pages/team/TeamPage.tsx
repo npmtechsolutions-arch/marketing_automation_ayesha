@@ -32,6 +32,7 @@ import { Select } from "@/components/ui/Select";
 import { cn } from "@/lib/utils";
 import api, { getAccountId } from "@/lib/api";
 import { showError } from "@/components/ui/Toast";
+import { seatSummary } from "@/lib/seats";
 
 // ── Types ───────────────────────────────────────────────────────────
 type Role =
@@ -132,7 +133,6 @@ const PERMISSION_ROWS: { key: string; label: string }[] = [
   { key: "settings.manage", label: "Change workspace settings" },
 ];
 
-const planLimit = 10;
 
 // ── Component ───────────────────────────────────────────────────────
 
@@ -161,9 +161,22 @@ export default function TeamPage() {
 
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // The plan's real seat limit and name. Null until settings load -- the page
+  // used to hardcode 10 and "Growth Plan", which contradicted the refusal a
+  // Free workspace got on its very next click.
+  const [seatLimit, setSeatLimit] = useState<number | null>(null);
+  const [planTier, setPlanTier] = useState<string | null>(null);
 
   const activeMembers = members.filter((m) => m.invitation_status === "accepted");
   const pendingMembers = members.filter((m) => m.invitation_status === "pending");
+  // A pending invitation already holds a seat -- enforce_member_limit counts
+  // it -- so the meter must too, or it reads "1 of 1 used" right up to a
+  // refusal it did not predict.
+  const seats = seatSummary({
+    used: activeMembers.length + pendingMembers.length,
+    limit: seatLimit,
+    planName: planTier,
+  });
 
   // ── Load members ──────────────────────────────────────────────────
   const loadMembers = useCallback(async () => {
@@ -176,7 +189,18 @@ export default function TeamPage() {
       return;
     }
     try {
-      const res: any = await api.get(`/accounts/${accountId}/team/?per_page=100`);
+      const [teamRes, settingsRes] = await Promise.all([
+        api.get(`/accounts/${accountId}/team/?per_page=100`),
+        // Resolved from plan_features -- the same table enforcement reads, so
+        // the meter and the refusal cannot disagree.
+        api.get(`/accounts/${accountId}/settings/`).catch(() => null),
+      ]);
+      const settings: any = settingsRes && ((settingsRes as any).data ?? settingsRes);
+      if (settings) {
+        setSeatLimit(settings.max_team_members ?? null);
+        setPlanTier(settings.subscription_tier ?? null);
+      }
+      const res: any = teamRes;
       const payload = res.data ?? res;
       const items: TeamMember[] = payload.items ?? payload ?? [];
       setMembers(items);
@@ -353,18 +377,29 @@ export default function TeamPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium" style={{ color: "var(--page-heading)" }}>
-                    {activeMembers.length} of {planLimit} team members used
+                    {seats.label}
                   </p>
-                  <p className="text-xs" style={{ color: "var(--page-text-muted)" }}>Growth Plan</p>
+                  <p className="text-xs" style={{ color: "var(--page-text-muted)" }}>
+                    {seats.planLabel ?? "\u00a0"}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <div className="w-48 h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-700"
-                    style={{ width: `${Math.min((activeMembers.length / planLimit) * 100, 100)}%` }}
-                  />
-                </div>
+                {/* No bar for an unlimited plan: there is no fraction to draw,
+                    and one pinned at 0% or 100% would say something untrue. */}
+                {seats.percent !== null && (
+                  <div className="w-48 h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-700",
+                        seats.atLimit
+                          ? "bg-gradient-to-r from-amber-500 to-red-500"
+                          : "bg-gradient-to-r from-purple-500 to-blue-500"
+                      )}
+                      style={{ width: `${seats.percent}%` }}
+                    />
+                  </div>
+                )}
                 <Button variant="ghost" size="sm" icon={<ArrowUpRight className="w-3.5 h-3.5" />} iconPosition="right" onClick={() => navigate("/billing")}>
                   Upgrade
                 </Button>

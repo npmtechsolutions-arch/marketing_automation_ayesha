@@ -48,7 +48,7 @@ import PlatformIcon from "@/components/shared/PlatformIcon";
 import DevicePreview from "@/components/shared/DevicePreview";
 import { cn } from "@/lib/utils";
 import api, { getAccountId , getAccountIdSync } from "@/lib/api";
-import { localDateTime, schedulingApi, wallClockIn } from "@/lib/scheduling";
+import { defaultScheduleFields, localDateTime, schedulingApi, wallClockIn } from "@/lib/scheduling";
 import RecurrenceEditor from "@/components/scheduling/RecurrenceEditor";
 import AiAssistMenu from "@/components/content/AiAssistMenu";
 import SuggestedTimes from "@/components/scheduling/SuggestedTimes";
@@ -213,6 +213,16 @@ export default function CreatePostPage() {
     setScheduleTime(time);
   }, [scheduledAtIso, workspaceTimezone]);
 
+  // The timezone arrives after first render, so the seed above is necessarily
+  // UTC. Correct it once, and only while the fields are still untouched and
+  // this is not an existing post being edited.
+  useEffect(() => {
+    if (scheduleTouched.current || scheduledAtIso) return;
+    const { date, time } = defaultScheduleFields(workspaceTimezone);
+    setScheduleDate(date);
+    setScheduleTime(time);
+  }, [workspaceTimezone, scheduledAtIso]);
+
   useEffect(() => {
     const editState = location.state as { post?: any; mode?: "edit" | "duplicate" } | null;
     if (editState?.post) {
@@ -376,21 +386,21 @@ export default function CreatePostPage() {
   // from, so it appears as its own section once the post exists.
   const [showRepeat, setShowRepeat] = useState(false);
   const workspaceId = getAccountIdSync();
-  const [scheduleDate, setScheduleDate] = useState(() => {
-    const d = new Date();
-    d.setHours(d.getHours() + 1);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  });
-  const [scheduleTime, setScheduleTime] = useState(() => {
-    const d = new Date();
-    d.setHours(d.getHours() + 1);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
-  });
+  // Seeded on the workspace's clock, which is what the note under these fields
+  // promises. They used to be built from `new Date()` and `getHours()` -- the
+  // browser's wall clock, presented as the workspace's. On an IST machine
+  // scheduling into a UTC workspace they opened on 03:54 while the workspace
+  // read 21:24, and a prefilled time is the one a user is most likely to
+  // accept. Re-seeded below once the real timezone arrives.
+  const [scheduleDate, setScheduleDate] = useState(
+    () => defaultScheduleFields("UTC").date
+  );
+  const [scheduleTime, setScheduleTime] = useState(
+    () => defaultScheduleFields("UTC").time
+  );
+  // Whether the user has touched the schedule fields. Re-seeding underneath
+  // someone who has already chosen a time would be worse than the bug.
+  const scheduleTouched = useRef(false);
   const [isPosting, setIsPosting] = useState(false);
 
   // ── Instagram & Facebook & YouTube & LinkedIn & Twitter formats ──
@@ -2892,7 +2902,7 @@ export default function CreatePostPage() {
                           <input
                             type="date"
                             value={scheduleDate}
-                            onChange={(e) => setScheduleDate(e.target.value)}
+                            onChange={(e) => { scheduleTouched.current = true; setScheduleDate(e.target.value); }}
                             className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgba(124,58,237,0.50)] transition-all"
                             style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                           />
@@ -2904,7 +2914,7 @@ export default function CreatePostPage() {
                           <input
                             type="time"
                             value={scheduleTime}
-                            onChange={(e) => setScheduleTime(e.target.value)}
+                            onChange={(e) => { scheduleTouched.current = true; setScheduleTime(e.target.value); }}
                             className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgba(124,58,237,0.50)] transition-all"
                             style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
                           />
@@ -2918,6 +2928,7 @@ export default function CreatePostPage() {
                             // Already the workspace's wall clock; passing it
                             // through a Date here would reintroduce the
                             // browser-timezone bug the S2 fix removed.
+                            scheduleTouched.current = true;
                             setScheduleDate(date);
                             setScheduleTime(time);
                           }}

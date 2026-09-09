@@ -226,3 +226,26 @@ export function wallClockIn(
     return { date: iso.slice(0, 10), time: iso.slice(11, 16) };
   }
 }
+
+/** The date and time the schedule fields should start on, an hour ahead.
+ *
+ *  On the **workspace's** clock, which is what the note under those fields
+ *  promises: "Times are on the workspace's clock, not your computer's."
+ *
+ *  They used to be built with `new Date()` and `getHours()`, so the default was
+ *  the browser's wall clock presented as the workspace's. On an IST machine
+ *  scheduling into a UTC workspace the fields opened on 03:54 while it was
+ *  21:24 in the workspace -- six and a half hours out, in the one place the
+ *  user is most likely to accept what is offered. Defect #1 fixed how these
+ *  fields are parsed and rendered; nobody looked at what they were seeded with.
+ *
+ *  An hour's lead is kept from the old behaviour: far enough ahead that the
+ *  time has not passed by the time the form is submitted.
+ */
+export function defaultScheduleFields(
+  timeZone: string,
+  now: Date = new Date()
+): { date: string; time: string } {
+  const anHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
+  return wallClockIn(anHourFromNow.toISOString(), timeZone);
+}

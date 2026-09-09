@@ -37,6 +37,7 @@ import BulkImportDialog from "@/components/content/BulkImportDialog";
 import BestTimesHeatmap from "@/components/scheduling/BestTimesHeatmap";
 import ReviewPanel from "@/components/content/ReviewPanel";
 import { statusMeta, type BadgeVariant, type ReviewStatus } from "@/lib/review";
+import { STATUS_BUCKETS, bucketOf, isEditableDraft, mapStatus, type StatusBucket } from "@/lib/postStatus";
 import { cn, formatDate, getPlatformColor } from "@/lib/utils";
 import api, { getAccountId, getAccountIdSync } from "@/lib/api";
 import { showSuccess, showError } from "@/components/ui/Toast";
@@ -79,10 +80,15 @@ const PLATFORMS: { key: Platform | "all"; label: string }[] = [
   { key: "youtube", label: "YouTube" },
 ];
 
-const STATUS_FILTERS: { key: PostStatus | "all"; label: string }[] = [
+// Buckets, not single statuses. Filtering on `status === "draft"` meant a post
+// in review matched nothing and appeared under no filter at all; and "In review"
+// and "Partly published" had no chip, so those posts were uncountable.
+const STATUS_FILTERS: { key: StatusBucket | "all"; label: string }[] = [
   { key: "all", label: "All" },
   { key: "published", label: "Published" },
+  { key: "partially_published", label: "Partly published" },
   { key: "scheduled", label: "Scheduled" },
+  { key: "in_review", label: "In review" },
   { key: "draft", label: "Drafts" },
   { key: "failed", label: "Failed" },
 ];
@@ -312,16 +318,6 @@ function EngagementMetric({
  *  their connectors raise NotSupportedError -- this only phrases it. */
 const NO_METRICS_PLATFORMS = new Set<Platform>(["twitter", "linkedin"]);
 
-// Map backend status strings to CalendarPost status
-function mapStatus(backendStatus: string): PostStatus {
-  const s = backendStatus.toLowerCase();
-  if (s === "published" || s === "partially_published") return "published";
-  if (s === "scheduled") return "scheduled";
-  if (s === "failed") return "failed";
-  if (s === "publishing") return "publishing";
-  return "draft";
-}
-
 // Map platform name to Platform type
 function mapPlatform(name: string): Platform {
   const n = (name || "").toLowerCase();
@@ -356,7 +352,7 @@ export default function CalendarPage() {
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [platformFilter, setPlatformFilter] = useState<Platform | "all">("all");
-  const [statusFilter, setStatusFilter] = useState<PostStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<StatusBucket | "all">("all");
   const [selectedPost, setSelectedPost] = useState<CalendarPost | null>(null);
   const [isPublishingNow, setIsPublishingNow] = useState(false);
   // The workspace the panel queries. Read from the store rather than awaited
@@ -532,7 +528,7 @@ export default function CalendarPage() {
   const filteredPosts = useMemo(() => {
     return posts.filter((p) => {
       if (platformFilter !== "all" && p.platform !== platformFilter) return false;
-      if (statusFilter !== "all" && p.status !== statusFilter) return false;
+      if (statusFilter !== "all" && bucketOf(p.status) !== statusFilter) return false;
       return true;
     });
   }, [posts, platformFilter, statusFilter]);
@@ -545,10 +541,14 @@ export default function CalendarPage() {
   });
 
   // Stats
-  const publishedCount = filteredPosts.filter((p) => p.status === "published").length;
-  const scheduledCount = filteredPosts.filter((p) => p.status === "scheduled").length;
-  const draftCount = filteredPosts.filter((p) => p.status === "draft").length;
-  const failedCount = filteredPosts.filter((p) => p.status === "failed").length;
+  const countIn = (bucket: StatusBucket) =>
+    filteredPosts.filter((p) => bucketOf(p.status) === bucket).length;
+  const publishedCount = countIn("published");
+  const partiallyPublishedCount = countIn("partially_published");
+  const scheduledCount = countIn("scheduled");
+  const inReviewCount = countIn("in_review");
+  const draftCount = countIn("draft");
+  const failedCount = countIn("failed");
 
   const navigateMonth = (dir: 1 | -1) => {
     setNavDirection(dir);
@@ -744,6 +744,11 @@ export default function CalendarPage() {
           transition={{ delay: 0.05 }}
           className="grid grid-cols-2 sm:grid-cols-4 gap-3"
         >
+          {/* "Partly published" and "In review" appear only when they apply:
+              they are the two states that had no chip, so posts in them were
+              counted as Published and Drafts respectively. A chip that reads 0
+              on every normal workspace is noise; one that is missing when it
+              matters is a lie. */}
           {[
             {
               label: "Published",
@@ -751,12 +756,28 @@ export default function CalendarPage() {
               color: "emerald",
               dotColor: "bg-emerald-400",
             },
+            ...(partiallyPublishedCount
+              ? [{
+                  label: "Partly published",
+                  count: partiallyPublishedCount,
+                  color: "amber",
+                  dotColor: "bg-amber-400",
+                }]
+              : []),
             {
               label: "Scheduled",
               count: scheduledCount,
               color: "blue",
               dotColor: "bg-blue-400",
             },
+            ...(inReviewCount
+              ? [{
+                  label: "In review",
+                  count: inReviewCount,
+                  color: "amber",
+                  dotColor: "bg-amber-400",
+                }]
+              : []),
             {
               label: "Drafts",
               count: draftCount,
@@ -842,7 +863,7 @@ export default function CalendarPage() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() =>
-                  setStatusFilter(s.key as PostStatus | "all")
+                  setStatusFilter(s.key)
                 }
                 className={cn(
                   "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 cursor-pointer",
@@ -1190,8 +1211,10 @@ export default function CalendarPage() {
                 variant={STATUS_BADGE_VARIANT[selectedPost.status]}
                 dot
               >
-                {selectedPost.status.charAt(0).toUpperCase() +
-                  selectedPost.status.slice(1)}
+                {/* The shared label, not a capitalised raw status. Otherwise
+                    a partial publish reads "Partially_published" in the header
+                    while the review row beside it says "Partly published". */}
+                {statusMeta(selectedPost.status).label}
               </Badge>
               <Badge variant="platform" platform={selectedPost.platform}>
                 <span className="flex items-center gap-1.5">
@@ -1377,7 +1400,7 @@ export default function CalendarPage() {
               >
                 Reschedule
               </Button>
-              {(selectedPost.status === "draft" ||
+              {(isEditableDraft(selectedPost.status) ||
                 selectedPost.status === "scheduled") && (
                 <Button
                   variant="danger"

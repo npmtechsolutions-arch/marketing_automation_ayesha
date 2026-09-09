@@ -36,6 +36,15 @@ Every entry earned its place by a specific incident.
   at 00:17 IST: always wrong, visible five and a half hours a day. Compute the
   date on the same clock the code under test uses.
 
+- **The frontend has tests now: `npm test` in `frontend/` (vitest).** Added with
+  the #13-#16 fixes, which were all "the UI says something the server does not".
+  They cover pure logic deliberately extracted out of components -- status
+  mapping, seat maths, schedule defaults -- so no DOM assertions and no snapshot
+  files. When a UI defect is really a rule, move the rule into `src/lib/` and
+  pin it there; the component keeps only the markup. Run it alongside the
+  typecheck, and remember the backend suite holds the *other half* of two of
+  these contracts (`tests/test_status_contract.py`).
+
 - **`npx tsc --noEmit` in `frontend/` checks nothing.** The root `tsconfig.json`
   has `"files": []` and only project *references*, so the bare invocation
   type-checks an empty program and exits 0 no matter what is broken. Use
