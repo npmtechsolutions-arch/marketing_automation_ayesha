@@ -78,6 +78,18 @@ class Report(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
 
+    # Null for a whole-workspace report; set for one scoped to a campaign.
+    #
+    # SET NULL rather than CASCADE on purpose: deleting a campaign should not
+    # delete the report a client was already sent. The report keeps its stored
+    # summary and its rendered files; it simply stops being linked.
+    campaign_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("campaigns.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     type: Mapped[ReportType] = mapped_column(
         Enum(ReportType, name="report_type_enum"), nullable=False
     )

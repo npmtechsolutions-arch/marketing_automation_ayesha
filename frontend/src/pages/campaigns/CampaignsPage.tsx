@@ -76,6 +76,53 @@ interface LinkedPost {
   engagement: number;
 }
 
+/** GET /campaigns/{id}/performance.
+ *
+ *  Every rate and fraction is nullable on purpose: the API returns null where
+ *  there is no denominator rather than a confident zero, and the UI has to
+ *  carry that through to the pixels or the doctrine stops at the API boundary.
+ */
+interface CampaignPerformance {
+  window: { start: string; end: string; label: string; timezone: string };
+  totals: {
+    reach: number;
+    impressions: number;
+    clicks: number;
+    video_views: number;
+    engagement: number;
+    engagement_rate: number | null;
+  };
+  progress: {
+    open_ended: boolean;
+    days_total: number | null;
+    days_elapsed: number;
+    days_remaining: number | null;
+    time_progress: number | null;
+    posts_total: number;
+    posts_published: number;
+    posts_scheduled: number;
+    post_progress: number | null;
+    on_track: boolean | null;
+  };
+  platforms: {
+    platform: string;
+    posts: number;
+    reach: number;
+    impressions: number;
+    engagement: number;
+    engagement_rate: number | null;
+  }[];
+  top_posts: {
+    id: string;
+    title: string;
+    published_at: string | null;
+    reach: number;
+    engagement: number;
+    engagement_rate: number | null;
+  }[];
+  not_attributable: string[];
+}
+
 interface CampaignStats {
   post_count: number;
   published_count: number;
@@ -114,6 +161,39 @@ const platformOptions = [
 
 const emptyForm = { name: "", objective: "", budget: "", startDate: "", endDate: "", platforms: [] as string[] };
 
+/** One labelled progress bar.
+ *
+ *  A null `percent` means the fraction does not exist -- an open-ended campaign
+ *  has no elapsed proportion, and a campaign with no posts has no publishing
+ *  proportion. Those render as a note instead of an empty bar, because a bar
+ *  sitting at 0% is a claim that nothing has happened.
+ */
+function ProgressRow({
+  label, detail, percent, emptyNote,
+}: {
+  label: string;
+  detail: string;
+  percent: number | null;
+  emptyNote: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3 mb-1">
+        <span className="text-sm" style={{ color: "var(--page-text-secondary)" }}>{label}</span>
+        <span className="text-xs tabular-nums" style={{ color: "var(--page-text-muted)" }}>{detail}</span>
+      </div>
+      {percent === null ? (
+        <p className="text-xs italic" style={{ color: "var(--page-text-muted)" }}>{emptyNote}</p>
+      ) : (
+        <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "var(--surface-border)" }}>
+          <div className="h-full rounded-full transition-all"
+            style={{ width: `${Math.min(100, percent)}%`, backgroundColor: "#7c3aed" }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Campaigns Page
 // ---------------------------------------------------------------------------
@@ -132,6 +212,8 @@ export default function CampaignsPage() {
   // Detail hub
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [stats, setStats] = useState<CampaignStats | null>(null);
+  const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
+  const [reportPending, setReportPending] = useState(false);
   const [linkedPosts, setLinkedPosts] = useState<LinkedPost[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [spendInput, setSpendInput] = useState("");
@@ -262,20 +344,51 @@ export default function CampaignsPage() {
     if (!aid) return;
     setDetailLoading(true);
     try {
-      const [statsRes, postsRes] = await Promise.allSettled([
+      // allSettled, not all: a role with campaign access but not analytics.view
+      // gets a 403 on the dashboard and should still see the campaign's posts
+      // and budget rather than an empty modal.
+      const [statsRes, postsRes, perfRes] = await Promise.allSettled([
         api.get(`/accounts/${aid}/campaigns/${id}/stats`),
         api.get(`/accounts/${aid}/campaigns/${id}/posts`),
+        api.get(`/accounts/${aid}/campaigns/${id}/performance`),
       ]);
       if (statsRes.status === "fulfilled") setStats((statsRes.value as any).data ?? statsRes.value);
       if (postsRes.status === "fulfilled") setLinkedPosts((postsRes.value as any).data ?? postsRes.value ?? []);
+      setPerformance(
+        perfRes.status === "fulfilled"
+          ? ((perfRes.value as any).data ?? perfRes.value)
+          : null
+      );
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const generateReport = async () => {
+    if (!selectedCampaign) return;
+    const aid = accountId || (await getAccountId());
+    if (!aid) return;
+    setReportPending(true);
+    try {
+      const res: any = await api.post(
+        `/accounts/${aid}/campaigns/${selectedCampaign.id}/report`
+      );
+      const report = res?.data ?? res;
+      showSuccess(
+        `Report queued for ${report.period_start} to ${report.period_end}. ` +
+          "It will appear on the Reports page when it is ready."
+      );
+    } catch (err: any) {
+      showError(err?.response?.data?.detail || "Failed to queue the report");
+    } finally {
+      setReportPending(false);
     }
   };
 
   const openDetail = (c: Campaign) => {
     setSelectedCampaign(c);
     setStats(null);
+    setPerformance(null);
     setLinkedPosts([]);
     setSpendInput("");
     loadDetail(c.id);
@@ -284,6 +397,7 @@ export default function CampaignsPage() {
   const closeDetail = () => {
     setSelectedCampaign(null);
     setStats(null);
+    setPerformance(null);
     setLinkedPosts([]);
   };
 
@@ -618,12 +732,23 @@ export default function CampaignsPage() {
           const platformList = selectedCampaign.platforms?.map((p: any) => p.type || p) || [];
           const budgetTotal = selectedCampaign.budget_total || 0;
           const budgetPercent = budgetTotal > 0 ? Math.min(100, Math.round((selectedCampaign.budget_spent / budgetTotal) * 100)) : 0;
+          const perf = performance;
+          // An em dash where a figure does not exist. The engagement rate is
+          // null whenever there was no reach to divide by, and printing 0.00%
+          // there would read as "nobody engaged" rather than "nothing measured".
           const statCells = [
-            { label: "Posts", value: stats ? String(stats.post_count) : "—" },
-            { label: "Reach", value: stats ? formatNumber(stats.reach) : "—" },
-            { label: "Engagement", value: stats ? formatNumber(stats.engagement) : "—" },
-            { label: "Eng. Rate", value: stats ? `${(stats.engagement_rate * 100).toFixed(2)}%` : "—" },
+            { label: "Posts", value: perf ? String(perf.progress.posts_total) : "—" },
+            { label: "Reach", value: perf ? formatNumber(perf.totals.reach) : "—" },
+            { label: "Engagement", value: perf ? formatNumber(perf.totals.engagement) : "—" },
+            {
+              label: "Eng. Rate",
+              value:
+                perf && perf.totals.engagement_rate !== null
+                  ? `${perf.totals.engagement_rate.toFixed(2)}%`
+                  : "—",
+            },
           ];
+          const pct = (v: number | null) => (v === null ? null : Math.round(v * 100));
           return (
             <div className="space-y-5">
               {/* Status + dates */}
@@ -656,9 +781,99 @@ export default function CampaignsPage() {
                   ))}
                 </div>
                 <p className="mt-2 text-[11px]" style={{ color: "var(--page-text-muted)" }}>
-                  Aggregated from the posts linked below (updates as their analytics come in).
+                  {perf
+                    ? `Posts linked to this campaign, ${perf.window.label} (${perf.window.timezone}).`
+                    : "Aggregated from the posts linked below (updates as their analytics come in)."}
                 </p>
               </div>
+
+              {perf && (
+                <>
+                  {/* Progress against schedule */}
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "var(--page-text-muted)" }}>Progress</p>
+                    <div className="rounded-xl p-4 space-y-3" style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
+                      <ProgressRow
+                        label="Posts published"
+                        detail={`${perf.progress.posts_published} of ${perf.progress.posts_total}${perf.progress.posts_scheduled ? ` · ${perf.progress.posts_scheduled} scheduled` : ""}`}
+                        percent={pct(perf.progress.post_progress)}
+                        emptyNote="No posts linked yet"
+                      />
+                      <ProgressRow
+                        label="Time elapsed"
+                        detail={
+                          perf.progress.open_ended
+                            ? `${perf.progress.days_elapsed} days so far · no end date`
+                            : `${perf.progress.days_elapsed} of ${perf.progress.days_total} days · ${perf.progress.days_remaining} left`
+                        }
+                        percent={pct(perf.progress.time_progress)}
+                        emptyNote="Open-ended"
+                      />
+                      {perf.progress.on_track !== null && (
+                        <Badge variant={perf.progress.on_track ? "success" : "warning"} dot>
+                          {perf.progress.on_track ? "Ahead of schedule" : "Behind schedule"}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Per-platform split */}
+                  {perf.platforms.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "var(--page-text-muted)" }}>By platform</p>
+                      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--surface-border)" }}>
+                        {perf.platforms.map((row) => {
+                          const Icon = platformIconMap[row.platform];
+                          return (
+                            <div key={row.platform} className="flex items-center gap-3 px-4 py-2.5 text-sm"
+                              style={{ backgroundColor: "var(--sidebar-hover-bg)", borderBottom: "1px solid var(--surface-border)" }}>
+                              {Icon && <Icon className="w-4 h-4 shrink-0" />}
+                              <span className="capitalize flex-1 truncate" style={{ color: "var(--page-text)" }}>{row.platform}</span>
+                              <span className="text-xs tabular-nums" style={{ color: "var(--page-text-muted)" }}>{row.posts} post{row.posts === 1 ? "" : "s"}</span>
+                              <span className="tabular-nums w-20 text-right" style={{ color: "var(--page-text-secondary)" }}>{formatNumber(row.reach)}</span>
+                              <span className="tabular-nums w-16 text-right font-medium" style={{ color: "var(--page-heading)" }}>
+                                {row.engagement_rate === null ? "—" : `${row.engagement_rate.toFixed(2)}%`}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-1.5 text-[11px]" style={{ color: "var(--page-text-muted)" }}>Reach and engagement rate per platform.</p>
+                    </div>
+                  )}
+
+                  {/* Top posts */}
+                  {perf.top_posts.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "var(--page-text-muted)" }}>Top posts</p>
+                      <div className="space-y-1.5">
+                        {perf.top_posts.map((post, i) => (
+                          <div key={post.id} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm"
+                            style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}>
+                            <span className="text-xs font-semibold w-4 shrink-0" style={{ color: "var(--page-text-muted)" }}>{i + 1}</span>
+                            <span className="flex-1 truncate" style={{ color: "var(--page-text)" }}>{post.title}</span>
+                            <span className="flex items-center gap-1 text-xs tabular-nums shrink-0" style={{ color: "var(--page-text-muted)" }}>
+                              <Heart className="w-3 h-3" />{formatNumber(post.engagement)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* What a campaign cannot claim. Stated rather than left as a
+                      gap for a reader to fill in with an assumption. */}
+                  {perf.not_attributable.map((note) => (
+                    <p key={note} className="text-[11px] leading-relaxed" style={{ color: "var(--page-text-muted)" }}>{note}</p>
+                  ))}
+
+                  <Button size="sm" variant="secondary" fullWidth
+                    icon={reportPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                    disabled={reportPending} onClick={generateReport}>
+                    {reportPending ? "Queueing…" : "Generate campaign report"}
+                  </Button>
+                </>
+              )}
 
               {/* Budget + spend logging */}
               <div>

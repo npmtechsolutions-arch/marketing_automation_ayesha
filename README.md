@@ -835,6 +835,63 @@ A "report ready" notification goes to whoever asked, or to the workspace owner
 for a scheduled one. Not to every member: telling five people the monthly report
 exists is how people learn to ignore notifications.
 
+## Campaign performance
+
+`GET /accounts/{id}/campaigns/{campaign_id}/performance` is the analytics page's
+data narrowed to one campaign: totals, progress against schedule, a per-platform
+split, and top posts. It is gated on `analytics.view` rather than on campaign
+access, because reading the workspace's numbers one campaign at a time is still
+reading them.
+
+### What a campaign can and cannot be credited with
+
+`post_performances` is the only table with a campaign dimension, reached through
+`posts.campaign_id`. Everything on the dashboard is built from it.
+
+`analytics_daily` — followers, account-level reach, audience demographics — is a
+**per-connection daily snapshot that does not know which campaign was running**.
+Filtering it by campaign would mean inventing attribution, so those figures are
+absent from the dashboard and from campaign reports rather than approximated.
+The payload carries a `not_attributable` note saying so, and the UI prints it,
+because a missing follower count otherwise looks like a bug rather than a
+refusal.
+
+One limitation is stated in the module because it is invisible otherwise:
+`PostPerformance` columns are `NOT NULL DEFAULT 0`, so a platform that reports
+nothing is stored as `0` and cannot be told apart from one that reported zero.
+The module does not pretend to recover that distinction. What it does do is
+refuse to divide by an unmeasured denominator — an engagement rate with no reach
+is null, not `0.00%`.
+
+### The window is the campaign's own
+
+Campaign dates are calendar dates **on the workspace's clock**, so a campaign
+running the 10th to the 20th for a Sydney workspace does not start at 00:00 UTC.
+A missing `start_date` means "since it was created"; a missing `end_date` means
+"still running", and an open-ended campaign has *no* elapsed fraction — its
+window ends now, so a percentage would always read 100%. Null there, not 100.
+
+Posts are also bounded by that window. A post attached to a campaign long after
+it ended is not part of what the campaign did, and counting it would let a
+finished campaign's numbers keep moving.
+
+### Reports delegate rather than re-implement
+
+`POST /accounts/{id}/campaigns/{campaign_id}/report` queues an ordinary report
+with a `campaign_id` — same statuses, formats, downloads, retention and
+entitlement meter as every other report. Routing around the meter by going via a
+campaign would make the entitlement meaningless.
+
+The period is the campaign's span **at the moment of the request**, stored on the
+row. An open-ended campaign otherwise gets a report covering a different window
+each time it is regenerated, and a client's second copy would not match their
+first. `reports.campaign_id` is `ON DELETE SET NULL`: deleting a campaign must
+not delete a report a client has already been sent.
+
+Top posts come from `analytics_query.posts` with a campaign filter rather than a
+query of their own, so a post's numbers on a campaign dashboard are the numbers
+the analytics page shows for that post.
+
 ## Unified inbox
 
 Comments, direct messages and mentions from every connected account, under

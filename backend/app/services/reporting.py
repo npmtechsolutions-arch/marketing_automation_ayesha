@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.report import ReportType
-from app.services import analytics_query
+from app.services import analytics_query, campaign_analytics
 from app.services.dashboard import DateRange, workspace_timezone
 
 logger = logging.getLogger(__name__)
@@ -155,6 +155,116 @@ def _executive_summary(payload: dict) -> str:
         parts.append(f"Engagement rate was {rate:.2f}%")
 
     return ". ".join(parts) + "."
+
+
+def _campaign_executive_summary(payload: dict, campaign_name: str) -> str:
+    """The campaign equivalent of :func:`_executive_summary`.
+
+    A separate function rather than a branch inside that one because the two
+    describe different things. This one never mentions audience growth: a
+    campaign cannot be credited with follower movement (see
+    :mod:`app.services.campaign_analytics`), and a summary that quietly
+    borrowed the workspace's figure would be attributing it.
+    """
+    totals = payload["metrics"]
+    progress = payload["campaign"]["progress"]
+    parts: list[str] = [f"“{campaign_name}”"]
+
+    published = progress["posts_published"]
+    platform_count = len(payload["platforms"])
+    if published:
+        parts.append(
+            f"published {published} post{'s' if published != 1 else ''} across "
+            f"{platform_count} platform{'s' if platform_count != 1 else ''}"
+        )
+    else:
+        parts.append("published no posts in this period")
+
+    reach = totals.get("reach", {}).get("value")
+    if reach:
+        parts.append(f"reaching {reach:,} accounts")
+
+    rate = totals.get("engagement_rate", {}).get("value")
+    if rate is not None:
+        parts.append(f"at a {rate:.2f}% engagement rate")
+
+    summary = " ".join(parts) + "."
+
+    if progress["on_track"] is not None:
+        summary += (
+            " The campaign is ahead of its posting schedule."
+            if progress["on_track"]
+            else " The campaign is behind its posting schedule."
+        )
+    return summary
+
+
+async def aggregate_campaign(
+    db: AsyncSession, account: Account, period: Period, campaign
+) -> dict:
+    """A report payload scoped to one campaign.
+
+    Deliberately narrower than :func:`aggregate`. A campaign report carries the
+    performance of its own posts and nothing else: ``analytics_daily`` has no
+    campaign dimension, so account reach, follower counts and audience
+    demographics cannot be attributed to a campaign and are absent rather than
+    approximated. ``not_attributable`` says so in the payload, and the renderers
+    read every optional section with ``.get``, so the sections simply do not
+    appear.
+
+    The metrics dict keeps the ``{value, previous, change, change_percent}``
+    shape the renderers expect, with ``previous`` null throughout: the window
+    before a campaign is not a comparable period, and inventing one would put a
+    meaningless arrow on a client's PDF.
+    """
+    window = to_range(period, account)
+    data = await campaign_analytics.dashboard(
+        db, account, campaign, window=window, top_limit=10
+    )
+
+    totals = data["totals"]
+    metrics = {
+        name: {"value": totals.get(name), "previous": None,
+                "change": None, "change_percent": None}
+        for name in ("reach", "impressions", "clicks", "video_views",
+                     "likes", "comments", "shares", "saves", "engagement")
+    }
+    metrics["engagement_rate"] = {
+        "value": totals.get("engagement_rate"), "previous": None,
+        "change": None, "change_percent": None,
+    }
+
+    payload = {
+        "workspace": {"id": str(account.id), "name": account.name},
+        "campaign": {
+            **data["campaign"],
+            "progress": data["progress"],
+            "budget": data["budget"],
+        },
+        "period": {
+            "start": period.start.isoformat(),
+            "end": period.end.isoformat(),
+            "days": period.days,
+            "label": period.label,
+            "timezone": window.timezone_name,
+        },
+        "metrics": metrics,
+        "has_data": any(
+            totals.get(name) for name in ("reach", "impressions", "engagement")
+        ),
+        "platforms": data["platforms"],
+        "top_posts": data["top_posts"],
+        "content": {
+            "published_posts": data["progress"]["posts_published"],
+            "total_interactions": totals.get("engagement"),
+        },
+        "not_attributable": data["not_attributable"],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    payload["executive_summary"] = _campaign_executive_summary(
+        payload, data["campaign"]["name"]
+    )
+    return payload
 
 
 async def aggregate(db: AsyncSession, account: Account, period: Period) -> dict:

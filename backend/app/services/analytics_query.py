@@ -17,6 +17,7 @@ Two rules run through everything here:
 import csv
 import io
 import logging
+import uuid
 from datetime import date, timedelta
 from typing import Optional
 
@@ -264,12 +265,19 @@ async def posts(
     sort: str = "engagement",
     order: str = "desc",
     limit: int = 50,
+    campaign_id: Optional[uuid.UUID] = None,
 ) -> list[dict]:
     """Content performance, sortable.
 
     Reads post_performances rather than analytics_daily: per-post numbers are
     per-post, and joining a daily account snapshot to individual posts would
     attribute the whole account's reach to each of them.
+
+    ``campaign_id`` narrows the same query to one campaign's posts. It is a
+    filter on this function rather than a separate query so that a figure on a
+    campaign dashboard is the figure the analytics page would show for the same
+    post -- the drift this project keeps killing starts with a second query
+    that means almost the same thing.
     """
     engagement = (
         func.coalesce(func.sum(PostPerformance.likes), 0)
@@ -324,6 +332,11 @@ async def posts(
                 Post.deleted_at.is_(None),
                 Post.created_at >= window.start,
                 Post.created_at < window.end,
+                *(
+                    [Post.campaign_id == campaign_id]
+                    if campaign_id is not None
+                    else []
+                ),
             )
             .group_by(Post.id, Post.title, Post.content, Post.published_at)
             .order_by(ordering)

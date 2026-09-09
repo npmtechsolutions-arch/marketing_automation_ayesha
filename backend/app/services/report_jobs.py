@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.campaign import Campaign
 from app.models.notification import Notification
 from app.models.report import Report, ReportFormat, ReportStatus, ReportType
 from app.services import entitlement_service as ent
@@ -64,8 +65,13 @@ async def create(
     end: Optional[date] = None,
     branding: Optional[dict] = None,
     title: Optional[str] = None,
+    campaign_id: Optional[uuid.UUID] = None,
 ) -> Report:
-    """Queue a report. Does not generate it."""
+    """Queue a report. Does not generate it.
+
+    ``campaign_id`` scopes the report to one campaign; the caller is
+    responsible for having checked that the campaign belongs to this workspace.
+    """
     period = reporting.resolve_period(
         report_type, account=account, start=start, end=end
     )
@@ -87,6 +93,7 @@ async def create(
         period_end=period.end,
         status=ReportStatus.PENDING,
         branding=resolved,
+        campaign_id=campaign_id,
     )
     db.add(report)
     await db.flush()
@@ -128,8 +135,29 @@ async def generate(db: AsyncSession, report: Report) -> Report:
     )
     branding = report.branding or reporting.DEFAULT_BRANDING
 
+    campaign = None
+    if report.campaign_id is not None:
+        campaign = (
+            await db.execute(
+                select(Campaign).where(Campaign.id == report.campaign_id)
+            )
+        ).scalar_one_or_none()
+        if campaign is None:
+            # The campaign was deleted after the report was queued. The FK is
+            # SET NULL, so this is only reachable inside the same transaction
+            # as a delete -- but failing loudly beats silently widening the
+            # report to the whole workspace under a campaign's title.
+            report.status = ReportStatus.FAILED
+            report.error = "The campaign this report covers no longer exists."
+            return report
+
     try:
-        payload = await reporting.aggregate(db, account, period)
+        if campaign is not None:
+            payload = await reporting.aggregate_campaign(
+                db, account, period, campaign
+            )
+        else:
+            payload = await reporting.aggregate(db, account, period)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Report %s failed to aggregate", report.id)
         report.status = ReportStatus.FAILED

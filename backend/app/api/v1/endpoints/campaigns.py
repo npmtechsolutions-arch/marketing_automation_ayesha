@@ -1,7 +1,8 @@
 """Campaign management endpoints."""
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
@@ -11,15 +12,21 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user
+from app.models.account import Account
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.post import Post, PostStatus
 from app.models.post_performance import PostPerformance
+from app.models.report import ReportType
 from app.schemas.common import MessageResponse, PaginatedResponse
+from app.services import campaign_analytics, entitlement_service as ent, report_jobs
+from app.services.activity_service import log_activity
 from app.core.authz import verify_account_access as _verify_account_access
 from app.core.permissions import (
+    ANALYTICS_VIEW,
     CONTENT_CREATE,
     CONTENT_DELETE,
     CONTENT_PUBLISH,
+    REPORTS_VIEW,
 )
 
 router = APIRouter()
@@ -380,6 +387,111 @@ async def complete_campaign(
     await db.flush()
     await db.refresh(campaign)
     return CampaignResponse.from_model(campaign, await _count_posts(campaign.id, db))
+
+
+# ---------------------------------------------------------------------------
+# Performance dashboard
+# ---------------------------------------------------------------------------
+
+@router.get("/{campaign_id}/performance")
+async def campaign_performance(
+    account_id: uuid.UUID,
+    campaign_id: uuid.UUID,
+    top_limit: int = Query(5, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Aggregate performance for the campaign, over the campaign's own window.
+
+    Gated on ``analytics.view`` rather than on campaign access alone: this is
+    the analytics page's data, narrowed to one campaign, and a role that may
+    not see the workspace's numbers should not see them a campaign at a time.
+
+    Distinct from ``/stats``, which is the small budget-and-counts card the
+    campaign hub has always shown. This is the dashboard: totals, schedule
+    progress, per-platform split and top posts.
+    """
+    await _verify_account_access(
+        account_id, current_user, db, permission=ANALYTICS_VIEW
+    )
+    campaign = await _get_campaign_or_404(campaign_id, account_id, db)
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+
+    return await campaign_analytics.dashboard(
+        db, account, campaign, top_limit=top_limit
+    )
+
+
+@router.post("/{campaign_id}/report", status_code=status.HTTP_202_ACCEPTED)
+async def generate_campaign_report(
+    account_id: uuid.UUID,
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Queue a report covering this campaign.
+
+    Delegates to the reports pipeline rather than rendering anything here, so a
+    campaign report is the same object as every other report: same statuses,
+    same formats, same downloads, same retention, same entitlement meter.
+
+    The period is fixed to the campaign's span **at the moment of the request**
+    and stored on the row. An open-ended campaign therefore gets a report that
+    ends today and keeps saying so when regenerated, rather than one that
+    quietly covers a different window each time.
+    """
+    await _verify_account_access(
+        account_id, current_user, db, permission=REPORTS_VIEW
+    )
+    campaign = await _get_campaign_or_404(campaign_id, account_id, db)
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+
+    organization = await ent.get_organization_for_account(db, account_id)
+    await ent.check_and_increment(db, organization, ent.REPORTS_PER_MONTH)
+
+    window = campaign_analytics.campaign_window(account, campaign)
+    tz = ZoneInfo(window.timezone_name)
+    start = window.start.astimezone(tz).date()
+    # The window is half-open and period_end is inclusive to a reader.
+    end = (window.end.astimezone(tz) - timedelta(days=1)).date()
+    if end < start:
+        end = start
+
+    try:
+        report = await report_jobs.create(
+            db, account,
+            report_type=ReportType.CUSTOM,
+            created_by=current_user.id,
+            start=start,
+            end=end,
+            branding=(account.settings or {}).get("report_branding"),
+            title=f"{campaign.name} — campaign report",
+            campaign_id=campaign.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await log_activity(
+        db, user_id=current_user.id, account_id=account_id,
+        action="report.requested", category="report",
+        description=f"Requested a campaign report for {campaign.name}",
+        resource_type="report", resource_id=str(report.id),
+        resource_name=report.title,
+    )
+
+    return {
+        "id": str(report.id),
+        "title": report.title,
+        "type": report.type.value,
+        "status": report.status.value,
+        "period_start": report.period_start.isoformat(),
+        "period_end": report.period_end.isoformat(),
+        "campaign_id": str(campaign.id),
+    }
 
 
 # ---------------------------------------------------------------------------
