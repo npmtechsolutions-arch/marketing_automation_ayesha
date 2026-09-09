@@ -170,3 +170,22 @@ async def test_csv_rendering_runs_on_postgres(pg_session, seeded):
 
     posts = await analytics_query.posts(pg_session, seeded, window)
     assert "4.0" in analytics_query.to_csv(posts)
+
+
+async def test_the_plan_grounding_queries_run_on_postgres(pg_session, seeded):
+    """The monthly plan's grounding, executed once on the real dialect.
+
+    Its topic query grouped by ``posts.hashtags`` -- a ``json`` column, which
+    Postgres has no equality operator for, so the GROUP BY raised
+    UndefinedFunctionError. SQLite grouped it happily, the whole suite passed,
+    and the first live call was a 500. The same shape as the
+    ``round(double precision, int)`` bug this file was created for.
+    """
+    from app.services import content_plan
+
+    grounding = await content_plan.gather_grounding(pg_session, seeded)
+
+    assert grounding["connections"], "the seeded connection should be listed"
+    # It runs; what it found is the SQLite suite's business.
+    assert "topics" in grounding["past_performance"]
+    assert "explanation" in grounding["past_performance"]

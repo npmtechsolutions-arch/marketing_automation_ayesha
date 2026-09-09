@@ -835,6 +835,46 @@ A "report ready" notification goes to whoever asked, or to the workspace owner
 for a scheduled one. Not to every member: telling five people the monthly report
 exists is how people learn to ignore notifications.
 
+## The AI social media manager
+
+`POST /accounts/{id}/ai/monthly-plan` proposes a month of posts. It never
+publishes and never schedules: accepting a plan creates **drafts**, or posts in
+review where the workspace requires approval, and a person still has to put
+every one of them out. That constraint is the feature, so it lives in the
+accept path rather than in the UI.
+
+### It is grounded, and it says in what
+
+The plan may only be built from things this workspace actually has: its
+connected platforms and their real capabilities from the connector registry,
+posting slots from its own history, and themes drawn from posts that actually
+measured. Where a real basis does not exist the plan says so — a workspace with
+no performance history gets platform-default times, each item's `slot_source`
+reads `"default"`, and the rationale names the reason. That is the same
+observed-or-default distinction, and the same vocabulary, that `best_times`
+established, because they are the same claim.
+
+**The model is asked for words, never for facts.** Times, platforms and targets
+are chosen from real data and handed to it; it writes the copy to fit. A model
+asked to pick a posting time will pick a plausible one, and a plausible time
+presented as "your observed best slot" is exactly the fabrication this project
+keeps removing.
+
+The grounding is frozen onto the plan row at generation time, so a reviewer can
+check the basis of a proposal rather than today's version of it.
+
+### Cost and reservation
+
+A plan costs five AI requests, not one — the router-level dependency charges one
+on the way in and the endpoint takes the rest. Accepting reserves the **whole
+selection** against `posts_per_month` in one atomic call before anything is
+written: charging per item would let a ten-item accept stop halfway and leave
+the reviewer to work out which half happened.
+
+Topic hints are user text, so they go in the user message and are labelled as
+theirs. Only the goal enum reaches the system prompt — the rule from the inline
+assists, kept here because a larger prompt is a larger temptation.
+
 ## Campaign performance
 
 `GET /accounts/{id}/campaigns/{campaign_id}/performance` is the analytics page's

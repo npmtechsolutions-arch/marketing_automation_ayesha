@@ -106,6 +106,7 @@ import CalendarPage from '@/pages/content/CalendarPage';
 import CreatePostPage from '@/pages/content/CreatePostPage';
 import AnalyticsPage from '@/pages/analytics/AnalyticsPage';
 import StrategyPage from '@/pages/strategy/StrategyPage';
+import MonthlyPlanPage from '@/pages/strategy/MonthlyPlanPage';
 import CampaignsPage from '@/pages/campaigns/CampaignsPage';
 import PlatformsPage from '@/pages/platforms/PlatformsPage';
 import SocialAccountsPage from '@/pages/platforms/SocialAccountsPage';
@@ -377,6 +378,7 @@ function App() {
             <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
             <Route path="/strategy" element={<ProtectedRoute><StrategyPage /></ProtectedRoute>} />
+            <Route path="/strategy/monthly-plan" element={<ProtectedRoute><MonthlyPlanPage /></ProtectedRoute>} />
             <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
             <Route path="/platforms" element={<ProtectedRoute><PlatformsPage /></ProtectedRoute>} />
             <Route path="/social-accounts" element={<ProtectedRoute><SocialAccountsPage /></ProtectedRoute>} />

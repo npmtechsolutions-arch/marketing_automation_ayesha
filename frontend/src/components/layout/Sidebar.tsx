@@ -46,6 +46,7 @@ const navItems = [
   { label: "Analytics", icon: BarChart3, path: "/analytics", badge: null },
   { label: "Reports", icon: FileBarChart, path: "/reports" },
   { label: "Strategy", icon: Lightbulb, path: "/strategy", badge: "New" },
+  { label: "Monthly Plan", icon: Lightbulb, path: "/strategy/monthly-plan", badge: "AI" },
   { label: "Campaigns", icon: Megaphone, path: "/campaigns", badge: null },
   { label: "Activity Log", icon: Activity, path: "/activity", badge: null },
   { label: "Team", icon: Users, path: "/team", badge: null },

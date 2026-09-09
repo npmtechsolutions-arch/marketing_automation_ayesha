@@ -4,10 +4,13 @@ import json
 import time
 import uuid
 
+from datetime import date, datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.services import ai_assist
@@ -19,6 +22,20 @@ from app.schemas.ai import AIContentGenerate, AIContentResponse, AITopicSuggesti
 from app.core.authz import verify_account_access as _verify_account_access
 from app.core.ratelimit import ai_generation_rate_limit
 from app.core.entitlement_deps import meter_ai_request
+from app.core.permissions import CONTENT_CREATE
+from app.models.account import Account
+from app.models.campaign import Campaign
+from app.models.content_plan import (
+    ContentPlan,
+    ContentPlanItem,
+    PlanGoal,
+    PlanItemStatus,
+    PlanStatus,
+)
+from app.models.platform import SocialAccount
+from app.models.post import Post, PostStatus
+from app.services import approvals, content_plan, entitlement_service as ent, recurrence
+from app.services.activity_service import log_activity
 
 # Every endpoint on this router is an AI generation call, so both guards are
 # applied router-wide: new generation endpoints are covered automatically
@@ -1188,4 +1205,350 @@ async def ai_assist_options(
             slug: style.count for slug, style in ai_assist.HASHTAG_STYLES.items()
         },
         "min_shorten_chars": ai_assist.MIN_SHORTEN_CHARS,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Monthly plan (§14/§26)
+#
+# The AI manager proposes; a person disposes. Nothing here publishes, and
+# nothing here schedules -- accepting a plan creates drafts, or posts in review
+# where the workspace requires approval, and every one of them still needs a
+# human to put it out. That constraint is the feature, so it is enforced in the
+# accept path rather than left to the UI.
+# ---------------------------------------------------------------------------
+
+class MonthlyPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # First of the month is implied; any day in the month is accepted so a
+    # caller does not have to normalise.
+    month: date
+    goal: PlanGoal
+    # Posts per week, per platform slug: {"instagram": 3, "twitter": 5}.
+    cadence: dict[str, int] = Field(default_factory=dict)
+    campaign_id: uuid.UUID | None = None
+    topic_hints: str | None = Field(None, max_length=2000)
+    provider: str | None = None
+
+    @field_validator("cadence")
+    @classmethod
+    def _sane_cadence(cls, value: dict[str, int]) -> dict[str, int]:
+        for platform, per_week in value.items():
+            if not isinstance(per_week, int) or not (0 <= per_week <= 21):
+                raise ValueError(
+                    f"cadence for {platform} must be between 0 and 21 posts a week"
+                )
+        return value
+
+
+class AcceptPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Which proposals to turn into posts. Partial accept is the normal case.
+    item_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+def _serialise_item(item) -> dict:
+    return {
+        "id": str(item.id),
+        "scheduled_local": item.scheduled_local.isoformat(),
+        "scheduled_at": item.scheduled_at.isoformat(),
+        "target_account_ids": item.target_account_ids,
+        "content": item.content,
+        "hashtags": item.hashtags or [],
+        "rationale": item.rationale,
+        # The field a reader must see before believing the timing.
+        "slot_source": item.slot_source,
+        "status": item.status.value,
+        "post_id": str(item.post_id) if item.post_id else None,
+    }
+
+
+def _serialise_plan(plan) -> dict:
+    return {
+        "id": str(plan.id),
+        "month": plan.month.isoformat(),
+        "goal": plan.goal.value,
+        "status": plan.status.value,
+        "grounding": plan.grounding,
+        "provider": plan.provider,
+        "model": plan.model,
+        "campaign_id": str(plan.campaign_id) if plan.campaign_id else None,
+        "generated_at": plan.generated_at.isoformat() if plan.generated_at else None,
+        "items": [_serialise_item(i) for i in plan.items],
+    }
+
+
+@router.post("/monthly-plan", status_code=status.HTTP_201_CREATED)
+async def create_monthly_plan(
+    account_id: uuid.UUID,
+    body: MonthlyPlanRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Propose a month of posts, grounded in this workspace's own data.
+
+    Costs ``content_plan.AI_REQUEST_WEIGHT`` against the AI allowance. The
+    router-level dependency has already taken one by the time this runs, so the
+    remainder is charged here -- one generation is many times the work of a
+    rewrite and should not be priced the same.
+    """
+    await _verify_account_access(
+        account_id, current_user, db, permission=CONTENT_CREATE
+    )
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+
+    organization = await ent.get_organization_for_account(db, account_id)
+    remaining_weight = content_plan.AI_REQUEST_WEIGHT - 1
+    if remaining_weight > 0:
+        await ent.check_and_increment(
+            db, organization, ent.AI_REQUESTS_PER_MONTH, amount=remaining_weight
+        )
+
+    if body.campaign_id is not None:
+        campaign = (
+            await db.execute(
+                select(Campaign).where(
+                    Campaign.id == body.campaign_id,
+                    Campaign.account_id == account_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if campaign is None:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+
+    grounding = await content_plan.gather_grounding(db, account)
+    if not grounding["connections"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Connect a social account first — a plan is built from the "
+                "platforms this workspace actually posts to."
+            ),
+        )
+
+    month = body.month.replace(day=1)
+    slots = content_plan.plan_slots(month, body.cadence, grounding)
+    if not slots:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "That cadence produces no posting slots in the remainder of "
+                f"{month:%B %Y}. Set a weekly cadence for at least one "
+                "connected platform, and pick a month that has not finished."
+            ),
+        )
+
+    system_prompt, user_prompt = content_plan.build_prompts(
+        body.goal, slots, grounding, body.topic_hints
+    )
+    try:
+        raw, provider_name, model_name = await content_plan.generate_copy(
+            db, system_prompt, user_prompt,
+            account_id=account_id, user_id=current_user.id,
+            provider=body.provider,
+        )
+        copy_by_index = content_plan.parse_items(raw, slots)
+    except ai_assist.ProviderNotConfigured as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except content_plan.PlanGenerationFailed as exc:
+        # 502, and nothing stored. A plan half-built from an error string is
+        # worse than no plan.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    plan = ContentPlan(
+        id=uuid.uuid4(),
+        account_id=account_id,
+        created_by=current_user.id,
+        campaign_id=body.campaign_id,
+        month=month,
+        goal=body.goal,
+        grounding=grounding,
+        provider=provider_name,
+        model=model_name,
+        generated_at=datetime.now(timezone.utc),
+    )
+    db.add(plan)
+    await db.flush()
+
+    zone = recurrence.zone(grounding["timezone"])
+    for index, slot in enumerate(slots):
+        copy = copy_by_index.get(index)
+        if copy is None:
+            # The model skipped this slot. Better an absent proposal than a
+            # blank one the reviewer has to work out the purpose of.
+            continue
+        db.add(ContentPlanItem(
+            id=uuid.uuid4(),
+            plan_id=plan.id,
+            scheduled_local=slot["local"],
+            scheduled_at=recurrence.to_utc(slot["local"], zone),
+            target_account_ids=[slot["social_account_id"]],
+            content=copy["content"],
+            hashtags=copy["hashtags"],
+            rationale=content_plan.rationale_for(slot, grounding),
+            slot_source=slot["slot_source"],
+            position=index,
+        ))
+
+    await db.flush()
+    await db.refresh(plan, ["items"])
+
+    await log_activity(
+        db, user_id=current_user.id, account_id=account_id,
+        action="ai.monthly_plan", category="ai",
+        description=f"Generated a {body.goal.value} plan for {month:%B %Y}",
+        resource_type="content_plan", resource_id=str(plan.id),
+    )
+    return _serialise_plan(plan)
+
+
+@router.get("/monthly-plan/{plan_id}")
+async def get_monthly_plan(
+    account_id: uuid.UUID,
+    plan_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    await _verify_account_access(account_id, current_user, db)
+    plan = (
+        await db.execute(
+            select(ContentPlan)
+            .options(selectinload(ContentPlan.items))
+            .where(ContentPlan.id == plan_id, ContentPlan.account_id == account_id)
+        )
+    ).scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    return _serialise_plan(plan)
+
+
+@router.post("/monthly-plan/{plan_id}/accept")
+async def accept_monthly_plan(
+    account_id: uuid.UUID,
+    plan_id: uuid.UUID,
+    body: AcceptPlanRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Turn selected proposals into posts.
+
+    **Drafts, never scheduled posts.** The proposed time is carried onto the
+    post as its scheduled_at only once a human schedules it; accepting sets the
+    content and the targets and leaves the post where a person still has to act
+    on it. Where the workspace requires approval, the post is submitted for
+    review instead of left as a draft, because that is the state a reviewer
+    there expects to find work in.
+
+    The whole selection is reserved against ``posts_per_month`` in **one**
+    atomic call before anything is written. Charging per item would let a
+    ten-item accept stop halfway through, leaving the reviewer to work out
+    which half happened.
+    """
+    await _verify_account_access(
+        account_id, current_user, db, permission=CONTENT_CREATE
+    )
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+
+    plan = (
+        await db.execute(
+            select(ContentPlan)
+            .options(selectinload(ContentPlan.items))
+            .where(ContentPlan.id == plan_id, ContentPlan.account_id == account_id)
+        )
+    ).scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    wanted = set(body.item_ids)
+    items = [
+        i for i in plan.items
+        if i.id in wanted and i.status is PlanItemStatus.PROPOSED
+    ]
+    missing = wanted - {i.id for i in plan.items}
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{len(missing)} of those items are not in this plan.",
+        )
+    if not items:
+        raise HTTPException(
+            status_code=409,
+            detail="Those items have already been accepted or discarded.",
+        )
+
+    organization = await ent.get_organization_for_account(db, account_id)
+    await ent.check_and_increment(
+        db, organization, ent.POSTS_PER_MONTH, amount=len(items)
+    )
+
+    # Targets are re-checked against the workspace rather than trusted from the
+    # stored plan: a connection can be removed between proposing and accepting.
+    valid_targets = {
+        str(row)
+        for row in (
+            await db.execute(
+                select(SocialAccount.id).where(
+                    SocialAccount.account_id == account_id
+                )
+            )
+        ).scalars().all()
+    }
+
+    submit_for_review = approvals.requires_approval_to_publish(account)
+    created = []
+    for item in items:
+        targets = [t for t in (item.target_account_ids or []) if t in valid_targets]
+        post = Post(
+            id=uuid.uuid4(),
+            user_id=current_user.id,
+            account_id=account_id,
+            campaign_id=plan.campaign_id,
+            content=item.content,
+            hashtags=item.hashtags or None,
+            target_accounts=[{"social_account_id": t} for t in targets],
+            status=PostStatus.DRAFT,
+            ai_generated=True,
+            ai_model=plan.model,
+        )
+        db.add(post)
+        await db.flush()
+
+        if submit_for_review:
+            await approvals.transition(
+                db, post=post, account=account,
+                member=await _verify_account_access(account_id, current_user, db),
+                actor=current_user, action="submit", comment=None,
+            )
+
+        item.status = PlanItemStatus.ACCEPTED
+        item.post_id = post.id
+        created.append({
+            "item_id": str(item.id),
+            "post_id": str(post.id),
+            "status": post.status.value,
+            "targets_dropped": len(item.target_account_ids or []) - len(targets),
+        })
+
+    remaining = [i for i in plan.items if i.status is PlanItemStatus.PROPOSED]
+    plan.status = PlanStatus.PARTIALLY_ACCEPTED if remaining else PlanStatus.ACCEPTED
+    await db.flush()
+
+    await log_activity(
+        db, user_id=current_user.id, account_id=account_id,
+        action="ai.monthly_plan_accepted", category="ai",
+        description=f"Accepted {len(created)} proposal(s) from a monthly plan",
+        resource_type="content_plan", resource_id=str(plan.id),
+    )
+    return {
+        "plan_id": str(plan.id),
+        "plan_status": plan.status.value,
+        "created": created,
+        "submitted_for_review": submit_for_review,
+        "remaining_proposals": len(remaining),
     }
