@@ -905,6 +905,13 @@ on UTC a timezone bug is invisible.
 A draft does not fill a slot. It is not on the calendar, which is the whole
 reason the analysis is useful.
 
+A day is **settled** if something is on it *or* the queue already claims it.
+Both, because a commitment settles a day exactly as a scheduled post does —
+an empty Wednesday with a 10:00 queue slot used to also collect best-time
+suggestions at 12:00 and 13:00, so one empty day produced three rows and the
+strongest claim was diluted by two weaker ones beside it. Found by opening the
+panel, not by a test.
+
 ### Filling a gap
 
 `POST /accounts/{id}/calendar/suggest-fill` delegates to the monthly plan's

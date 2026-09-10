@@ -534,3 +534,34 @@ async def test_suggest_fill_costs_the_same_as_a_plan(
     )
 
     assert response.status_code in (402, 403, 429), response.text
+
+
+async def test_a_day_the_queue_already_claims_gets_no_extra_suggestions(
+    db_session, workspace, queue_slot
+):
+    """A queue slot is a commitment, and it settles the day.
+
+    Found by opening the panel rather than by a test: a Wednesday with an empty
+    10:00 queue slot was also offered best-time suggestions at 12:00 and 13:00,
+    so one empty day produced three rows. That is the noise this module's own
+    docstring warns against -- "proposing a second post two hours after a
+    scheduled one because a heatmap cell is empty" -- and a *committed* time
+    settles the day exactly as a scheduled post does.
+
+    The stronger claim wins. Fill the slot you promised before being offered
+    two more.
+    """
+    ws = await workspace()
+    # Wednesday 10:00 Sydney, empty.
+    await queue_slot(ws["account"], weekday=2, hour=10)
+
+    result = await calendar_gaps.analyse(
+        db_session, ws["account"], WEEK_FROM, WEEK_TO, now=NOW
+    )
+
+    wednesday = [g for g in result["gaps"] if g["local_datetime"].startswith("2026-11-04")]
+    assert wednesday, "the empty Wednesday slot should still be reported"
+    assert {g["kind"] for g in wednesday} == {"queue_slot"}, (
+        "a day the queue already claims should not also collect best-time "
+        f"suggestions: {[(g['kind'], g['local_datetime']) for g in wednesday]}"
+    )

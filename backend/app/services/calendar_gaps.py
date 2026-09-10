@@ -173,7 +173,7 @@ async def _best_time_gaps(
     start: date,
     end: date,
     connections: list[tuple[SocialAccount, SocialPlatform]],
-    occupied_days: set[date],
+    settled_days: set[date],
     now: datetime,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Best-time slots on days with nothing at all on them.
@@ -182,6 +182,13 @@ async def _best_time_gaps(
     hours after a scheduled one because a heatmap cell is empty is noise. The
     question this answers is "you have nothing on Thursday and Thursday 18:00
     is when your audience is there".
+
+    ``settled_days`` covers both ways a day can already be spoken for: a post
+    on it, or a queue slot the workspace committed to. The second was missed at
+    first, so an empty Wednesday with a 10:00 queue slot also collected
+    suggestions at 12:00 and 13:00 -- one empty day, three rows. A commitment
+    settles a day exactly as a scheduled post does, and the stronger claim
+    should not be diluted by two weaker ones beside it.
     """
     gaps: list[dict[str, Any]] = []
     sources: dict[str, Any] = {}
@@ -204,7 +211,7 @@ async def _best_time_gaps(
 
         day = start
         while day <= end:
-            if day in occupied_days:
+            if day in settled_days:
                 day += timedelta(days=1)
                 continue
             for suggestion in suggestions:
@@ -351,8 +358,12 @@ async def analyse(
     queue_gaps = await _queue_gaps(
         db, account, tz, start, end, occupied, now
     )
+    # A day is settled if something is on it *or* the queue already claims it.
+    settled_days = occupied_days | {
+        datetime.fromisoformat(gap["local_datetime"]).date() for gap in queue_gaps
+    }
     best_gaps, slot_sources = await _best_time_gaps(
-        db, account, tz, start, end, connections, occupied_days, now
+        db, account, tz, start, end, connections, settled_days, now
     )
     gaps = sorted(queue_gaps + best_gaps, key=lambda g: g["local_datetime"])
 
