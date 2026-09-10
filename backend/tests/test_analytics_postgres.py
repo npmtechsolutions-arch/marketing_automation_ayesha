@@ -189,3 +189,34 @@ async def test_the_plan_grounding_queries_run_on_postgres(pg_session, seeded):
     # It runs; what it found is the SQLite suite's business.
     assert "topics" in grounding["past_performance"]
     assert "explanation" in grounding["past_performance"]
+
+
+async def test_the_listening_sweep_runs_on_postgres(pg_session, seeded):
+    """The listening sweep's SQL, executed once on the real dialect.
+
+    It orders on ``last_polled_at ASC NULLS FIRST``, which SQLAlchemy renders
+    differently per backend, and it is reached only from the worker -- so no
+    request path would ever have caught it 500ing. Same reason as the rest of
+    this file: SQLite agreeing proves nothing about Postgres.
+    """
+    import uuid as _uuid
+
+    from app.models.listening import ListeningQuery
+    from app.services import listening
+
+    pg_session.add(
+        ListeningQuery(
+            id=_uuid.uuid4(),
+            account_id=seeded.id,
+            platform="twitter",
+            query_text="postgres dialect check",
+            is_active=True,
+        )
+    )
+    await pg_session.flush()
+
+    totals = await listening.sync_all(pg_session)
+
+    # It ran. Whether it polled anything is the SQLite suite's business -- this
+    # workspace has no X connection, so the sweep records that on the query.
+    assert set(totals) == {"polled", "new", "posts_read", "errors"}

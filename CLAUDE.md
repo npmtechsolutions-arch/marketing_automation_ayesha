@@ -54,6 +54,16 @@ Every entry earned its place by a specific incident.
   harness is wrong". Found in the TikTok poll-loop test, whose whole point was
   counting clients.
 
+- **`dark:` utilities follow the app's theme toggle only because
+  `index.css` says so.** Tailwind v4's default `dark:` variant is
+  `prefers-color-scheme`, and this app switches themes with a `.dark` class on
+  `:root` — so every `dark:` utility silently followed the operating system and
+  ignored the toggle. `@custom-variant dark (&:where(:root.dark, :root.dark *))`
+  is what connects them; do not remove it. Found by screenshotting a new page in
+  both themes and seeing dark red text on a dark background. The safer default
+  for new work is still the `--page-*` / `--surface-*` CSS variables, which have
+  always tracked the toggle.
+
 - **`npx tsc --noEmit` in `frontend/` checks nothing.** The root `tsconfig.json`
   has `"files": []` and only project *references*, so the bare invocation
   type-checks an empty program and exits 0 no matter what is broken. Use

@@ -14,6 +14,7 @@ from typing import Any
 from app.connectors.base import (
     Capabilities,
     MediaRef,
+    MissingCredential,
     NotSupportedError,
     ResolvedContent,
     PublishResult,
@@ -161,6 +162,12 @@ class TwitterProvider(SocialProvider):
         # Replies to a tweet are not retrievable, and DMs need elevated access.
         supports_mentions_api=True,
         supports_dm_api=False,
+        # Recent search is included on pay-per-use, and only reaches seven
+        # days back; full-archive needs Pro or Enterprise. Both facts reach
+        # the listening UI from here, so "the last 7 days" is never a string
+        # someone typed into a component.
+        supports_recent_search=True,
+        search_window_days=7,
         # The 280 the composer should be enforcing. It is also what
         # _content_with_hashtags is already called with at platform_service.py:973.
         max_chars=280,
@@ -340,6 +347,27 @@ class TwitterProvider(SocialProvider):
         """Posts that name this account."""
         return await _x_mentions(social_account)
 
+    async def search_recent(
+        self,
+        social_account: Any,
+        query: str,
+        *,
+        since_id: str | None = None,
+        max_results: int = 25,
+    ) -> dict[str, Any]:
+        """Recent search: public posts from the last seven days.
+
+        Unlike every other read here, a placeholder token **raises** rather
+        than returning nothing. An empty result from a listening search is a
+        real and common answer -- nobody said anything -- so a fake account
+        that answers "no mentions" is indistinguishable from a funded one that
+        genuinely found none. The caller records the refusal on the query row,
+        where it reads as broken rather than as quiet.
+        """
+        return await _x_recent_search(
+            social_account, query, since_id=since_id, max_results=max_results
+        )
+
     async def get_analytics(
         self, social_account: Any, since: datetime, until: datetime
     ) -> dict[str, Any]:
@@ -450,3 +478,99 @@ async def _x_mentions(social_account: Any) -> list[dict[str, Any]]:
                 ),
             })
         return out
+
+
+# ---------------------------------------------------------------------------
+# Listening: recent search
+# ---------------------------------------------------------------------------
+
+# X's own bounds on /2/tweets/search/recent. The seven-day window is *not*
+# repeated here: it lives on Capabilities.search_window_days, which is what the
+# UI and the service read. A second copy is the drift pattern this project
+# keeps killing -- one of them would eventually be updated alone.
+SEARCH_MIN_RESULTS = 10
+SEARCH_MAX_RESULTS = 100
+
+
+async def _x_recent_search(
+    social_account: Any,
+    query: str,
+    *,
+    since_id: str | None = None,
+    max_results: int = 25,
+) -> dict[str, Any]:
+    import httpx
+
+    token = getattr(social_account, "access_token", None)
+    if is_mock_token(token):
+        raise MissingCredential(
+            "twitter",
+            "This X connection has a development placeholder token, so nothing "
+            "was searched. Reconnect the account with real credentials to "
+            "listen.",
+        )
+
+    capped = max(SEARCH_MIN_RESULTS, min(int(max_results), SEARCH_MAX_RESULTS))
+    params: dict[str, Any] = {
+        "query": query,
+        "max_results": capped,
+        "tweet.fields": "created_at,author_id,text",
+        "expansions": "author_id",
+        "user.fields": "username,name",
+    }
+    # since_id is what keeps a six-hourly poll from re-reading -- and
+    # re-paying for -- the same window every time.
+    if since_id:
+        params["since_id"] = since_id
+
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            "https://api.twitter.com/2/tweets/search/recent",
+            params=params,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=20.0,
+        )
+    _raise_if_rate_limited("twitter", res)
+
+    if res.status_code == 402 or "credits-depleted" in (res.text or ""):
+        # The specific failure this tier makes likely, and the one that must
+        # never present as silence: the credential is fine, the account has
+        # simply run out of money.
+        raise ProviderAPIError(
+            "twitter",
+            "X refused the search: this developer account has no pay-per-use "
+            "credits left. Top it up at developer.x.com to keep listening.",
+            status_code=res.status_code,
+        )
+    if res.status_code != 200:
+        raise ProviderAPIError(
+            "twitter",
+            f"X search failed: {(res.text or '')[:300]}",
+            status_code=res.status_code,
+        )
+
+    payload = res.json() or {}
+    people = {
+        user["id"]: user
+        for user in (payload.get("includes") or {}).get("users", [])
+    }
+    items = []
+    for tweet in payload.get("data") or []:
+        author = people.get(tweet.get("author_id"), {})
+        handle = author.get("username")
+        items.append({
+            "external_id": tweet.get("id"),
+            "author": author.get("name") or handle or "Someone",
+            "author_handle": handle,
+            "body": tweet.get("text") or "",
+            "created_at": parse_platform_time(tweet.get("created_at")),
+            "permalink": (
+                f"https://x.com/{handle}/status/{tweet.get('id')}"
+                if handle else f"https://x.com/i/status/{tweet.get('id')}"
+            ),
+        })
+
+    # Billed per post read, so this is counted from what came back rather than
+    # from what was asked for -- a request that returns three posts costs
+    # three reads, not twenty-five.
+    return {"items": items, "requests": 1, "posts_read": len(items)}

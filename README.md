@@ -6,6 +6,10 @@ An AI-powered marketing automation platform for small and mid-sized businesses. 
 
 - **Strategy generation** — AI-generated marketing strategies and topic suggestions derived from a stored business profile.
 - **Content generation** — post copy and images via OpenAI, Anthropic, or Gemini, with per-platform variants.
+- **Social listening** — saved searches on X, polled on a schedule the workspace
+  sets, with the seven-day limit of X's search stated everywhere the results
+  are: "no mentions in the last 7 days" is a different claim from "no mentions",
+  and only the first one is true.
 - **Scheduling and publishing** — a calendar plus a background worker that publishes scheduled posts to Facebook, Instagram, LinkedIn, TikTok, X/Twitter, and YouTube.
 - **Approval workflow** — draft → review → approve/reject before anything is published.
 - **Analytics** — engagement metrics synced back from each platform, aggregated per account and per post.
@@ -1186,6 +1190,81 @@ The worker polls every five minutes; these are rate-limited endpoints and a
 tighter loop spends the budget without seeing more. The Meta webhook receiver
 from 0.9 can feed the same upsert path later, making polling a backstop rather
 than the primary route.
+
+
+## Social listening
+
+Saved searches on X, polled on a schedule the workspace chooses. Two facts about
+X's pay-per-use tier shape the whole feature, and both reach the screen rather
+than staying in a design note: **search reaches back seven days and no further**,
+and **every poll is billed per post read**.
+
+### The window is part of the answer
+
+"No mentions" is a claim about the world. "No mentions in the last 7 days" is a
+claim about what was looked at, and only the second one is true — full-archive
+search needs a tier not open to this deployment (see
+[docs/API-TIER-AUDIT.md](docs/API-TIER-AUDIT.md)).
+
+So the window comes from the connector (`Capabilities.search_window_days`), is
+turned into a phrase in one place (`listening.window_label()`), and is repeated
+in **every** listening payload — including the empty state's sentence, which the
+page renders as sent rather than composing its own. A tier change moves every
+surface at once, and no component can quietly render the friendlier version.
+
+### An empty stream is not evidence of quiet
+
+A search whose credential has expired, whose account has run out of pay-per-use
+credit, or which was pointed at a workspace with no X connection returns exactly
+what a quiet week returns: nothing. The difference lives on the query row —
+`last_error`, `last_error_at` and `last_success_at` — and the page puts a broken
+search in a banner above the stream saying, in those words, that the stream is
+not evidence of quiet.
+
+This is the same class of dishonesty as the connectors that used to invent
+metrics when an API call failed, arriving by a different road: there, a failure
+became a number; here, a failure would become a silence.
+
+A development placeholder token is treated the same way. Every other read in the
+codebase short-circuits a mock token to `{}`; `search_recent` **raises** instead,
+because "no results" is a legitimate answer to a search and a fake account
+answering it is indistinguishable from a funded one.
+
+### Paying attention to what it costs
+
+| | |
+|---|---|
+| Billed unit | one **post read**, ~$0.005 on X pay-per-use |
+| Asked for per poll | 25 posts |
+| Worst case per poll | ~$0.125 |
+| Default interval | 6 hours (1/3/6/12/24 are the choices) |
+
+Three things keep that from being what a workspace actually spends. A poll is
+billed for the posts it **finds**, so a quiet search costs almost nothing; every
+poll after the first passes `since_id`, so it asks only for what is new; and a
+failed poll still moves `last_polled_at` forward, so a broken query does not
+retry on every sweep. The daily ceiling is shown next to the interval control —
+the place where someone decides to spend six times as much.
+
+Saved searches are counted per plan (`listening_queries`: Free 0, Starter 1,
+Growth 3, Pro 10, Enterprise unlimited) as a **stateful** limit, like connected
+accounts. Deleting a search gives the slot back; metering it would mean a
+workspace that created and removed one was locked out until the period rolled,
+for a search that no longer exists. What is metered is the polling, and that is
+recorded on the query.
+
+### Idempotency
+
+Mentions are unique on `(listening_query_id, external_id)`, and an existing row
+is never rewritten — X can re-serve the same post with a different rendering of
+its author's name, and updating on every poll would churn the row and make "is
+this new?" unanswerable. The cursor moves forward only: a later page of older
+posts must not drag it back, because re-reading is re-paying.
+
+### Not in this phase
+
+Sentiment. It is a metered AI call per mention on top of the per-post read,
+which makes it a pricing decision rather than a feature decision.
 
 
 ## Review and approvals

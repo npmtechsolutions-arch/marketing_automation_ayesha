@@ -201,7 +201,26 @@ async def test_negative_limit_is_rejected(client, auth_header, superadmin):
 # Creating and retiring plans
 # ---------------------------------------------------------------------------
 
-async def test_create_plan_populates_every_feature(client, auth_header, superadmin):
+async def test_create_plan_populates_every_feature(
+    client, auth_header, superadmin, db_session
+):
+    """A new plan gets a row for every feature that exists.
+
+    The count is read from the features table rather than written here: it was
+    a literal 9, and adding the tenth feature (listening queries) failed this
+    test without anything being wrong. What the test is actually for is that
+    *no* feature is silently missing from a new plan -- a missing row resolves
+    as "not granted", so a plan created without one would refuse a feature its
+    customers had paid for.
+    """
+    from sqlalchemy import func, select as sa_select
+
+    from app.models.plan import Feature
+
+    known = (
+        await db_session.execute(sa_select(func.count(Feature.key)))
+    ).scalar_one()
+
     response = await client.post(
         f"{ADMIN}/plans",
         headers=auth_header(superadmin),
@@ -220,7 +239,7 @@ async def test_create_plan_populates_every_feature(client, auth_header, superadm
     assert body["price_monthly"] == 499.0
 
     features = {f["feature_key"]: f for f in body["features"]}
-    assert len(features) == 9, "every known feature should get a row"
+    assert len(features) == known, "every known feature should get a row"
     assert features["workspaces"]["limit_value"] == 50
     assert features["posts_per_month"]["unlimited"] is True
     # Unmentioned features default to 0 -- not granted, never unlimited.

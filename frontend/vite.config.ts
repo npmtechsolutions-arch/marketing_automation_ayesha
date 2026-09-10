@@ -18,7 +18,10 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // Overridable so a second backend (a branch, a live check on another
+        // port) can be pointed at without editing this file -- 8000 is taken
+        // by another project on at least one machine here.
+        target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:8000',
         changeOrigin: true,
       },
     },

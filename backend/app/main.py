@@ -141,6 +141,7 @@ from app.api.v1.endpoints import (
     linkedin_oauth,
     notifications,
     inbox as inbox_routes,
+    listening as listening_routes,
     posts,
     reports as reports_routes,
     calendar as calendar_endpoints,
@@ -190,6 +191,7 @@ app.include_router(integration_endpoints.router,          prefix="/api/v1/organi
 app.include_router(integration_endpoints.callback_router, prefix="/api/v1",                                             tags=["Integrations"])
 app.include_router(reports_routes.router,   prefix="/api/v1/accounts/{account_id}/reports",     tags=["Reports"])
 app.include_router(inbox_routes.router,     prefix="/api/v1/accounts/{account_id}/inbox",       tags=["Inbox"])
+app.include_router(listening_routes.router, prefix="/api/v1/accounts/{account_id}/listening",   tags=["Listening"])
 app.include_router(strategies.router,       prefix="/api/v1/accounts/{account_id}/strategies",  tags=["Strategies"])
 app.include_router(campaigns.router,        prefix="/api/v1/accounts/{account_id}/campaigns",   tags=["Campaigns"])
 app.include_router(notifications.router,    prefix="/api/v1/notifications",                     tags=["Notifications"])

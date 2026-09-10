@@ -164,6 +164,16 @@ class Capabilities:
     # they exist, so they get their own flag rather than being folded into
     # comments -- X has mentions and no comments, which one flag cannot say.
     supports_mentions_api: bool = False
+    # Searching *other people's* posts, which is a different permission
+    # everywhere it exists at all. Meta has no public search on any tier, so
+    # this is X-only and the UI has to say which platform a listening feature
+    # actually covers rather than implying all of them.
+    supports_recent_search: bool = False
+    # How far back that search can reach, in days. X's pay-per-use tier is a
+    # rolling seven; full-archive needs a tier not open to us. None means the
+    # platform has no search at all, which is not the same as "unlimited" --
+    # supports_recent_search is what says whether to ask.
+    search_window_days: Optional[int] = None
     max_chars: Optional[int] = None
     max_images: int = 0
     max_video_seconds: Optional[int] = None
@@ -473,6 +483,29 @@ class SocialProvider:
 
     async def get_posts(self, social_account: Any) -> list[dict[str, Any]]:
         raise NotSupportedError(self.slug, "get_posts")
+
+    async def search_recent(
+        self,
+        social_account: Any,
+        query: str,
+        *,
+        since_id: str | None = None,
+        max_results: int = 25,
+    ) -> dict[str, Any]:
+        """Public posts matching a search, from as far back as the tier allows.
+
+        Returns ``{"items": [...], "requests": int, "posts_read": int}``. The
+        counts are part of the result rather than something the caller
+        estimates because on X this is **billed per post read**, and a number
+        inferred at the call site would drift from what was actually spent the
+        first time a request returned fewer posts than it asked for.
+
+        Items are the same shape the inbox uses -- external_id, author,
+        author_handle, body, created_at, permalink -- so a mention does not
+        have to learn a platform's vocabulary to be stored.
+        """
+        raise NotSupportedError(self.slug, "search_recent")
+
     # -- inbox ---------------------------------------------------------------
     #
     # Each returns a list of dicts in the shape ``inbox_sync`` expects, so the

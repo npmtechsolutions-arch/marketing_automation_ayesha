@@ -43,6 +43,7 @@ from app.models.inbox import (
     ThreadStatus,
     ThreadType,
 )
+from app.models.listening import ListeningQuery, Mention
 from app.models.report import (
     Report,
     ReportFormat,
@@ -62,6 +63,8 @@ from app.models.webhook import Webhook, WebhookStatus
 __all__ = [
     "ApiError",
     "InboxThread",
+    "ListeningQuery",
+    "Mention",
     "InboxMessage",
     "ThreadType",
     "ThreadStatus",

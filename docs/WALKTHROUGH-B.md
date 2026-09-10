@@ -204,7 +204,79 @@ account preserves the state.
 - Per-post metrics are **refused**, like X's: `video.list` is not in the
   requested scopes, so no performance row is written and the drawer says so.
 
-### 5. Start on a clean workspace
+### 5. Listening — the half that spends money per poll
+
+Added by Phase 3.7, and the one part of Walk B where the *checking* has a
+price. Everything else here costs a few cents once; listening costs a few cents
+**every time it runs**, so the walk includes the arithmetic as much as the
+behaviour.
+
+No extra app or scope is needed: listening uses the same X connection and the
+same `tweet.read` scope as the rest of the walk. What it needs is a **funded**
+pay-per-use account, because recent search bills per post read.
+
+#### What a poll costs
+
+From the audit's table (`docs/API-TIER-AUDIT.md`, read 2026-09-10; verify
+before spending):
+
+| | |
+|---|---|
+| Read someone else's post | **$0.005** |
+| Posts asked for per poll (`MAX_RESULTS_PER_POLL`) | 25 |
+| **Worst case per poll** | 25 × $0.005 = **$0.125** |
+| At the 6-hour default | 4 polls/day = **$0.50/day**, about **$15/month**, per query |
+| At hourly | 24 polls/day = **$3/day**, about **$90/month**, per query |
+
+Two things stop those being the real numbers. A poll is billed for the posts it
+**actually finds**, so a quiet search costs nearly nothing; and every poll after
+the first passes `since_id`, so it asks only for what is new rather than
+re-reading the window. The figures above are the ceiling, and the UI says so in
+those words.
+
+The plan limits are set against this: Free 0 saved searches, Starter 1, Growth
+3, Pro 10, Enterprise unlimited. Free gets none deliberately — a free plan that
+polls a metered API is a cost centre with no revenue against it.
+
+#### The walk
+
+1. **Before connecting anything**, open **Listening**. It should say the
+   feature is idle because no X account is connected — not show an empty
+   stream. An empty page here would be the defect.
+2. Connect X (step 1 above), then save a search. Use something with real but
+   low traffic — your own brand name, not `the` — because you are paying per
+   post it finds. `marketengine OR @marketengine` is the shape.
+3. **Poll now** (the refresh button on the query). The toast reports posts read
+   and the cost of *that* poll. Check it against the arithmetic above.
+4. **Poll again immediately.** The second poll must return **0 new** even if it
+   read the same posts: the stream is idempotent on X's post id. A duplicated
+   stream here would be the 2.5 defect returning.
+5. **Check `since_id` is working**: after a successful poll the query's cursor
+   is set, and the next poll's `posts_read` should be small or zero on a quiet
+   search. A poll that keeps reading 25 posts on every pass is re-paying for
+   the same window.
+6. **Read the window everywhere.** The header, the empty state and the API
+   payloads all say *the last 7 days*. Anything that says just "no mentions" is
+   a defect — X cannot see further back, and the UI must not imply it looked.
+7. **Break it on purpose.** Either revoke the app's access or let the account's
+   credits run out, then poll. The query must turn **Not running** with X's own
+   reason on the row, and the banner must say the stream is not evidence of
+   quiet. A silent empty stream here is the site-#2 fabrication in another
+   shape, and it is the single most important thing this walk proves.
+8. **Interval.** Change the polling interval on the Listening page (1/3/6/12/24
+   hours). The daily ceiling next to it should change with it, and a value
+   outside that set must be refused by the settings endpoint rather than
+   quietly clamped.
+9. **Next sweep.** The worker looks every 15 minutes but polls a query only
+   when the workspace's own interval has come round. Leave it running and
+   confirm a poll happens on schedule and not more often — that gap is the
+   difference between $15 and $90 a month per query.
+
+**Not in this phase:** sentiment. It would be a metered AI call per mention on
+top of the per-post read, which is a pricing decision rather than a feature
+decision, and it has not been made yet.
+
+### 6. Start on a clean workspace
 
 Register a **fresh workspace** for the walk. An existing one carries Walk A's
 mock accounts, and the point is to watch real numbers arrive against nothing.

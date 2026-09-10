@@ -16,7 +16,7 @@ from app.core.authz import verify_account_access as _verify_account_access
 from app.core.permissions import (
     SETTINGS_MANAGE,
 )
-from app.services import dashboard, notifications, slack
+from app.services import dashboard, listening, notifications, slack
 from app.services import entitlement_service as ent
 from app.services.entitlements import get_organization_for_account
 
@@ -69,6 +69,10 @@ _KNOWN_SETTINGS: dict[str, type] = {
     # says what it is; validated key by key, because an unknown event name
     # would otherwise be a toggle that silently switches nothing on.
     "slack_events": dict,
+    # How often saved searches are polled. An int, and a small fixed set of
+    # them: each poll spends money on X's pay-per-use tier, so a free-form
+    # number is a way to multiply a bill by six with a typo.
+    "listening_interval_hours": int,
 }
 
 
@@ -118,6 +122,11 @@ class AccountSettingsUpdate(BaseModel):
         if "slack_events" in checked:
             checked["slack_events"] = notifications.validate_toggles(
                 checked["slack_events"]
+            )
+
+        if "listening_interval_hours" in checked:
+            checked["listening_interval_hours"] = listening.validate_interval(
+                checked["listening_interval_hours"]
             )
 
         timezone = checked.get("timezone")

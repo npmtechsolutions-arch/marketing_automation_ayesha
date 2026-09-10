@@ -46,6 +46,7 @@ STORAGE_BYTES = "storage_bytes"
 ANALYTICS_HISTORY_DAYS = "analytics_history_days"
 REPORTS_PER_MONTH = "reports_per_month"
 WHITE_LABEL = "white_label"
+LISTENING_QUERIES = "listening_queries"
 
 # Features whose usage accumulates over a period rather than being counted
 # live. Deleting the artefact does not refund these.
@@ -336,6 +337,27 @@ async def _count_stateful(
             .where(
                 Account.organization_id == organization.id,
                 Media.deleted_at.is_(None),
+            )
+        )
+    elif feature_key == LISTENING_QUERIES:
+        # Counted live, like connections and workspaces, rather than metered.
+        # A saved search is a thing that exists, not a spend: metering it would
+        # mean deleting one did not give the slot back, so a workspace that
+        # created and removed three searches on a 3-query plan would be locked
+        # out until the billing period rolled. What *is* metered here is the
+        # money each poll spends, and that is recorded on the query itself.
+        #
+        # Paused queries count. Pausing is not deleting -- the query keeps its
+        # history and its slot, and a plan cap that could be dodged by pausing
+        # would not be a cap.
+        from app.models.listening import ListeningQuery
+
+        stmt = (
+            select(sa_func.count(ListeningQuery.id))
+            .join(Account, Account.id == ListeningQuery.account_id)
+            .where(
+                Account.organization_id == organization.id,
+                Account.deleted_at.is_(None),
             )
         )
     elif feature_key == SOCIAL_ACCOUNTS:

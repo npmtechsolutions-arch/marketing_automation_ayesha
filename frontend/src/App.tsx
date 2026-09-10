@@ -129,6 +129,7 @@ import DataDeletionPage from '@/pages/public/DataDeletionPage';
 
 // Admin pages
 import InboxPage from '@/pages/inbox/InboxPage';
+import ListeningPage from '@/pages/listening/ListeningPage';
 import ReportsPage from '@/pages/reports/ReportsPage';
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import AdminUsersPage from '@/pages/admin/AdminUsersPage';
@@ -376,6 +377,7 @@ function App() {
             <Route path="/create" element={<ProtectedRoute><CreatePostPage /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
             <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
+            <Route path="/listening" element={<ProtectedRoute><ListeningPage /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
             <Route path="/strategy" element={<ProtectedRoute><StrategyPage /></ProtectedRoute>} />
             <Route path="/strategy/monthly-plan" element={<ProtectedRoute><MonthlyPlanPage /></ProtectedRoute>} />

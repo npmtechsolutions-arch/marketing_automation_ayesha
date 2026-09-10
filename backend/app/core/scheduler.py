@@ -25,6 +25,7 @@ from app.services import (
     account_health,
     analytics_sync,
     error_log,
+    listening,
     publishing,
     inbox_sync,
     recurring,
@@ -295,6 +296,44 @@ async def sync_inbox() -> None:
             logger.exception("Inbox sync pass failed")
 
 
+_last_listening_sync: float = 0.0
+
+
+async def sync_listening() -> None:
+    """Poll saved searches whose workspace interval has come round.
+
+    Two clocks, deliberately. This one decides how often the worker *looks*;
+    each workspace's own interval decides whether any of its queries are
+    actually due. Looking is free, polling is not -- X bills per post read --
+    so the decision that spends money belongs to the workspace that pays for
+    it, not to a constant here.
+    """
+    global _last_listening_sync
+
+    now = asyncio.get_running_loop().time()
+    if (
+        _last_listening_sync
+        and now - _last_listening_sync < listening.CHECK_INTERVAL_SECONDS
+    ):
+        return
+    _last_listening_sync = now
+
+    async with AsyncSessionLocal() as session:
+        try:
+            totals = await listening.sync_all(session)
+            await session.commit()
+            if totals["polled"]:
+                logger.info(
+                    "Listening: %d quer(ies) polled, %d new mention(s), "
+                    "%d post(s) read (~$%.2f)",
+                    totals["polled"], totals["new"], totals["posts_read"],
+                    listening.estimated_cost_usd(totals["posts_read"]),
+                )
+        except Exception:
+            await session.rollback()
+            logger.exception("Listening sync pass failed")
+
+
 async def scheduled_post_worker():
     logger.info(
         "Starting publishing worker (poll=%ss, batch=%d, max concurrent=%d).",
@@ -305,6 +344,7 @@ async def scheduled_post_worker():
             await materialise_recurring()
             await run_reports()
             await sync_inbox()
+            await sync_listening()
             await enqueue_due_posts()
             await run_due_jobs()
             await recover_stale_jobs()

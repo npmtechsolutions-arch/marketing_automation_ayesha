@@ -358,23 +358,26 @@ def reset_rate_limits():
     challenge_store.reset()
 
 
-def _load_plan_seed():
-    """The seed function from the plans migration, imported by path.
+def _load_migration(filename: str):
+    """A migration module, imported by path.
 
-    Reused rather than duplicated so the tests exercise the same rows a real
-    database gets -- a second copy here would drift from the migration.
+    Seeds are reused rather than duplicated so the tests exercise the same rows
+    a real database gets -- a second copy here would drift from the migration.
     """
     import importlib.util
     from pathlib import Path
 
     path = (
-        Path(__file__).resolve().parent.parent
-        / "alembic" / "versions" / "d5b28a71f3c6_plans_and_entitlements.py"
+        Path(__file__).resolve().parent.parent / "alembic" / "versions" / filename
     )
-    spec = importlib.util.spec_from_file_location("plan_seed_migration", path)
+    spec = importlib.util.spec_from_file_location(f"migration_{filename}", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _load_plan_seed():
+    return _load_migration("d5b28a71f3c6_plans_and_entitlements.py")
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -389,6 +392,12 @@ async def seeded_plans(db_engine, db_session):
 
     migration = _load_plan_seed()
     await db_session.run_sync(lambda conn: migration.seed_plans(conn))
+    # Features added after the original plans migration seed themselves, the
+    # same way: a plan with no row for a feature resolves as *not granted*, so
+    # without this every listening test would meet a 402 instead of the rule
+    # it was written for.
+    listening = _load_migration("a2f7c1d4e908_listening_queries.py")
+    await db_session.run_sync(lambda conn: listening.seed_listening_feature(conn))
     await db_session.flush()
     # Limits are cached for 60s; a previous test's numbers must not leak.
     entitlement_service.invalidate_all()

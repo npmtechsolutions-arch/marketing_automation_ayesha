@@ -146,6 +146,19 @@ yet audited by TikTok" rather than reporting success that looks public.
 | 4 | TikTok application now? | **No — after 3.3.** The audit needs a demo video of the working flow. |
 | 5 | Pay for X access before Walk B? | **Needed sooner than planned.** See below. |
 
+**Decision 1 was built in Phase 3.7** (2026-09-11), on the terms above. What
+the audit asked for and what shipped:
+
+| The audit said | What was built |
+|---|---|
+| X only | `ListeningQuery.platform` is `twitter`, and the connector's `supports_recent_search` capability is what gates the UI — a workspace with no X connection is told why the feature is idle rather than shown an empty stream. |
+| 7-day window | Read from `Capabilities.search_window_days`, and repeated in every payload (`window_label`) so no surface can say "no mentions" where the truth is "none in the last 7 days". |
+| "with a read budget" | Posts read and requests accumulate on each query; the poll interval is a workspace setting from a fixed set (1/3/6/12/24h); the page shows the daily ceiling in dollars next to the control that changes it. Plan limits: Free 0, Starter 1, Growth 3, Pro 10. |
+| A feature covering one platform of four must say which | The page's first sentence names X and says the window; the empty state comes from the server. |
+
+Still open from this table: decision 2 (competitor tracking) and decision 4
+(the TikTok application, now unblocked — 3.6 shipped the connector).
+
 ---
 
 ## Two things this audit changes retroactively
