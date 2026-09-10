@@ -6,6 +6,7 @@ import {
   ListChecks,
   FileSpreadsheet,
   Flame,
+  Lightbulb,
   Plus,
   Sparkles,
   ChevronLeft,
@@ -35,6 +36,7 @@ import PublishingJobs from "@/components/content/PublishingJobs";
 import QueuePanel from "@/components/scheduling/QueuePanel";
 import BulkImportDialog from "@/components/content/BulkImportDialog";
 import BestTimesHeatmap from "@/components/scheduling/BestTimesHeatmap";
+import CalendarSuggestions from "@/components/scheduling/CalendarSuggestions";
 import ReviewPanel from "@/components/content/ReviewPanel";
 import { statusMeta, type BadgeVariant, type ReviewStatus } from "@/lib/review";
 import { wallClockDate } from "@/lib/scheduling";
@@ -352,6 +354,7 @@ export default function CalendarPage() {
   );
   const [view, setView] = useState<CalendarView>(initialView);
   const [showQueue, setShowQueue] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
 
@@ -573,6 +576,20 @@ export default function CalendarPage() {
     });
   }, [posts, platformFilter, statusFilter]);
 
+  // The visible month as plain YYYY-MM-DD, built from local calendar fields.
+  // toISOString() would shift the boundary by the viewer's offset and ask the
+  // server about the wrong month for anyone west of UTC.
+  const monthRange = useMemo(() => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const y = currentDate.getFullYear();
+    const m = currentDate.getMonth();
+    const last = new Date(y, m + 1, 0).getDate();
+    return {
+      from: `${y}-${pad(m + 1)}-01`,
+      to: `${y}-${pad(m + 1)}-${pad(last)}`,
+    };
+  }, [currentDate]);
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const monthName = currentDate.toLocaleString("default", {
@@ -687,6 +704,19 @@ export default function CalendarPage() {
             </button>
 
             <button
+              onClick={() => setShowSuggestions((v) => !v)}
+              className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm transition-colors"
+              style={{
+                backgroundColor: showSuggestions ? "rgba(109,94,246,0.16)" : "var(--sidebar-hover-bg)",
+                color: showSuggestions ? "var(--page-heading)" : "var(--page-text-secondary)",
+                border: "1px solid var(--surface-border)",
+              }}
+            >
+              <Lightbulb className="h-4 w-4" />
+              Suggestions
+            </button>
+
+            <button
               onClick={() => setShowImport(true)}
               className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm transition-colors"
               style={{
@@ -764,6 +794,24 @@ export default function CalendarPage() {
             className="overflow-hidden"
           >
             <BestTimesHeatmap accountId={workspaceId} />
+          </motion.div>
+        )}
+
+        {showSuggestions && workspaceId && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            className="overflow-hidden"
+          >
+            {/* The range is the month on display, expressed as plain dates so
+                the server reads them on the workspace's clock rather than
+                inheriting the viewer's. */}
+            <CalendarSuggestions
+              accountId={workspaceId}
+              from={monthRange.from}
+              to={monthRange.to}
+              onDrafted={fetchPosts}
+            />
           </motion.div>
         )}
 

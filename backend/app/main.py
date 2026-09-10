@@ -143,6 +143,7 @@ from app.api.v1.endpoints import (
     inbox as inbox_routes,
     posts,
     reports as reports_routes,
+    calendar as calendar_endpoints,
     scheduling,
     settings as settings_routes,
     social_accounts,
@@ -180,6 +181,8 @@ app.include_router(posts.router,            prefix="/api/v1/accounts/{account_id
 app.include_router(ai.router,               prefix="/api/v1/accounts/{account_id}/ai",          tags=["AI Content Generation"])
 app.include_router(analytics.router,        prefix="/api/v1/accounts/{account_id}/analytics",   tags=["Analytics"])
 app.include_router(scheduling.router,       prefix="/api/v1/accounts/{account_id}/scheduling",  tags=["Scheduling"])
+app.include_router(calendar_endpoints.router,      prefix="/api/v1/accounts/{account_id}/calendar", tags=["Calendar"])
+app.include_router(calendar_endpoints.fill_router, prefix="/api/v1/accounts/{account_id}/calendar", tags=["Calendar"])
 app.include_router(reports_routes.router,   prefix="/api/v1/accounts/{account_id}/reports",     tags=["Reports"])
 app.include_router(inbox_routes.router,     prefix="/api/v1/accounts/{account_id}/inbox",       tags=["Inbox"])
 app.include_router(strategies.router,       prefix="/api/v1/accounts/{account_id}/strategies",  tags=["Strategies"])

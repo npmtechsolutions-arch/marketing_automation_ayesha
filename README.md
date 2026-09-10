@@ -875,6 +875,51 @@ Topic hints are user text, so they go in the user message and are labelled as
 theirs. Only the goal enum reaches the system prompt — the rule from the inline
 assists, kept here because a larger prompt is a larger temptation.
 
+## Calendar suggestions
+
+`GET /accounts/{id}/calendar/suggestions?from&to` reports where a range is
+empty. "Empty" only means something against an expectation, so it measures the
+range against the two the workspace has already expressed: its **queue slots**
+("we post Mon/Wed/Fri at 10:00" is a commitment, and an empty Wednesday is a
+gap the workspace itself defined) and its **best posting times**, observed from
+its own history where there is enough of it and platform defaults where there
+is not.
+
+Those are different strengths of claim and they stay labelled — `queue`,
+`observed`, `default` — all the way into the UI, where they get different
+badges. Flattening them into one "suggestion" would make a platform convention
+sound like something the customer's own audience did.
+
+It is read-only and **unmetered**: charging an AI request for looking at your
+own calendar would be absurd.
+
+### Everything is on the workspace's clock
+
+A gap is a statement about a *day*, so a day boundary computed on the wrong
+clock puts it on the wrong date. Occupancy is compared as UTC **instants**,
+because during the fall-back hour two different instants render as the same
+wall-clock reading and a slot at the second of them is genuinely still free.
+The tests use an Australia/Sydney workspace throughout for exactly this reason:
+on UTC a timezone bug is invisible.
+
+A draft does not fill a slot. It is not on the calendar, which is the whole
+reason the analysis is useful.
+
+### Filling a gap
+
+`POST /accounts/{id}/calendar/suggest-fill` delegates to the monthly plan's
+generator with a narrow window and stores the result **as a plan** — so gap
+fills are accepted through the monthly plan's accept endpoint, with the same
+atomic reservation and the same drafts-never-scheduled guarantee. A second
+acceptance path would be a second chance to get that wrong. It costs the same
+five AI requests, because it runs the same generator.
+
+Stale platforms are flagged separately: connected, but nothing published or
+scheduled in the last fortnight. Attribution is done in Python rather than by
+querying inside the `target_accounts` JSON column — the last time this project
+reached into JSON from SQL it worked on SQLite and raised
+`UndefinedFunctionError` on Postgres.
+
 ## Campaign performance
 
 `GET /accounts/{id}/campaigns/{campaign_id}/performance` is the analytics page's
