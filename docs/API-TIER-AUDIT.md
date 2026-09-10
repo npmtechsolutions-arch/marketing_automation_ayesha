@@ -156,8 +156,22 @@ the audit asked for and what shipped:
 | "with a read budget" | Posts read and requests accumulate on each query; the poll interval is a workspace setting from a fixed set (1/3/6/12/24h); the page shows the daily ceiling in dollars next to the control that changes it. Plan limits: Free 0, Starter 1, Growth 3, Pro 10. |
 | A feature covering one platform of four must say which | The page's first sentence names X and says the window; the empty state comes from the server. |
 
-Still open from this table: decision 2 (competitor tracking) and decision 4
-(the TikTok application, now unblocked — 3.6 shipped the connector).
+**Decision 2 was built in Phase 3.8** (2026-09-11), on the audit's own terms:
+
+| The audit said | What was built |
+|---|---|
+| "Ship it as competitor **tracking**, not competitive intelligence" | The model, the endpoints, the page and the nav entry are all named tracking. The word "intelligence" appears nowhere in the feature. |
+| Business Discovery supports follower/media counts and recent posts, capped weekly | Follower and media counts, snapshotted per day and upserted like `analytics_daily`. Recent posts are *not* stored: they would be the beginning of a "top content" claim the API cannot support, since it returns no engagement for them. |
+| "State the refresh cap in the UI" | The cadence sentence is served from the backend and shown on the page and in the add dialog; a manual refresh inside the week is refused with the date of the next one. |
+| Named competitor accounts only | Added by handle, validated by one real Discovery call at add time so a typo is refused while the person who typed it is still looking at it. |
+
+The absences (engagement, cadence, top content, audience) are served from the
+backend as a list and rendered in the add dialog beside what *is* tracked, with
+the reason: Meta restricts everything else to accounts that have authorised
+this app, and tools appearing to offer more are scraping or buying it.
+
+Still open from this table: decision 4 — the TikTok application, unblocked
+since 3.6 shipped a working flow to film.
 
 ---
 

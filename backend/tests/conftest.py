@@ -398,6 +398,8 @@ async def seeded_plans(db_engine, db_session):
     # it was written for.
     listening = _load_migration("a2f7c1d4e908_listening_queries.py")
     await db_session.run_sync(lambda conn: listening.seed_listening_feature(conn))
+    competitors = _load_migration("d3e6b9a71c25_competitor_tracking.py")
+    await db_session.run_sync(lambda conn: competitors.seed_competitor_feature(conn))
     await db_session.flush()
     # Limits are cached for 60s; a previous test's numbers must not leak.
     entitlement_service.invalidate_all()

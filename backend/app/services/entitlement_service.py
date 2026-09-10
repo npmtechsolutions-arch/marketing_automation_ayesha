@@ -47,6 +47,7 @@ ANALYTICS_HISTORY_DAYS = "analytics_history_days"
 REPORTS_PER_MONTH = "reports_per_month"
 WHITE_LABEL = "white_label"
 LISTENING_QUERIES = "listening_queries"
+COMPETITOR_ACCOUNTS = "competitor_accounts"
 
 # Features whose usage accumulates over a period rather than being counted
 # live. Deleting the artefact does not refund these.
@@ -355,6 +356,24 @@ async def _count_stateful(
         stmt = (
             select(sa_func.count(ListeningQuery.id))
             .join(Account, Account.id == ListeningQuery.account_id)
+            .where(
+                Account.organization_id == organization.id,
+                Account.deleted_at.is_(None),
+            )
+        )
+    elif feature_key == COMPETITOR_ACCOUNTS:
+        # Stateful, like listening queries and connections: a tracked
+        # competitor is a thing that exists. Removing one gives the slot back;
+        # what it costs while it exists is one Discovery lookup a week, and
+        # Meta's cap -- not a meter here -- is what bounds that.
+        #
+        # Paused competitors count. A pause keeps the row and its history, and
+        # a cap that could be dodged by pausing would not be a cap.
+        from app.models.competitor import CompetitorAccount
+
+        stmt = (
+            select(sa_func.count(CompetitorAccount.id))
+            .join(Account, Account.id == CompetitorAccount.account_id)
             .where(
                 Account.organization_id == organization.id,
                 Account.deleted_at.is_(None),

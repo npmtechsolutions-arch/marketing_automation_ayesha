@@ -158,10 +158,26 @@ def test_every_metric_a_connector_maps_is_a_real_column():
     The invariant worth keeping is the last thing it asserted, and this checks
     it against the real code path: every target name in a connector's
     ``metrics_from`` mapping -- the mapping the live API response is read
-    through -- must be a column ``upsert_day`` can store.
+    through -- must be a column something can actually store.
+
+    **Two destinations, since 3.8.** ``metrics_from`` is a general normaliser,
+    and competitor tracking reads Business Discovery through it into
+    ``competitor_snapshots`` rather than ``analytics_daily``. The union is
+    accepted rather than the test being scoped per call site: both are metric
+    tables with nullable columns and the same absent-is-absent discipline, and
+    what this is really guarding against is a *typo* -- a name in neither table
+    is dropped in silence, which is how a metric quietly stops being recorded.
+    A third destination should be added here, not worked around at the call
+    site.
     """
     import ast
     import pathlib
+
+    from app.models.competitor import CompetitorSnapshot
+
+    storable = set(METRIC_FIELDS) | {
+        column.name for column in CompetitorSnapshot.__table__.columns
+    }
 
     offenders = []
     for path in sorted(pathlib.Path("app/connectors").glob("*.py")):
@@ -175,12 +191,13 @@ def test_every_metric_a_connector_maps_is_a_real_column():
             ):
                 continue
             for key in node.args[1].keys:
-                if isinstance(key, ast.Constant) and key.value not in METRIC_FIELDS:
+                if isinstance(key, ast.Constant) and key.value not in storable:
                     offenders.append(f"{path.name}:{node.lineno}: {key.value!r}")
 
     assert not offenders, (
-        "these metric names are not analytics_daily columns, so upsert_day "
-        "would drop them without a word:\n" + "\n".join(offenders)
+        "these metric names are not columns of analytics_daily or "
+        "competitor_snapshots, so the upsert would drop them without a "
+        "word:\n" + "\n".join(offenders)
     )
 
 
@@ -734,3 +751,4 @@ async def test_engagement_rate_counts_a_partially_reported_numerator(
     payload = await analytics_query.overview(db_session, ws["account"], window)
 
     assert payload["metrics"]["engagement_rate"]["value"] == 25.0
+

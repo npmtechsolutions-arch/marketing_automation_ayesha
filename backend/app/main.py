@@ -140,6 +140,7 @@ from app.api.v1.endpoints import (
     instagram_oauth,
     linkedin_oauth,
     notifications,
+    competitors as competitor_routes,
     inbox as inbox_routes,
     listening as listening_routes,
     posts,
@@ -192,6 +193,7 @@ app.include_router(integration_endpoints.callback_router, prefix="/api/v1",     
 app.include_router(reports_routes.router,   prefix="/api/v1/accounts/{account_id}/reports",     tags=["Reports"])
 app.include_router(inbox_routes.router,     prefix="/api/v1/accounts/{account_id}/inbox",       tags=["Inbox"])
 app.include_router(listening_routes.router, prefix="/api/v1/accounts/{account_id}/listening",   tags=["Listening"])
+app.include_router(competitor_routes.router, prefix="/api/v1/accounts/{account_id}/competitors", tags=["Competitors"])
 app.include_router(strategies.router,       prefix="/api/v1/accounts/{account_id}/strategies",  tags=["Strategies"])
 app.include_router(campaigns.router,        prefix="/api/v1/accounts/{account_id}/campaigns",   tags=["Campaigns"])
 app.include_router(notifications.router,    prefix="/api/v1/notifications",                     tags=["Notifications"])

@@ -108,6 +108,16 @@ def retry_after_seconds(response: Any) -> int | None:
     return seconds if seconds > 0 else None
 
 
+class AccountNotFound(ProviderAPIError):
+    """The platform can see no such account.
+
+    Its own type because the caller does something different with it: a handle
+    the platform cannot find is a typo to correct at the moment of typing, not
+    a fault to log and retry weekly. Tracking it silently would produce a row
+    that is empty forever and looks like a competitor with no followers.
+    """
+
+
 class MissingCredential(ProviderAPIError):
     """The account has no stored credential for this operation.
 
@@ -169,6 +179,11 @@ class Capabilities:
     # this is X-only and the UI has to say which platform a listening feature
     # actually covers rather than implying all of them.
     supports_recent_search: bool = False
+    # Looking up a *named* account that has not authorised this app. Instagram
+    # Business Discovery is the only official route to one anywhere, and it
+    # returns two numbers and a name -- no engagement, no cadence, no audience.
+    # The flag says the lookup exists; it does not promise analysis.
+    supports_competitor_lookup: bool = False
     # How far back that search can reach, in days. X's pay-per-use tier is a
     # rolling seven; full-archive needs a tier not open to us. None means the
     # platform has no search at all, which is not the same as "unlimited" --
@@ -505,6 +520,22 @@ class SocialProvider:
         have to learn a platform's vocabulary to be stored.
         """
         raise NotSupportedError(self.slug, "search_recent")
+
+    async def lookup_account(
+        self, social_account: Any, handle: str
+    ) -> dict[str, Any]:
+        """Public facts about a named account that has not authorised us.
+
+        Returns ``{"handle", "display_name", "followers", "media_count"}`` with
+        **absent fields left out**, not zeroed: a private or non-business
+        account yields a name and nothing else, and a stored 0 would be a
+        measurement claiming it has no followers.
+
+        Raises :class:`AccountNotFound` when the platform says no such account
+        is visible -- a typo and a real account must not look the same, because
+        one of them can be fixed by the person typing it.
+        """
+        raise NotSupportedError(self.slug, "lookup_account")
 
     # -- inbox ---------------------------------------------------------------
     #

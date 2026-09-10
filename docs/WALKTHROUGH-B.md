@@ -276,7 +276,69 @@ polls a metered API is a cost centre with no revenue against it.
 top of the per-post read, which is a pricing decision rather than a feature
 decision, and it has not been made yet.
 
-### 6. Start on a clean workspace
+### 6. Competitor tracking — the Meta half, and its own gate
+
+Added by Phase 3.8. It needs nothing new from X, and nothing new from the Meta
+app beyond what the "numbers" half of this walk already sets up: an Instagram
+**business** account connected through the Meta app, because Business Discovery
+must be asked *as* one. Meta's requirement, not ours, and the reason a
+workspace without one is shown the requirement rather than an empty screen.
+
+Permissions: the same `instagram_basic` + `pages_show_list` the Instagram
+connection already carries. Business Discovery adds no scope of its own, which
+is the one piece of good news in the audit's Meta section.
+
+#### What it can and cannot see
+
+| | |
+|---|---|
+| Returned | username, name, follower count, media count |
+| Not returned, on any tier | engagement, posting frequency, top content, audience, follower lists |
+| Works for | public Instagram **business and creator** accounts |
+| Invisible to it | personal accounts, private accounts |
+| Cap | roughly one lookup per account per week |
+
+The absences are the feature's most important product decision, so they are
+stated in the add dialog before anyone commits to using it — not discovered
+later as a thin card.
+
+#### The walk
+
+1. **Before connecting Instagram**, open **Competitors**. It should state the
+   requirement (an Instagram business account) rather than showing an empty
+   list.
+2. Connect the Instagram business account from step 1 of this walk, then add a
+   competitor by handle. Use a real public business account — a brand you
+   actually compete with, or any public business account for the test.
+3. **Type a handle wrong on purpose.** It must be refused *at add time*, with
+   Instagram's own reason, and nothing stored. A typo tracked silently would
+   sit there empty forever and read as a competitor with no followers.
+4. **Try a personal account.** Same refusal, different sentence: Discovery
+   cannot see personal or private accounts at all.
+5. **Check the first card.** One snapshot means no chart — it should say the
+   trend appears after next week's check rather than drawing a line through a
+   single point.
+6. **Press "check now" twice.** The second must be refused: Instagram allows
+   about one lookup per account per week and counts attempts, not successes.
+7. **A week later**, confirm a second snapshot appears and the chart draws,
+   with the axis scaled to the tracked range and the exact numbers printed
+   above it.
+8. **Read the staleness.** Every number is shown with how old it is ("as of 6
+   days ago"). A card that shows a follower count with no age is a defect —
+   the freshest possible figure here is one weekly lookup old.
+9. **Break it on purpose.** Revoke the Instagram connection, then wait for the
+   weekly sweep (or force one). The competitor row must say why it could not be
+   checked. A chart that simply stops gaining points looks like an account that
+   stopped changing.
+
+**Live status:** the whole of this waits on the Meta developer app and a
+connected Instagram business account, exactly like the "numbers" half of the
+walk. Everything short of Meta itself has been verified locally: the capability
+gate, the plan limit, the refusal of a placeholder credential (400, naming the
+credential rather than blaming Instagram), the weekly cap on manual refresh,
+snapshot upsert on a repeat check, tenant isolation, and both themes of the UI.
+
+### 7. Start on a clean workspace
 
 Register a **fresh workspace** for the walk. An existing one carries Walk A's
 mock accounts, and the point is to watch real numbers arrive against nothing.
@@ -388,6 +450,8 @@ Walk B would have hit it before connecting anything. One shape now.
 ## Findings
 
 Nothing yet — the walk has not been run.
+
+Nothing yet — this half has not been run.
 
 | # | Step | Sev | What happened | Expected |
 |---|------|-----|---------------|----------|

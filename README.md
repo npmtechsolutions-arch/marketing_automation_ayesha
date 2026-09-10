@@ -6,6 +6,11 @@ An AI-powered marketing automation platform for small and mid-sized businesses. 
 
 - **Strategy generation** — AI-generated marketing strategies and topic suggestions derived from a stored business profile.
 - **Content generation** — post copy and images via OpenAI, Anthropic, or Gemini, with per-platform variants.
+- **Competitor tracking** — follower and post counts for Instagram business
+  accounts you name, checked weekly. Named for exactly what it does: Instagram
+  returns two numbers and a name for an account that has not authorised this
+  app, so there is no engagement, no cadence and no "top content" here, and the
+  add dialog says so before you use it.
 - **Social listening** — saved searches on X, polled on a schedule the workspace
   sets, with the seven-day limit of X's search stated everywhere the results
   are: "no mentions in the last 7 days" is a different claim from "no mentions",
@@ -1190,6 +1195,64 @@ The worker polls every five minutes; these are rate-limited endpoints and a
 tighter loop spends the budget without seeing more. The Meta webhook receiver
 from 0.9 can feed the same upsert path later, making polling a backstop rather
 than the primary route.
+
+
+## Competitor tracking
+
+Follower and post counts over time for Instagram business accounts a workspace
+names. The feature is called tracking rather than intelligence because that is
+the size of what the API returns.
+
+### What Instagram actually gives us
+
+Business Discovery is the only official route to an account that has not
+authorised this app, on any platform this product supports — X has no
+equivalent at any tier. It returns **username, name, follower count and media
+count** for public **business and creator** accounts, capped at roughly one
+lookup per account per week. Personal and private accounts are invisible to it.
+
+Everything a competitor screen usually implies — engagement on their posts, how
+often they post, their best content, their audience — is restricted by Meta to
+accounts that have authorised us, on every tier. Tools that appear to offer it
+are scraping or buying the data. So the absences are served from the backend as
+a list and rendered **in the add dialog**, beside what is tracked, with that
+reason attached. Someone decides whether the feature is worth using while
+holding an accurate picture of it.
+
+### Three rules the data follows
+
+**A typo is refused at add time.** Adding a competitor spends one real
+Discovery lookup to validate the handle. A handle nobody can see — a typo, a
+personal account — is refused there and then. Tracked silently, it would
+produce a row that never fills in and reads as a competitor with no followers,
+which is a fabricated fact about a real company.
+
+**Absent is not zero.** Both metric columns are nullable. A private account
+answers with a name and no counts; the snapshot stores NULL, the card renders
+an em dash, and the chart leaves a gap rather than diving to zero. A lookup
+that returns no counts at all stores *no row*, because a row of NULLs would say
+"we looked and they have nothing".
+
+**Every number carries its age.** The cap is weekly, so a figure on screen is
+days old by definition. `staleness_label` ("as of 6 days ago") is produced by
+the backend and rendered beside every count — there is no code path that shows
+one without it.
+
+### Snapshots and the weekly cap
+
+Snapshots are keyed `(competitor, date)` and upserted, the same shape as
+`analytics_daily`: a second check on one day corrects that day rather than
+adding a second point, so a chart cannot show two different Tuesdays. A failed
+check still moves `last_synced_at` forward, because Meta counts attempts rather
+than successes and a failing handle retried every six hours would spend the
+week's allowance for everything else.
+
+A trend needs two snapshots. Below that the card says so — one point is a fact,
+not a line, and a single-point chart invites reading a slope into it. Where a
+chart does draw, its Y axis is fitted to the tracked range rather than anchored
+at zero (a 5% move on 12,000 followers is invisible against a zero axis), with
+the exact numbers and the percentage printed above it and a caption saying the
+axis is scaled.
 
 
 ## Social listening

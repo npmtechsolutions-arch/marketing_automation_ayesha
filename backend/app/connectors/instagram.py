@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.connectors.base import (
+    AccountNotFound,
+    MissingCredential,
     Capabilities,
     MediaRef,
     ResolvedContent,
@@ -426,6 +428,12 @@ class InstagramProvider(SocialProvider):
         # messaging and needs instagram_manage_messages. Offered by the API;
         # whether this app is approved for it surfaces at call time.
         supports_dm_api=True,
+        # Business Discovery: the only official route to a *named* account's
+        # data on any platform here. It needs the workspace's own Instagram
+        # **business** account to ask through -- Meta's own requirement, not a
+        # design choice -- which is why the UI has to explain the prerequisite
+        # rather than showing an empty feature.
+        supports_competitor_lookup=True,
         max_chars=2200,
         max_images=10,
         max_video_seconds=90,
@@ -545,6 +553,12 @@ class InstagramProvider(SocialProvider):
         self, social_account: Any, comment_external_id: str, body: str
     ) -> dict[str, Any]:
         return await _ig_reply(social_account, comment_external_id, body)
+
+    async def lookup_account(
+        self, social_account: Any, handle: str
+    ) -> dict[str, Any]:
+        """One Business Discovery lookup, through this workspace's IG account."""
+        return await _ig_business_discovery(social_account, handle)
 
     async def get_analytics(
         self, social_account: Any, since: datetime, until: datetime
@@ -747,3 +761,112 @@ async def _ig_reply(social_account: Any, comment_id: str, body: str) -> dict[str
                 "instagram", res.text[:200], status_code=res.status_code
             )
         return {"external_id": res.json().get("id")}
+
+
+# ---------------------------------------------------------------------------
+# Business Discovery: what one named account shows publicly
+# ---------------------------------------------------------------------------
+
+# Everything Discovery will return for another account. Written out rather than
+# requested with a wildcard so the *absence* of everything else is visible in
+# the code: there is no engagement here, no posting cadence, no audience data,
+# and no way to ask for them.
+DISCOVERY_FIELDS = "username,name,followers_count,media_count"
+
+
+async def _ig_business_discovery(social_account: Any, handle: str) -> dict[str, Any]:
+    """Look up a public Instagram business account by handle.
+
+    Meta requires the request to be made *as* an Instagram business account, so
+    this goes through the workspace's own connection. A workspace without one
+    cannot use the feature at all, which the caller surfaces rather than
+    letting every lookup fail.
+
+    Absent fields are left out of the result. A private or personal account
+    answers with a name and no counts, and inventing a 0 for those would be a
+    measurement claiming the account has no followers.
+    """
+    import httpx
+
+    ig_id, token, base = _ig_context(social_account)
+    if is_mock_token(token):
+        # A development placeholder cannot ask Meta anything, and inventing a
+        # follower count for a real company would be the worst kind of
+        # fabrication -- indistinguishable from a measurement, and about
+        # someone else's business. Refused by name, the same way listening
+        # refuses a placeholder rather than answering "nothing found".
+        raise MissingCredential(
+            "instagram",
+            "This Instagram connection has a development placeholder token, so "
+            "no lookup was made. Reconnect the account with real credentials "
+            "to track competitors.",
+        )
+
+    clean = handle.strip().lstrip("@")
+    if not clean:
+        raise AccountNotFound("instagram", "No handle was given.")
+
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            f"{base}/{ig_id}",
+            params={
+                # The nested syntax is Discovery's own: business_discovery is a
+                # field on *our* account whose parameter is their username.
+                "fields": f"business_discovery.username({clean}){{{DISCOVERY_FIELDS}}}",
+                "access_token": token,
+            },
+            timeout=20.0,
+        )
+    _raise_if_rate_limited("instagram", res)
+
+    if res.status_code != 200:
+        detail = (res.text or "")[:300]
+        lowered = detail.lower()
+        # Meta answers a missing or non-business account with an ordinary
+        # error, so the distinction has to be read out of the message. Getting
+        # this wrong in the safe direction -- treating a real outage as "no
+        # such account" -- would delete a competitor's history on a bad day,
+        # so only these specific phrasings count as not-found.
+        if any(
+            marker in lowered
+            for marker in (
+                "cannot be found",
+                "does not exist",
+                "not a business",
+                "invalid user id",
+                "unsupported get request",
+            )
+        ):
+            raise AccountNotFound(
+                "instagram",
+                f"Instagram has no visible business account called @{clean}. "
+                "Business Discovery can only see public business and creator "
+                "accounts, so a personal or private account cannot be tracked.",
+                status_code=res.status_code,
+            )
+        raise ProviderAPIError(
+            "instagram", f"Business Discovery failed: {detail}",
+            status_code=res.status_code,
+        )
+
+    payload = (res.json() or {}).get("business_discovery") or {}
+    if not payload:
+        raise AccountNotFound(
+            "instagram",
+            f"Instagram returned nothing for @{clean}. Business Discovery only "
+            "sees public business and creator accounts.",
+        )
+
+    result: dict[str, Any] = {
+        "handle": (payload.get("username") or clean).lower(),
+        "display_name": payload.get("name"),
+    }
+    # metrics_from drops what Discovery omitted, which is what keeps a private
+    # account out of the charts as a gap rather than in them as a zero.
+    result.update(
+        metrics_from(payload, {
+            "followers": "followers_count",
+            "media_count": "media_count",
+        })
+    )
+    return result

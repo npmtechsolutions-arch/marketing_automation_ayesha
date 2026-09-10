@@ -24,6 +24,7 @@ from app.models.post import Post, PostStatus
 from app.services import (
     account_health,
     analytics_sync,
+    competitors,
     error_log,
     listening,
     publishing,
@@ -334,6 +335,41 @@ async def sync_listening() -> None:
             logger.exception("Listening sync pass failed")
 
 
+_last_competitor_sync: float = 0.0
+
+
+async def sync_competitors() -> None:
+    """Take a weekly snapshot of each tracked competitor.
+
+    The worker looks every six hours; a competitor is checked only when a week
+    has passed since its last *attempt*. Meta caps Business Discovery per
+    account per week and counts attempts rather than successes, so a tighter
+    loop does not get fresher numbers -- it gets the whole workspace throttled.
+    """
+    global _last_competitor_sync
+
+    now = asyncio.get_running_loop().time()
+    if (
+        _last_competitor_sync
+        and now - _last_competitor_sync < competitors.CHECK_INTERVAL_SECONDS
+    ):
+        return
+    _last_competitor_sync = now
+
+    async with AsyncSessionLocal() as session:
+        try:
+            totals = await competitors.sync_all(session)
+            await session.commit()
+            if totals["checked"]:
+                logger.info(
+                    "Competitors: %d checked, %d snapshot(s) stored, %d error(s)",
+                    totals["checked"], totals["stored"], totals["errors"],
+                )
+        except Exception:
+            await session.rollback()
+            logger.exception("Competitor sync pass failed")
+
+
 async def scheduled_post_worker():
     logger.info(
         "Starting publishing worker (poll=%ss, batch=%d, max concurrent=%d).",
@@ -345,6 +381,7 @@ async def scheduled_post_worker():
             await run_reports()
             await sync_inbox()
             await sync_listening()
+            await sync_competitors()
             await enqueue_due_posts()
             await run_due_jobs()
             await recover_stale_jobs()

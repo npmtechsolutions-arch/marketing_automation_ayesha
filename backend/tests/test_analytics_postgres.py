@@ -220,3 +220,55 @@ async def test_the_listening_sweep_runs_on_postgres(pg_session, seeded):
     # It ran. Whether it polled anything is the SQLite suite's business -- this
     # workspace has no X connection, so the sweep records that on the query.
     assert set(totals) == {"polled", "new", "posts_read", "errors"}
+
+
+async def test_the_competitor_sweep_and_upsert_run_on_postgres(pg_session, seeded):
+    """The competitor snapshot upsert, executed once on the real dialect.
+
+    It has a Postgres-only branch -- ``ON CONFLICT ... DO UPDATE`` through the
+    postgresql dialect helper -- that the SQLite suite never reaches, so the
+    tests proving idempotency prove it only for the branch production does not
+    run. This runs the other one.
+    """
+    import uuid as _uuid
+    from datetime import date as _date
+
+    from sqlalchemy import select
+
+    from app.models.competitor import CompetitorAccount, CompetitorSnapshot
+    from app.services import competitors
+
+    competitor = CompetitorAccount(
+        id=_uuid.uuid4(),
+        account_id=seeded.id,
+        platform="instagram",
+        handle="pgrival",
+        is_active=True,
+    )
+    pg_session.add(competitor)
+    await pg_session.flush()
+
+    day = _date(2026, 9, 11)
+    await competitors.upsert_snapshot(
+        pg_session, competitor.id, day, {"followers": 100, "media_count": 5}
+    )
+    await competitors.upsert_snapshot(
+        pg_session, competitor.id, day, {"followers": 120}
+    )
+    await pg_session.flush()
+
+    rows = (
+        await pg_session.execute(
+            select(CompetitorSnapshot).where(
+                CompetitorSnapshot.competitor_id == competitor.id
+            )
+        )
+    ).scalars().all()
+    assert len(rows) == 1, "the conflict target must match, not insert twice"
+    assert rows[0].followers == 120
+    # The field the second call omitted is untouched, not nulled.
+    assert rows[0].media_count == 5
+
+    # And the sweep's own ordering (ASC NULLS FIRST) executes.
+    totals = await competitors.sync_all(pg_session)
+    assert set(totals) == {"checked", "stored", "errors"}
