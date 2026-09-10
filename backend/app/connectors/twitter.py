@@ -223,8 +223,22 @@ class TwitterProvider(SocialProvider):
         "not measured" everywhere downstream, where a stored 0 would have meant
         "measured, and nobody engaged".
 
-        Implementing this for real needs the X API v2 ``tweets`` endpoint with
-        ``tweet.fields=public_metrics``, which requires an elevated access tier.
+        **Why it is not implemented is not what this used to say.** The
+        docstring claimed ``public_metrics`` "requires an elevated access
+        tier". The 2026-09-10 tier audit found that is no longer true: X moved
+        to pay-per-use in February 2026 and ``public_metrics`` is readable on
+        it, at roughly $0.001 for a post you own.
+
+        So the real reason is narrower and worth stating honestly: **no
+        deployment here holds a funded X credential, and each read costs
+        money.** The refusal is right for that, not because the platform
+        forbids it.
+
+        When it is implemented it must stay capability-gated: a real fetch via
+        ``GET /2/tweets?tweet.fields=public_metrics`` where a funded credential
+        is configured, ``NotSupportedError`` where it is not. Never a
+        fabricated number in either branch, and never a silent zero. See
+        docs/API-TIER-AUDIT.md.
         """
         raise NotSupportedError(self.slug, "get_post_metrics")
 

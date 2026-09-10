@@ -23,6 +23,31 @@ Creating developer apps needs an account on each platform's developer site,
 accepted developer terms and identity verification. I have no access to any of
 that. Everything below is the complete list, so it should be paste-and-click.
 
+### 0. X is no longer free — read this before creating the app
+
+**Changed since this plan was written.** The 2026-09-10 tier audit
+(`docs/API-TIER-AUDIT.md`) found that X discontinued its free tier for new
+developers on 6 February 2026 and moved to **pay-per-use credits**. There is no
+free path any more.
+
+For Walk B this is small money but it is a credit card, not just a signup:
+
+| Action | Cost |
+|---|---|
+| Create a post | $0.015 |
+| Create a post **containing a link** | $0.20 |
+| Read a post you own | $0.001 |
+
+A walk that publishes two or three test posts costs cents. Load the minimum
+credit the console will take.
+
+The `$0.20` for a post containing a link is not a typo and is worth seeing with
+your own eyes during the walk — it is a 13× penalty on exactly the kind of post
+a marketing tool exists to send, and it is a pricing input for our own plans.
+
+**Facebook is unaffected** and remains free to develop against, so the
+"numbers" half of the walk needs no spend.
+
 ### 1. Free the callback port
 
 The registered redirect URI must match **exactly**, and the defaults assume
