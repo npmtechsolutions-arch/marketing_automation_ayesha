@@ -353,12 +353,19 @@ async def _execute_job_inner(job_id: uuid.UUID) -> None:
             job.post_url = result.post_url or (
                 f"https://mock-{slug}.com/posts/{result.external_post_id}"
             )
+            # Something true about a *successful* publish that the user has to
+            # be told -- TikTok's SELF_ONLY is the case this exists for. It is
+            # not an error and must not be recorded as one, but a video only
+            # its author can see is not a fact to leave out of the record.
+            if result.notice:
+                await _log(db, job, LogLevel.INFO, result.notice)
             await _finish(
                 db, job, JobStatus.SUCCEEDED,
                 f"Published on {attempt_label}",
                 platform_response={
                     "external_post_id": result.external_post_id,
                     "post_url": job.post_url,
+                    **({"notice": result.notice} if result.notice else {}),
                 },
             )
         elif result.status == "manual_required":

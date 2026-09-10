@@ -117,6 +117,10 @@ class SocialAccountCapabilities(BaseModel):
 
     supports_images: bool
     supports_video: bool
+    # True where the platform publishes video and nothing else (TikTok), so
+    # the composer can say "attach a video" instead of letting a caption-only
+    # post reach publish and fail there.
+    requires_video: bool = False
     supports_carousel: bool
     supports_link_posts: bool
     supports_comments_api: bool

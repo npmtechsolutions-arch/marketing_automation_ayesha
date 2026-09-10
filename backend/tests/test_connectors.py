@@ -59,7 +59,7 @@ async def test_registry_resolves_every_slug_the_old_dispatch_accepted(slug, expe
 
 async def test_every_seeded_platform_has_a_provider():
     assert set(known_slugs()) == {
-        "facebook", "instagram", "linkedin", "twitter", "youtube",
+        "facebook", "instagram", "linkedin", "tiktok", "twitter", "youtube",
     }
 
 
@@ -70,14 +70,18 @@ async def test_unknown_slug_falls_back_to_instagram_and_says_so(caplog):
     ``else``. The fallback is preserved so this stays a refactor; the warning
     is the only difference, because publishing someone's post to the wrong
     platform should not be quiet.
+
+    The example used to be "tiktok", which is now a real connector -- a good
+    illustration of why the fallback is the wrong default: for as long as this
+    test passed, a workspace with a TikTok row was publishing to Instagram.
     """
     import logging
 
     with caplog.at_level(logging.WARNING, logger="app.connectors.registry"):
-        provider = get_provider("tiktok")
+        provider = get_provider("pinterest")
 
     assert provider.slug == "instagram"
-    assert "tiktok" in caplog.text
+    assert "pinterest" in caplog.text
     assert "falling back" in caplog.text
 
 

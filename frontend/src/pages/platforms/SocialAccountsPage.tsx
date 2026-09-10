@@ -174,6 +174,7 @@ export default function SocialAccountsPage() {
     const igResult = params.get("instagram");
     const liResult = params.get("linkedin");
     const twitterResult = params.get("twitter");
+    const tiktokResult = params.get("tiktok");
     const youtubeResult = params.get("youtube");
     // Backend failure codes are machine-readable; translate the ones a user can act on.
     const REASON_MESSAGES: Record<string, string> = {
@@ -219,6 +220,21 @@ export default function SocialAccountsPage() {
       window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
     } else if (twitterResult === "error") {
       showError(reason || "Failed to connect X (Twitter) Account.");
+      const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+      window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
+    }
+
+    if (tiktokResult === "success") {
+      // The audit state is why this says more than "connected": until TikTok
+      // approves the app every post it makes is visible only to its author,
+      // and someone who is not told that will wonder why nobody saw it.
+      showSuccess(
+        "TikTok connected. Until TikTok approves this app, posts will be published privately (visible only to you)."
+      );
+      const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+      window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
+    } else if (tiktokResult === "error") {
+      showError(reason || "Failed to connect TikTok Account.");
       const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
       window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
     }
@@ -521,6 +537,31 @@ export default function SocialAccountsPage() {
     } catch (err: any) {
       console.error("X OAuth initiation error:", err);
       showError(err.response?.data?.detail || "Failed to initiate X OAuth.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTikTokOAuth = async () => {
+    const activeAccountId = await getAccountId();
+    if (!activeAccountId) return;
+    const ttPlatform = dbPlatforms.find((p) => (p.slug || "").toLowerCase() === "tiktok");
+    if (!ttPlatform) {
+      showError("TikTok platform is not configured in this workspace.");
+      return;
+    }
+    try {
+      setIsLoading(true);
+      const res: any = await api.get(`/accounts/${activeAccountId}/tiktok/authorize?platform_id=${ttPlatform.id}`);
+      const authUrl = res.auth_url || res.data?.auth_url;
+      if (authUrl) {
+        window.location.href = authUrl;
+      } else {
+        showError("Failed to generate TikTok authorization URL.");
+      }
+    } catch (err: any) {
+      console.error("TikTok OAuth initiation error:", err);
+      showError(err.response?.data?.detail || "Failed to initiate TikTok OAuth.");
     } finally {
       setIsLoading(false);
     }
@@ -1141,6 +1182,29 @@ export default function SocialAccountsPage() {
                   </div>
                   <div className="border-t border-white/15 pt-2.5">
                     <p className="text-amber-300/90">Note: Text tweets are supported. Image/video upload isn't available yet, and X's free API tier heavily rate-limits posting — a paid X API plan may be required for reliable publishing.</p>
+                  </div>
+                </div>
+              );
+            }
+            if (slug === "tiktok") {
+              return (
+                <div className="rounded-xl bg-black/30 border border-white/20 p-4 text-xs text-gray-200 space-y-3">
+                  <div>
+                    <p className="font-semibold text-sm mb-1" style={{ color: "var(--page-heading)" }}>Easy One-Click Connection (Recommended):</p>
+                    <p className="mb-3" style={{ color: "var(--page-text-secondary)" }}>Sign in with TikTok to connect an account and publish videos.</p>
+                    <Button
+                      onClick={handleTikTokOAuth}
+                      disabled={isLoading}
+                      className="w-full justify-center bg-black hover:bg-black/80 text-white font-semibold gap-2 py-2.5 rounded-xl text-xs flex items-center shadow-lg border border-white/20"
+                    >
+                      <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                        <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.3 0 .59.05.86.12V9.01a6.27 6.27 0 00-.86-.06 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.55a8.19 8.19 0 004.76 1.52V6.69h-1z"/>
+                      </svg>
+                      {isLoading ? "Redirecting..." : "Connect TikTok Account"}
+                    </Button>
+                  </div>
+                  <div className="border-t border-white/15 pt-2.5">
+                    <p className="text-amber-500 dark:text-amber-300/90">Note: TikTok publishes <strong style={{ color: "var(--page-heading)" }}>video</strong> only — attach one to your post. Until TikTok audits this app, every post is published <strong style={{ color: "var(--page-heading)" }}>privately</strong> (visible only to you), which is TikTok\'s own rule for unaudited apps, not a fault in the connection.</p>
                   </div>
                 </div>
               );

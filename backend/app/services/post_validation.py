@@ -132,6 +132,12 @@ def _validate_one(
         )
     if videos and not caps.supports_video:
         fail("media", f"{slug} cannot publish video through this integration.")
+    if caps.requires_video and not videos:
+        fail(
+            "media",
+            f"{slug} publishes video only -- a post without one cannot be "
+            "sent there at all.",
+        )
     if len(images) > caps.max_images:
         if caps.max_images == 0:
             fail("media", f"{slug} does not accept images.")

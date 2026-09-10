@@ -6,7 +6,7 @@ An AI-powered marketing automation platform for small and mid-sized businesses. 
 
 - **Strategy generation** — AI-generated marketing strategies and topic suggestions derived from a stored business profile.
 - **Content generation** — post copy and images via OpenAI, Anthropic, or Gemini, with per-platform variants.
-- **Scheduling and publishing** — a calendar plus a background worker that publishes scheduled posts to Facebook, Instagram, LinkedIn, X/Twitter, and YouTube.
+- **Scheduling and publishing** — a calendar plus a background worker that publishes scheduled posts to Facebook, Instagram, LinkedIn, TikTok, X/Twitter, and YouTube.
 - **Approval workflow** — draft → review → approve/reject before anything is published.
 - **Analytics** — engagement metrics synced back from each platform, aggregated per account and per post.
 - **Teams and RBAC** — multiple accounts per user with five roles (`viewer` → `editor` → `manager` → `admin` → `owner`) and an invitation flow. See [documents/RBAC-Permissions.md](documents/RBAC-Permissions.md).
@@ -340,6 +340,7 @@ provider genuinely returns:
 | Facebook | followers, impressions, profile visits |
 | Instagram | followers, following, posts, reach, impressions, profile visits |
 | LinkedIn | followers (organization pages only) |
+| TikTok | followers, likes, videos — and only where `user.info.stats` was granted; the stats scope is separate from the publishing scope, so a connection that can post may report nothing |
 | X | followers, following, posts — reach and impressions need a paid tier |
 | YouTube | followers, posts, video views |
 
@@ -1116,6 +1117,7 @@ mentions and no readable comments, which one flag cannot express.
 | Facebook | ✅ Page post comments | ✅ Conversations API (`pages_messaging`) | — |
 | Instagram | ✅ Media comments | ✅ (`instagram_manage_messages`) | — |
 | LinkedIn | ✅ Organization posts only | — messaging API is partner-gated | — |
+| TikTok | — needs scopes v1 does not request | — | — |
 | X | — replies are not readable on this tier | — needs elevated access | ✅ Mentions timeline |
 | YouTube | ✅ Channel comment threads | — | — |
 
@@ -1295,7 +1297,8 @@ app/connectors/
                NotSupportedError, and the shared OAuth/refresh plumbing
   media.py     platform-agnostic helpers (media re-hosting, SSRF guard,
                hashtags, ffmpeg image+audio -> video)
-  facebook.py  instagram.py  linkedin.py  twitter.py  youtube.py
+  facebook.py  instagram.py  linkedin.py  tiktok.py  twitter.py
+  youtube.py
   registry.py  get_provider(slug) -> SocialProvider
 ```
 
@@ -1318,10 +1321,26 @@ A method a platform has no API for raises `NotSupportedError`, which is delibera
 | facebook | 63,206 | yes | yes | yes | yes |
 | instagram | 2,200 | yes | yes | yes | no |
 | linkedin | 3,000 | yes | **no** | no | yes |
+| tiktok | 2,200 | no | **required** | no | no |
 | twitter | **280** | **no** | no | no | yes |
 | youtube | 5,000 | no | yes | no | no |
 
 The two bold "no"s report what the *connector* does, not what the platform allows: the X publisher drops media silently and the LinkedIn one rejects video outright. Reporting the API's real limits would promise something the connector will not deliver.
+
+TikTok's **required** is a fourth state, added with the connector in 3.6: its
+Content Posting API has no text-only and no image post at all, so a caption
+without a video is not a thin post there — it is not a post. `requires_video`
+carries that to the composer, which refuses it while the author can still fix
+it rather than letting it reach publish and fail.
+
+TikTok also publishes **privately** until TikTok audits the app. That is a
+state, not an error: the publish succeeds and a `notice` on the `PublishResult`
+says who can see it, which reaches the per-target log as an information line
+beside the success. Reporting it as a failure would paint the one route to
+being audited red; saying nothing would leave an author waiting for views that
+cannot arrive. The audit state lives on the connection
+(`config.tiktok_audit_state`, defaulting to `unaudited`) and is advanced by
+hand — see [docs/WALKTHROUGH-B.md](docs/WALKTHROUGH-B.md).
 
 `None` on a numeric field means no limit — not unknown, not zero.
 

@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     FIREBASE_PROJECT_ID: str = "marketengine-ai"
     # Must EXACTLY match an "Authorized redirect URI" in the Google Cloud OAuth client.
     YOUTUBE_REDIRECT_URI: str = "http://localhost:8000/api/v1/youtube/callback"
+    # TikTok. The Content Posting API needs PKCE, and an unaudited app can
+    # only post SELF_ONLY -- see docs/WALKTHROUGH-B.md.
+    TIKTOK_CLIENT_KEY: str = ""
+    TIKTOK_CLIENT_SECRET: str = ""
+    TIKTOK_REDIRECT_URI: str = "http://localhost:8000/api/v1/tiktok/callback"
+
     # HubSpot, the v1 CRM. Free developer portal, public OAuth, and the two
     # contact scopes need no app review.
     HUBSPOT_CLIENT_ID: str = ""

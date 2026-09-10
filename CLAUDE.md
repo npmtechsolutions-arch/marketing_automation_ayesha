@@ -45,6 +45,15 @@ Every entry earned its place by a specific incident.
   typecheck, and remember the backend suite holds the *other half* of two of
   these contracts (`tests/test_status_contract.py`).
 
+- **Capture `httpx.AsyncClient` once, at import, before any test patches it.**
+  A fake that reads `httpx.AsyncClient` inside its own `install()` wraps
+  whatever is already installed — so a second fake in the same test handed its
+  transport to the *first* fake's factory, which promptly overrode it. Every
+  request went to the previous fake's handler while the new one sat at zero
+  requests, which reads as "the code never called the API" rather than "the
+  harness is wrong". Found in the TikTok poll-loop test, whose whole point was
+  counting clients.
+
 - **`npx tsc --noEmit` in `frontend/` checks nothing.** The root `tsconfig.json`
   has `"files": []` and only project *references*, so the bare invocation
   type-checks an empty program and exits 0 no matter what is broken. Use

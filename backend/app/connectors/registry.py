@@ -15,6 +15,7 @@ from app.connectors.base import Capabilities, SocialProvider
 from app.connectors.facebook import FacebookProvider
 from app.connectors.instagram import InstagramProvider
 from app.connectors.linkedin import LinkedInProvider
+from app.connectors.tiktok import TikTokProvider
 from app.connectors.twitter import TwitterProvider
 from app.connectors.youtube import YouTubeProvider
 
@@ -24,6 +25,7 @@ _PROVIDERS: dict[str, SocialProvider] = {
     FacebookProvider.slug: FacebookProvider(),
     InstagramProvider.slug: InstagramProvider(),
     LinkedInProvider.slug: LinkedInProvider(),
+    TikTokProvider.slug: TikTokProvider(),
     TwitterProvider.slug: TwitterProvider(),
     YouTubeProvider.slug: YouTubeProvider(),
 }
@@ -43,6 +45,7 @@ _ALIASES: tuple[tuple[str, str], ...] = (
     ("instagram", InstagramProvider.slug),
     ("insta", InstagramProvider.slug),
     ("linkedin", LinkedInProvider.slug),
+    ("tiktok", TikTokProvider.slug),
     ("youtube", YouTubeProvider.slug),
     ("twitter", TwitterProvider.slug),
 )

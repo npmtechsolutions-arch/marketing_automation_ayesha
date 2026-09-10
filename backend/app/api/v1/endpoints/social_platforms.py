@@ -136,6 +136,12 @@ async def list_social_platforms(
                  {"key": "api_secret", "label": "API Secret", "type": "password", "required": True},
                  {"key": "bearer_token", "label": "Bearer Token", "type": "password", "required": True},
              ]}},
+            {"name": "TikTok", "slug": "tiktok", "icon": "tiktok", "color": "#000000",
+             "description": "Short-form video",
+             "base_url": "https://open.tiktokapis.com/v2",
+             "api_config_template": {"fields": [
+                 {"key": "open_id", "label": "Open ID", "type": "text", "required": True},
+             ]}},
             {"name": "YouTube", "slug": "youtube", "icon": "youtube", "color": "#FF0000",
              "description": "Video sharing platform",
              "base_url": "https://www.googleapis.com/youtube/v3",

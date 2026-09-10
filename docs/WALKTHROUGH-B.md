@@ -106,7 +106,105 @@ Grant exactly these; a missing one fails at consent rather than at publish.
   add `r_organization_social w_organization_social rw_organization_admin` for a
   company page.
 
-### 4. Start on a clean workspace
+### 4. TikTok — a third platform, with a different kind of gate
+
+Added by Phase 3.6. It is worth walking **because** its gate is unlike the
+other two: X's is money and Meta's is app review for *metrics*, but TikTok
+gates **who can see what you publish**. An app TikTok has not audited may only
+post `SELF_ONLY` — the video really is live, and really is visible to nobody
+but its author.
+
+The connector treats that as a state, not an error: the publish succeeds and
+carries a notice saying it went out privately. That is the behaviour to watch
+for during the walk, and it is what makes the audit submission possible at all
+— you cannot film a demo video of a flow that refuses to run.
+
+**Redirect URI** (register this exact string):
+
+```
+http://localhost:8000/api/v1/tiktok/callback
+```
+
+**Credentials** — developers.tiktok.com → Manage apps → your app. TikTok calls
+the id a *client key*, not a client id, and the `.env` name follows TikTok:
+
+```dotenv
+# TikTok — developers.tiktok.com, an app with Login Kit and the
+# Content Posting API added.
+TIKTOK_CLIENT_KEY=
+TIKTOK_CLIENT_SECRET=
+TIKTOK_REDIRECT_URI=http://localhost:8000/api/v1/tiktok/callback
+```
+
+**Scopes** — `user.info.basic`, `user.info.stats`, `video.publish`.
+
+* `video.publish` is **Direct Post** — the video lands on the profile.
+  `video.upload` alone only drops a draft into the user's TikTok inbox, which
+  is a different product and not what this connector implements.
+* `user.info.stats` is what makes `get_analytics` return anything. Without it
+  the connection can publish and reports **no** follower count — which is the
+  null discipline working, not a bug. If the walk shows an empty analytics row
+  for TikTok, check the granted scopes before assuming a defect.
+
+**Sandbox and test users.** TikTok's sandbox lets you nominate a small number
+of test accounts, and until the app is audited each of them must be able to
+accept a private post. Confirm the current caps in the portal rather than
+trusting this paragraph — TikTok has changed them before, and a wrong number
+here would send someone hunting for a bug that is a quota.
+
+#### The audit, and what the demo video has to show
+
+Direct Post is the part TikTok reviews. The submission is a form plus an
+unlisted video walking the whole flow, and the reviewer is checking the
+*consent* story, not the code:
+
+1. The user connecting their own TikTok account through the real consent
+   screen — not a pre-connected session.
+2. The composer, showing what will be posted: caption, hashtags, the video
+   itself.
+3. The visible statement that posts are private until the app is audited.
+   MarketEngine shows this in three places, which is deliberate: on the connect
+   panel before authorising, in the toast when the connection lands, and in the
+   publishing log line after each publish.
+4. The publish, and then the post open **on TikTok**, matching what the
+   composer showed.
+
+Nothing in the app has to change to film this. The one thing to remember is
+that the demo must show the private-post disclosure — an app whose UI hides it
+is the specific failure TikTok rejects for.
+
+#### After approval
+
+Approval does not travel automatically. The connection carries its own audit
+state on `social_accounts.config.tiktok_audit_state`, defaulting to
+`unaudited`, and publishing reads it to choose the privacy level. Moving it to
+`audited` is a deliberate step, not something to infer:
+
+```sql
+UPDATE social_accounts
+   SET config = jsonb_set(config::jsonb, '{tiktok_audit_state}', '"audited"')
+ WHERE id = '<social_account_id>';
+```
+
+Inferring it would be the wrong kind of guess: assume audited and the app sends
+`PUBLIC_TO_EVERYONE` from a client TikTok rejects; assume it *silently* and a
+video someone believed was private goes public. Reconnecting an already-audited
+account preserves the state.
+
+#### What to watch during the walk
+
+- A post with no video is refused **in the composer**, before publishing, with
+  "tiktok publishes video only". TikTok has no text-only post at all.
+- A publish returns success with the private-post notice in the job log, and
+  the log records the platform's `publish_id`.
+- The poll: a large video sits in `PROCESSING_UPLOAD` for a while. The panel
+  should stay on one attempt — the wait is inside the publish, not a retry.
+- A rejected video shows TikTok's own `fail_reason` (`video_pull_failed`,
+  `picture_size_check_failed`), not "publishing failed".
+- Per-post metrics are **refused**, like X's: `video.list` is not in the
+  requested scopes, so no performance row is written and the drawer says so.
+
+### 5. Start on a clean workspace
 
 Register a **fresh workspace** for the walk. An existing one carries Walk A's
 mock accounts, and the point is to watch real numbers arrive against nothing.

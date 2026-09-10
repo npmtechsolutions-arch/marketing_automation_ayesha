@@ -150,6 +150,7 @@ from app.api.v1.endpoints import (
     social_accounts,
     social_platforms,
     strategies,
+    tiktok_oauth,
     twitter_oauth,
     media,
     uploads,
@@ -202,6 +203,8 @@ app.include_router(facebook_oauth.router,   prefix="/api/v1/accounts/{account_id
 app.include_router(facebook_oauth.callback_router, prefix="/api/v1",                                  tags=["Facebook OAuth"])
 app.include_router(instagram_oauth.router,  prefix="/api/v1/accounts/{account_id}/instagram",        tags=["Instagram OAuth"])
 app.include_router(instagram_oauth.callback_router, prefix="/api/v1",                                 tags=["Instagram OAuth"])
+app.include_router(tiktok_oauth.router,     prefix="/api/v1/accounts/{account_id}/tiktok",           tags=["TikTok OAuth"])
+app.include_router(tiktok_oauth.callback_router,   prefix="/api/v1",                                  tags=["TikTok OAuth"])
 app.include_router(twitter_oauth.router,    prefix="/api/v1/accounts/{account_id}/twitter",          tags=["Twitter OAuth"])
 app.include_router(twitter_oauth.callback_router,  prefix="/api/v1",                                  tags=["Twitter OAuth"])
 app.include_router(youtube_oauth.router,    prefix="/api/v1/accounts/{account_id}/youtube",          tags=["YouTube OAuth"])

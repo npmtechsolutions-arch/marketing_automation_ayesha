@@ -785,6 +785,7 @@ async def get_social_account_capabilities(
         platform_name=provider.name,
         supports_images=caps.supports_images,
         supports_video=caps.supports_video,
+        requires_video=caps.requires_video,
         supports_carousel=caps.supports_carousel,
         supports_link_posts=caps.supports_link_posts,
         supports_comments_api=caps.supports_comments_api,

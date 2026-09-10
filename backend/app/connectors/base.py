@@ -150,6 +150,12 @@ class Capabilities:
 
     supports_images: bool = False
     supports_video: bool = False
+    # Some platforms do not merely accept video, they publish nothing else.
+    # TikTok's Content Posting API has no text-only and no image post at all,
+    # so a caption-only post is not a thin post there -- it is not a post. The
+    # composer needs to say so while the author can still fix it, and the only
+    # place that knows is the connector.
+    requires_video: bool = False
     supports_carousel: bool = False
     supports_link_posts: bool = False
     supports_comments_api: bool = False
@@ -241,6 +247,13 @@ class PublishResult:
     # scheduler honours it over its own backoff: guessing shorter gets us rate
     # limited again, guessing longer delays the post for nothing.
     retry_after: Optional[int] = None
+    # Something true about a *successful* publish that the user needs told.
+    # TikTok is why it exists: an app TikTok has not yet audited may only post
+    # SELF_ONLY, so the video really is live and really is visible to nobody
+    # but its author. That is a state, not a failure -- putting it in `error`
+    # would paint the one working path to getting audited red, and dropping it
+    # would leave someone waiting for views that cannot come.
+    notice: Optional[str] = None
 
     @property
     def succeeded(self) -> bool:
@@ -460,7 +473,6 @@ class SocialProvider:
 
     async def get_posts(self, social_account: Any) -> list[dict[str, Any]]:
         raise NotSupportedError(self.slug, "get_posts")
-
     # -- inbox ---------------------------------------------------------------
     #
     # Each returns a list of dicts in the shape ``inbox_sync`` expects, so the

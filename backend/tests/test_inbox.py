@@ -328,7 +328,15 @@ async def test_one_failing_source_does_not_stop_the_others(
 @pytest.mark.parametrize("slug", sorted(known_slugs()))
 async def test_a_claimed_capability_is_actually_implemented(slug):
     """A capability flag that says True with a NotSupportedError behind it is
-    the lying-matrix pattern: the UI offers a feature the server refuses."""
+    the lying-matrix pattern: the UI offers a feature the server refuses.
+
+    This used to check whether the method was *overridden*, which was a proxy
+    for "implemented" and held only while no connector overrode a method in
+    order to refuse. TikTok does exactly that -- it declares
+    ``get_comments`` and raises ``NotSupportedError`` from it, to say so at the
+    call site rather than by inheritance -- and the proxy passed while the flag
+    was a lie. So this calls the method and looks at what comes back.
+    """
     provider = get_provider(slug)
     capabilities = provider.capabilities
     checks = [
@@ -336,13 +344,45 @@ async def test_a_claimed_capability_is_actually_implemented(slug):
         (capabilities.supports_dm_api, "get_messages"),
         (capabilities.supports_mentions_api, "get_mentions"),
     ]
-    base = type(provider).__mro__[-2]  # SocialProvider
-    for claimed, method in checks:
+
+    for claimed, method_name in checks:
         if not claimed:
             continue
-        assert getattr(type(provider), method, None) is not getattr(base, method), (
-            f"{slug} claims {method} but inherits the unsupported stub"
-        )
+        method = getattr(provider, method_name)
+        try:
+            await method(_UNUSABLE_ACCOUNT)
+        except NotSupportedError:
+            raise AssertionError(
+                f"{slug} claims {method_name} and refuses it with "
+                "NotSupportedError"
+            ) from None
+        except Exception:
+            # Anything else means it tried: no credentials, no network, a
+            # missing attribute on the stand-in. Trying is the whole claim.
+            pass
+
+
+class _UnusableAccount:
+    """Enough of a social account to reach the first real line of a method.
+
+    Deliberately not a *working* one: the point is to see whether the connector
+    attempts the call, not whether it succeeds against a platform.
+
+    The config makes it the **kind** of connection each capability claims to
+    support, which matters because some refusals are legitimately conditional.
+    LinkedIn reads comments on organization pages and not on personal profiles,
+    and refusing for a personal profile is a fact about that connection rather
+    than a lying flag -- so the stand-in carries an organization URN. Without
+    it this test would demand LinkedIn support something it never claimed.
+    """
+
+    access_token = "definitely-not-valid-and-not-a-placeholder"
+    config: dict = {"author_urn": "urn:li:organization:1", "page_id": "1"}
+    id = None
+    platform = None
+
+
+_UNUSABLE_ACCOUNT = _UnusableAccount()
 
 
 async def test_supported_sources_describes_each_platform():
