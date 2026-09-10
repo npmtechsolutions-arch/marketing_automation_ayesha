@@ -447,9 +447,98 @@ Walk B would have hit it before connecting anything. One shape now.
 
 ---
 
-## Findings
+## The zero-connection walk — run 2026-09-11
 
-Nothing yet — the walk has not been run.
+The credential half of Walk B is still blocked (nothing is in `.env`), but one
+whole half of it never needed credentials: **what a new customer sees before
+they connect anything**. That is the Walk A defect class — a page that shows an
+empty void where it should explain itself, or says something the server does
+not support — and it turned out to be where the product was least honest.
+
+Method: a fresh workspace created through the real registration bootstrap, then
+every page in the sidebar visited in a browser with console errors and failed
+requests recorded per page. Eighteen pages; five defects, four of them on the
+first screen anybody sees.
+
+| # | Where | Sev | What happened | Status |
+|---|-------|-----|---------------|--------|
+| **B3** | Dashboard | **S1** | A hardcoded sentence: *"Your social channels are performing 14% above baseline"* — shown to every workspace, including one with no connected accounts and no posts. | **Fixed** |
+| **B4** | Dashboard | **S1** | A hardcoded *"Optimal posting window for LinkedIn & Instagram today is 4:30 PM – 6:00 PM"*, on a workspace with neither platform connected. | **Fixed** |
+| **B5** | Dashboard | S2 | Stat cards rendered a green upward badge reading **"+%"** with no number, for a workspace with nothing to compare. | **Fixed** |
+| **B6** | Dashboard / `/analytics/overview` | S2 | "Total Reach **0**", "Avg Engagement Rate **0.00%**", "0 followers gained" where nothing had been measured. | **Fixed** |
+| **B7** | Inbox | S2 | `GET /accounts/{id}/teams/members` 404'd on every load, so the assignee dropdown was always empty. | **Fixed** |
+
+Every other page passed: analytics, calendar, composer, accounts, listening,
+competitors, reports, campaigns, strategy, monthly plan, media, team, settings,
+billing, activity and notifications all explained themselves with no console or
+network errors.
+
+### B3 / B4 — the dashboard was making things up (S1)
+
+Two hardcoded strings in `DashboardPage.tsx`, both in the most prominent
+position in the product, both shown unconditionally:
+
+```
+{today} • Your social channels are performing 14% above baseline
+Optimal posting window for LinkedIn & Instagram today is 4:30 PM – 6:00 PM.
+```
+
+This is the fabrication class the project has now removed four times — a
+`Math.random()` heatmap, a hardcoded price table, an admin dashboard of invented
+signups, and these. It is the worst variant of it, because a performance claim
+about *the customer's own account* is exactly what a marketing tool exists to
+report, and because it greets every new user before they have done anything.
+
+The header line is now the date, which is the only thing that sentence knew.
+The advisor card now calls the **real** best-times endpoint built in 2.6 —
+which already distinguishes this account's observed data from the platform's
+usual times — and says which it is showing:
+
+> Best time to post next: **Tuesday 10:00** — from the platform's usual times,
+> not this account's yet.
+
+With nothing to say, the card renders the service's own explanation rather than
+a sentence of its own.
+
+### B5 — a missing comparison rendered as a rise (S2)
+
+`StatCard` guarded on `change !== undefined`, and the dashboard passes `null`.
+`null !== undefined` is true and `null >= 0` is true, so "we have nothing to
+compare against" rendered as a green, upward, positive-looking badge containing
+no number at all: **"+%"**.
+
+The rule moved to `src/lib/stats.ts` (`changeBadge`) and is pinned by tests,
+because the next card would have got it wrong the same way. Null and undefined
+are both absences; neither is a rise.
+
+### B6 — the dashboard endpoint coalesced every measurement to zero (S2)
+
+`/analytics/overview` wrapped each aggregate in `coalesce(..., 0)` and typed
+the schema as non-optional, so a workspace that had measured nothing was told
+"0 reach, 0 engagement, 0.00% engagement rate". The reports and the analytics
+page were fixed for precisely this in an earlier phase; **this endpoint was
+missed because nothing tested it**, and it is the one the dashboard uses.
+
+`total_followers_gained` was worse: a literal `0` with a comment saying follower
+tracking did not exist. It does — `analytics_daily` records it and
+`analytics_query.audience()` computes the change with the right null handling —
+so the endpoint now calls it.
+
+Fixed by removing the coalesces, making the schema optional, and refusing to
+draw a comparison from an unmeasured previous period. `total_posts` stays an
+`int`: a count of zero published posts is a real answer, not a gap. Pinned by
+`test_the_overview_endpoint_reports_nulls_where_nothing_was_measured`.
+
+### B7 — the inbox asked for a route that does not exist (S2)
+
+`InboxPage` fetched `/accounts/{id}/teams/members`; the teams router is mounted
+at `/accounts/{id}/team` and lists members at its root. Two 404s on every inbox
+load, and an assignee dropdown that has never contained a single person — so
+"assign this conversation to a teammate" looked available and did nothing.
+
+---
+
+## Findings — the credentialled walk
 
 Nothing yet — this half has not been run.
 

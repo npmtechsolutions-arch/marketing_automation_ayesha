@@ -76,7 +76,11 @@ export default function InboxPage() {
     }
     api
       .get<{ items?: RawMember[] } | RawMember[]>(
-        `/accounts/${accountId}/teams/members`
+        // The teams router is mounted at /accounts/{id}/team and lists its
+        // members at the root. This asked for /teams/members, which 404'd on
+        // every inbox load -- so the assignee dropdown has never had anyone in
+        // it, and "assign to a teammate" looked available and did nothing.
+        `/accounts/${accountId}/team/`
       )
       .then((r) => {
         const payload = r.data;

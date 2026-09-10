@@ -131,14 +131,19 @@ async def analytics_overview(
     prev_period_start = period_start - delta
 
     # Current period
+    # No coalesce to 0 anywhere here. SUM and AVG over no rows are NULL, which
+    # is the honest answer for a workspace that has measured nothing -- and the
+    # difference between "nobody saw the post" and "we have not measured" is
+    # the whole of this project's numbers doctrine. COUNT is left alone: zero
+    # posts published is a measurement.
     current_stmt = (
         select(
-            func.coalesce(func.sum(PostPerformance.reach), 0).label("total_reach"),
-            func.coalesce(
-                func.sum(PostPerformance.likes + PostPerformance.comments + PostPerformance.shares + PostPerformance.saves),
-                0,
+            func.sum(PostPerformance.reach).label("total_reach"),
+            func.sum(
+                PostPerformance.likes + PostPerformance.comments
+                + PostPerformance.shares + PostPerformance.saves
             ).label("total_engagement"),
-            func.coalesce(func.avg(PostPerformance.engagement_rate), 0.0).label("avg_engagement_rate"),
+            func.avg(PostPerformance.engagement_rate).label("avg_engagement_rate"),
             func.count(func.distinct(PostPerformance.post_id)).label("total_posts"),
         )
         .join(Post, Post.id == PostPerformance.post_id)
@@ -154,12 +159,12 @@ async def analytics_overview(
     # Previous period for comparison
     prev_stmt = (
         select(
-            func.coalesce(func.sum(PostPerformance.reach), 0).label("total_reach"),
-            func.coalesce(
-                func.sum(PostPerformance.likes + PostPerformance.comments + PostPerformance.shares + PostPerformance.saves),
-                0,
+            func.sum(PostPerformance.reach).label("total_reach"),
+            func.sum(
+                PostPerformance.likes + PostPerformance.comments
+                + PostPerformance.shares + PostPerformance.saves
             ).label("total_engagement"),
-            func.coalesce(func.avg(PostPerformance.engagement_rate), 0.0).label("avg_engagement_rate"),
+            func.avg(PostPerformance.engagement_rate).label("avg_engagement_rate"),
         )
         .join(Post, Post.id == PostPerformance.post_id)
         .where(
@@ -172,22 +177,44 @@ async def analytics_overview(
     )
     prev = (await db.execute(prev_stmt)).one()
 
-    def _pct_change(current_val: float, prev_val: float) -> float | None:
-        if prev_val == 0:
+    def _pct_change(current_val, prev_val) -> float | None:
+        # A change needs both ends. An unmeasured previous period is not a
+        # baseline of zero, and dividing by it would report a rise out of
+        # nothing -- which is how the dashboard came to show a green "+%" on a
+        # workspace that had never published.
+        if current_val is None or prev_val is None or float(prev_val) == 0:
             return None
-        return round(((current_val - prev_val) / prev_val) * 100, 2)
+        return round(((float(current_val) - float(prev_val)) / float(prev_val)) * 100, 2)
 
     comparison = {
-        "reach_change_pct": _pct_change(float(current.total_reach), float(prev.total_reach)),
-        "engagement_change_pct": _pct_change(float(current.total_engagement), float(prev.total_engagement)),
-        "engagement_rate_change_pct": _pct_change(float(current.avg_engagement_rate), float(prev.avg_engagement_rate)),
+        "reach_change_pct": _pct_change(current.total_reach, prev.total_reach),
+        "engagement_change_pct": _pct_change(current.total_engagement, prev.total_engagement),
+        "engagement_rate_change_pct": _pct_change(
+            current.avg_engagement_rate, prev.avg_engagement_rate
+        ),
     }
 
+    # Was `total_followers_gained=0` with a comment saying follower tracking
+    # did not exist. It does -- analytics_daily records it and
+    # analytics_query.audience() computes the change with the right null
+    # handling (a single snapshot is a value, not growth). A hardcoded 0 was
+    # reporting "gained nobody" to every workspace, measured or not.
+    account = (
+        await db.execute(select(Account).where(Account.id == account_id))
+    ).scalar_one()
+    window = analytics_query.resolve(account, period, None, None)
+    audience = await analytics_query.audience(db, account, window)
+
     return AnalyticsOverview(
-        total_reach=int(current.total_reach),
-        total_engagement=int(current.total_engagement),
-        avg_engagement_rate=round(float(current.avg_engagement_rate), 4),
-        total_followers_gained=0,  # Requires platform-specific follower tracking
+        total_reach=int(current.total_reach) if current.total_reach is not None else None,
+        total_engagement=(
+            int(current.total_engagement) if current.total_engagement is not None else None
+        ),
+        avg_engagement_rate=(
+            round(float(current.avg_engagement_rate), 4)
+            if current.avg_engagement_rate is not None else None
+        ),
+        total_followers_gained=audience.get("change"),
         total_posts=int(current.total_posts),
         period=period,
         comparison=comparison,

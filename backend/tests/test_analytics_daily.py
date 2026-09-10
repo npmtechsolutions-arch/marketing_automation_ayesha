@@ -752,3 +752,43 @@ async def test_engagement_rate_counts_a_partially_reported_numerator(
 
     assert payload["metrics"]["engagement_rate"]["value"] == 25.0
 
+
+# ---------------------------------------------------------------------------
+# The dashboard's own endpoint, found lying in Walk B
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_the_overview_endpoint_reports_nulls_where_nothing_was_measured(
+    client, auth_header, user_factory, account_factory
+):
+    """A brand-new workspace has measured nothing, and must be told so.
+
+    Found by walking the product as a new customer: the dashboard showed
+    "Total Reach 0", "Total Engagement 0" and "Avg Engagement Rate 0.00%" on a
+    workspace with no connected accounts and no posts, because the endpoint
+    wrapped every aggregate in ``coalesce(..., 0)``. Those read as
+    measurements -- "nobody saw your posts" -- rather than as the absence of
+    any. The reports and the analytics page were fixed for exactly this in an
+    earlier phase; this endpoint was missed because nothing tested it.
+
+    ``total_posts`` stays 0: a count of published posts is a real answer.
+    """
+    owner = await user_factory(password="hunter2-correct-horse")
+    account = await account_factory(owner)
+
+    response = await client.get(
+        f"/api/v1/accounts/{account.id}/analytics/overview?period=7d",
+        headers=auth_header(owner),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_reach"] is None
+    assert body["total_engagement"] is None
+    assert body["avg_engagement_rate"] is None
+    # Never computed here before -- it was a hardcoded 0 reporting "gained
+    # nobody" to every workspace in the product.
+    assert body["total_followers_gained"] is None
+    assert body["total_posts"] == 0
+    # And no comparison can be drawn from an unmeasured previous period.
+    assert body["comparison"]["reach_change_pct"] is None

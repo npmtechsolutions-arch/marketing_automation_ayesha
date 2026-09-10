@@ -2,12 +2,14 @@ import { type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { changeBadge } from "@/lib/stats";
 import { Skeleton } from "./Skeleton";
 
 interface StatCardProps {
   label: string;
   value: string;
-  change?: number;
+  /** Null means "no comparison", which is not the same as a change of 0. */
+  change?: number | null;
   changeLabel?: string;
   icon?: ReactNode;
   loading?: boolean;
@@ -43,7 +45,11 @@ export function StatCard({
     );
   }
 
-  const isPositive = change !== undefined && change >= 0;
+  // `change !== undefined` let null through, and `null >= 0` is true -- so a
+  // workspace with nothing to compare against was shown a green, upward "+%"
+  // with no number in it. The decision lives in src/lib/stats.ts now, pinned
+  // by tests, because the next card would have got it wrong the same way.
+  const badge = changeBadge(change);
 
   return (
     <motion.div
@@ -76,23 +82,22 @@ export function StatCard({
 
       <p className="text-2xl font-bold tracking-tight tabular-nums" style={{ color: "var(--page-heading)" }}>{value}</p>
 
-      {change !== undefined && (
+      {badge && (
         <div className="flex items-center gap-1.5 mt-2">
           <span
             className={cn(
               "inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-md tabular-nums",
-              isPositive
+              badge.positive
                 ? "text-emerald-500 bg-emerald-500/10"
                 : "text-red-500 bg-red-500/10"
             )}
           >
-            {isPositive ? (
+            {badge.positive ? (
               <TrendingUp className="w-3 h-3" />
             ) : (
               <TrendingDown className="w-3 h-3" />
             )}
-            {isPositive ? "+" : ""}
-            {change}%
+            {badge.text}
           </span>
           {changeLabel && (
             <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>{changeLabel}</span>

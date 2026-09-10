@@ -42,6 +42,8 @@ import { useAuthStore } from "@/stores/authStore";
 import { useUIStore } from "@/stores/uiStore";
 import api, { getAccountId } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
+import { metricText, rateText } from "@/lib/stats";
+import { fetchBestTimes, type BestTimes } from "@/lib/bestTimes";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -74,6 +76,9 @@ export default function DashboardPage() {
   // selected range means. The older per-widget analytics calls stay for the
   // chart series they still provide.
   const [summary, setSummary] = useState<any>(null);
+  // The advisor card's real data. Null means "nothing to say", and the card
+  // does not render -- it used to print a hardcoded posting window instead.
+  const [bestTimes, setBestTimes] = useState<BestTimes | null>(null);
   const [range, setRange] = useState<DateRangeValue>({ key: "7d" });
 
   const today = new Date().toLocaleDateString("en-US", {
@@ -95,7 +100,9 @@ export default function DashboardPage() {
       }
       try {
         setLoading(true);
-        const [dashRes, ovRes, trRes, tpRes, notifRes] = await Promise.allSettled([
+        const [dashRes, ovRes, trRes, tpRes, notifRes,
+          bestRes,
+        ] = await Promise.allSettled([
           api.get(
             `/accounts/${activeAccountId}/settings/dashboard?${rangeQuery(range)}`
           ),
@@ -103,6 +110,7 @@ export default function DashboardPage() {
           api.get(`/accounts/${activeAccountId}/analytics/trends?period=7d&group_by=day`),
           api.get(`/accounts/${activeAccountId}/analytics/top-posts?period=30d&limit=5`),
           api.get(`/notifications/?limit=3`),
+          fetchBestTimes(activeAccountId).then((data) => ({ data })),
         ]);
 
         if (dashRes.status === "fulfilled") {
@@ -116,6 +124,9 @@ export default function DashboardPage() {
         if (tpRes.status === "fulfilled") {
           const data = (tpRes.value as any).data;
           setTopPosts(Array.isArray(data) ? data : []);
+        }
+        if (bestRes.status === "fulfilled") {
+          setBestTimes((bestRes.value as any).data ?? null);
         }
         if (notifRes.status === "fulfilled") {
           const data = (notifRes.value as any).data;
@@ -136,28 +147,30 @@ export default function DashboardPage() {
   const stats = [
     {
       label: "Total Reach",
-      value: overview?.total_reach != null ? formatNumber(overview.total_reach) : "0",
+      value: metricText(overview?.total_reach, formatNumber),
       change: overview?.comparison?.reach_change_pct ?? null,
       changeLabel: "vs last week",
       icon: <Eye className="h-5 w-5" />,
     },
     {
       label: "Total Engagement",
-      value: overview?.total_engagement != null ? formatNumber(overview.total_engagement) : "0",
+      value: metricText(overview?.total_engagement, formatNumber),
       change: overview?.comparison?.engagement_change_pct ?? null,
       changeLabel: "vs last week",
       icon: <Heart className="h-5 w-5" />,
     },
     {
       label: "Posts Published",
-      value: overview?.total_posts != null ? String(overview.total_posts) : "0",
+      value: metricText(overview?.total_posts),
       change: null,
       changeLabel: "this period",
       icon: <FileText className="h-5 w-5" />,
     },
     {
       label: "Avg Engagement Rate",
-      value: overview?.avg_engagement_rate != null ? `${((overview.avg_engagement_rate || 0) * 100).toFixed(2)}%` : "0%",
+      // A rate with no denominator is null, not 0% -- "0.00%" on a workspace
+      // that has measured nothing reads as "your content is failing".
+      value: rateText(overview?.avg_engagement_rate),
       change: overview?.comparison?.engagement_rate_change_pct ?? null,
       changeLabel: "vs last week",
       icon: <TrendingUp className="h-5 w-5" />,
@@ -241,8 +254,14 @@ export default function DashboardPage() {
                 <Sparkles className="h-3 w-3" /> AI Active
               </span>
             </div>
+            {/* This line used to read "Your social channels are performing 14%
+                above baseline" -- a hardcoded string, shown to every workspace
+                including one that had never connected an account or published
+                a post. It is the fabrication class this project has removed
+                three times already, in the most prominent position in the
+                product. The date is true; nothing else here is claimed. */}
             <p className="mt-1 text-sm font-medium" style={{ color: "var(--page-text-secondary)" }}>
-              {today} • Your social channels are performing 14% above baseline
+              {today}
             </p>
           </div>
 
@@ -423,8 +442,29 @@ export default function DashboardPage() {
                 </div>
                 <h4 className="text-sm font-bold" style={{ color: "var(--page-heading)" }}>AI Strategic Advisor</h4>
               </div>
+              {/* This used to be a hardcoded sentence -- "Optimal posting
+                  window for LinkedIn & Instagram today is 4:30 PM – 6:00 PM"
+                  -- shown to every workspace, including ones with neither
+                  platform connected and no posting history at all. The product
+                  already computes this honestly (2.6), including whether the
+                  answer comes from this account's own data or from the
+                  platform's usual times, so it says that instead. */}
               <p className="text-xs font-medium leading-relaxed mb-3.5" style={{ color: "var(--page-text-secondary)" }}>
-                Optimal posting window for LinkedIn & Instagram today is <strong>4:30 PM – 6:00 PM</strong>.
+                {bestTimes?.suggestions?.length ? (
+                  <>
+                    Best time to post next:{" "}
+                    <strong>{bestTimes.suggestions[0].label}</strong>
+                    {bestTimes.source === "default" && (
+                      <>
+                        {" "}— from {bestTimes.scope.platform ?? "the platform"}'s
+                        usual times, not this account's yet.
+                      </>
+                    )}
+                  </>
+                ) : (
+                  bestTimes?.explanation ??
+                  "Posting times appear here once this workspace has published enough to measure."
+                )}
               </p>
               <button
                 onClick={() => navigate("/strategy")}
