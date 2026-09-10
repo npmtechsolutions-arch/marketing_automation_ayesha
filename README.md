@@ -875,6 +875,64 @@ Topic hints are user text, so they go in the user message and are labelled as
 theirs. Only the goal enum reaches the system prompt — the rule from the inline
 assists, kept here because a larger prompt is a larger temptation.
 
+## CRM integrations
+
+HubSpot only, and outbound only: **"Send to CRM" on an inbox conversation
+creates or updates one contact.** `docs/CRM-HUBSPOT-SETUP.md` carries the setup
+and the live pass.
+
+`app/integrations/` mirrors `app/connectors/` deliberately — a base declaring
+capabilities, a registry, and providers that refuse rather than invent. That
+module's rules were learned expensively and none of them are cheaper here,
+because the data is a customer relationship rather than a like count.
+
+### Organization level, not workspace
+
+A CRM belongs to the company, not to one of its brands. An agency running four
+workspaces has one HubSpot portal, and a per-workspace credential would mean
+four copies of the same secret and four chances for three of them to go stale.
+Tokens are encrypted through `EncryptedText` like the social tokens and the
+Slack webhook; a test reads the raw column to prove it, because declaring the
+type is not evidence the value was encrypted.
+
+Reconnecting updates the row in place — two rows for one provider would be two
+portals silently competing for the same button. A re-consent that returns no new
+refresh token keeps the old one, since overwriting with null would quietly
+un-connect them.
+
+### Idempotency, and why it is not HubSpot's dedupe
+
+HubSpot dedupes contacts on **email**, server-side, and a social inbox does not
+have one. Inventing an address to make the dedupe work would be fabricating
+customer data, so the provider searches first on a property it owns —
+`social_handle`, holding `platform:handle` — and updates what it finds. Pressing
+"Send to CRM" twice updates one person rather than making two.
+
+A failed lookup **raises** rather than reading as "no match": otherwise every
+send during a HubSpot incident would create a duplicate, and nobody would notice
+until the list was full of them.
+
+### What it will not claim
+
+A contact carries the handle, the platform and a link back — the honest extent
+of what a social conversation knows about someone. No guessed email. A one-word
+display name does not acquire a surname, because that puts an invented name into
+a CRM someone will later address them by.
+
+Reading contacts back, deals, attribution and Salesforce are each out of v1 and
+each their own future prompt. The settings screen shows them as `not yet:`
+badges rather than hiding them.
+
+### Permission and failure
+
+`content.create`, not `content.view` — reading a conversation and filing the
+person into the company's CRM are different kinds of act. Unlike Slack, a
+failure here **surfaces**: a CRM write is the point of the action, not a side
+effect of one. It surfaces on that action alone, and the thread is not touched
+on the way in, so there is no half-written state. An expired credential says
+*reconnect*, not *try again* — the wrong instruction is how an integration stays
+broken for a month.
+
 ## Slack notifications
 
 A workspace pastes a Slack **incoming webhook** and chooses which events reach

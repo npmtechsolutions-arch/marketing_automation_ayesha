@@ -144,6 +144,7 @@ from app.api.v1.endpoints import (
     posts,
     reports as reports_routes,
     calendar as calendar_endpoints,
+    integrations as integration_endpoints,
     scheduling,
     settings as settings_routes,
     social_accounts,
@@ -183,6 +184,9 @@ app.include_router(analytics.router,        prefix="/api/v1/accounts/{account_id
 app.include_router(scheduling.router,       prefix="/api/v1/accounts/{account_id}/scheduling",  tags=["Scheduling"])
 app.include_router(calendar_endpoints.router,      prefix="/api/v1/accounts/{account_id}/calendar", tags=["Calendar"])
 app.include_router(calendar_endpoints.fill_router, prefix="/api/v1/accounts/{account_id}/calendar", tags=["Calendar"])
+app.include_router(integration_endpoints.router,          prefix="/api/v1/organizations/{organization_id}/integrations", tags=["Integrations"])
+# Public: the CRM redirects a browser here, and a browser carries no token.
+app.include_router(integration_endpoints.callback_router, prefix="/api/v1",                                             tags=["Integrations"])
 app.include_router(reports_routes.router,   prefix="/api/v1/accounts/{account_id}/reports",     tags=["Reports"])
 app.include_router(inbox_routes.router,     prefix="/api/v1/accounts/{account_id}/inbox",       tags=["Inbox"])
 app.include_router(strategies.router,       prefix="/api/v1/accounts/{account_id}/strategies",  tags=["Strategies"])

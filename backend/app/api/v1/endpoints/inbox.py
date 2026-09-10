@@ -399,3 +399,103 @@ async def sync_now(
         )
         totals["errors"].extend(report["errors"])
     return totals
+
+
+@router.post("/{thread_id}/send-to-crm")
+async def send_thread_to_crm(
+    account_id: uuid.UUID,
+    thread_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Create or update a CRM contact for the person in this conversation.
+
+    ``content.create`` rather than ``content.view``: this acts on a customer
+    relationship in a system outside this product. Reading a thread and filing
+    the person into the company's CRM are different kinds of act, and a viewer
+    should be able to do the first without the second.
+
+    **Idempotent.** The provider searches on ``platform:handle`` before writing,
+    so pressing this twice updates one contact rather than making two. HubSpot's
+    own dedupe is on email, which a social inbox does not have -- see
+    ``app.integrations.hubspot``.
+
+    **The thread is not modified.** A CRM failure surfaces here, on the action
+    that caused it, and leaves the conversation exactly as it was; there is no
+    half-written state to recover from.
+    """
+    from app.integrations.base import (
+        CrmAPIError,
+        CrmAuthExpired,
+        CrmNotConnected,
+        SocialContact,
+    )
+    from app.services import crm
+    from app.services.entitlements import get_organization_for_account
+
+    await _verify_account_access(
+        account_id, current_user, db, permission=CONTENT_CREATE
+    )
+
+    thread = (
+        await db.execute(
+            select(InboxThread).where(
+                InboxThread.id == thread_id, InboxThread.account_id == account_id
+            )
+        )
+    ).scalar_one_or_none()
+    if thread is None:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    handle = (thread.participant_handle or "").strip()
+    if not handle:
+        # Without a handle there is no identity to key on, so a send would
+        # create a fresh duplicate every time. Refusing is the honest answer.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This conversation has no social handle, so it cannot be "
+                "matched to a contact without creating duplicates."
+            ),
+        )
+
+    platform_slug = (
+        await db.execute(
+            select(SocialPlatform.slug)
+            .join(SocialAccount, SocialAccount.platform_id == SocialPlatform.id)
+            .where(SocialAccount.id == thread.social_account_id)
+        )
+    ).scalar_one_or_none() or "social"
+
+    organization = await get_organization_for_account(db, account_id)
+    contact = SocialContact(
+        handle=handle,
+        platform=platform_slug,
+        display_name=thread.participant or None,
+        conversation_url=thread.permalink,
+    )
+
+    try:
+        result = await crm.send_contact(db, organization.id, contact)
+    except CrmNotConnected as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CrmAuthExpired as exc:
+        # Reconnect, not retry. Saying "try again" about a dead credential is
+        # how an integration stays broken for a month.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CrmAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    await log_activity(
+        db, user_id=current_user.id, account_id=account_id,
+        action="crm.contact_sent", category="integration",
+        description=f"Sent {handle} to the CRM",
+        resource_type="inbox_thread", resource_id=str(thread.id),
+    )
+    return {
+        "contact_id": result.provider_id,
+        # So the UI can say "created" or "updated" rather than a bare success
+        # that leaves a user wondering whether they made a duplicate.
+        "created": result.created,
+        "url": result.url,
+    }

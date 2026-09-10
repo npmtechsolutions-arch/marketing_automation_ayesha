@@ -7,6 +7,7 @@ from app.models.ai_generation import AIGeneration, AIGenerationStatus, Generatio
 from app.models.audit_log import ActivityLog
 from app.models.business import Business
 from app.models.campaign import Campaign, CampaignStatus
+from app.models.crm_connection import CrmConnection
 from app.models.content_plan import (
     ContentPlan,
     ContentPlanItem,
@@ -127,6 +128,7 @@ __all__ = [
     "OrgRole",
     "PostStatus",
     "CampaignStatus",
+    "CrmConnection",
     "ContentPlan",
     "ContentPlanItem",
     "PlanGoal",

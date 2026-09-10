@@ -23,6 +23,7 @@ import {
   Loader2,
   Monitor,
   Trash2,
+  Plug,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -46,6 +47,7 @@ const settingsNav = [
   { id: "business", label: "Business Profile", icon: Building2 },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "workspace", label: "Workspace", icon: Building2 },
+  { id: "integrations", label: "Integrations", icon: Plug },
 ] as const;
 
 type SettingsTab = (typeof settingsNav)[number]["id"];
@@ -1359,6 +1361,172 @@ function WorkspaceTab() {
   );
 }
 
+
+// ── Integrations ────────────────────────────────────────────────────
+//
+// Organization level, not workspace. A CRM belongs to the company rather than
+// to one of its brands: an agency running four workspaces has one HubSpot
+// portal, and a per-workspace credential would be four copies of the same
+// secret with three of them going stale.
+//
+// The token is never shown, because the API never returns it. What is shown is
+// whether one is stored, which portal it points at, and who connected it — an
+// org-wide credential nobody remembers adding is one nobody dares remove.
+interface Integration {
+  provider: string;
+  name: string;
+  /** Whether this deployment has app credentials at all. */
+  configured: boolean;
+  connected: boolean;
+  account_name: string | null;
+  connected_by: string | null;
+  connected_at: string | null;
+  capabilities: Record<string, boolean>;
+}
+
+const CAPABILITY_LABELS: Record<string, string> = {
+  contact_upsert: "Send contacts",
+  contact_read: "Read contacts back",
+  deals: "Create deals",
+  attribution: "Revenue attribution",
+};
+
+function IntegrationsTab() {
+  const orgId = useAuthStore((s) => s.activeOrgId);
+  const [items, setItems] = useState<Integration[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!orgId) { setLoading(false); return; }
+    try {
+      const res: any = await api.get(`/organizations/${orgId}/integrations/`);
+      setItems((res.data ?? res)?.items ?? []);
+    } catch (err) {
+      showError(apiError(err, "Could not load integrations."));
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const connect = async (provider: string) => {
+    if (!orgId) return;
+    setBusy(provider);
+    try {
+      const res: any = await api.get(
+        `/organizations/${orgId}/integrations/${provider}/authorize`
+      );
+      const url = (res.data ?? res)?.auth_url;
+      if (url) window.location.href = url;
+    } catch (err) {
+      showError(apiError(err, "Could not start the connection."));
+      setBusy(null);
+    }
+  };
+
+  const disconnect = async (provider: string) => {
+    if (!orgId) return;
+    setBusy(provider);
+    try {
+      const res: any = await api.delete(`/organizations/${orgId}/integrations/${provider}`);
+      const body = res?.data ?? res;
+      // Said plainly: the stored credential is gone either way, and whether
+      // the vendor confirmed the revoke is a separate fact.
+      showSuccess(
+        body?.revoked_upstream
+          ? "Disconnected, and the token was revoked with the provider."
+          : "Disconnected. The stored credential has been removed."
+      );
+      await load();
+    } catch (err) {
+      showError(apiError(err, "Could not disconnect."));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (loading) return <p className="text-sm text-gray-400">Loading integrations…</p>;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-white mb-1">Integrations</h2>
+        <p className="text-sm text-gray-400">
+          Connected for the whole organization, not one workspace.
+        </p>
+      </div>
+
+      {items.map((item) => (
+        <GlassCard key={item.provider}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold text-white">{item.name}</h3>
+              {item.connected ? (
+                <p className="text-sm text-gray-400 mt-1">
+                  Connected{item.account_name ? ` to ${item.account_name}` : ""}
+                  {item.connected_by ? ` by ${item.connected_by}` : ""}.
+                </p>
+              ) : item.configured ? (
+                <p className="text-sm text-gray-400 mt-1">Not connected.</p>
+              ) : (
+                // An empty state that says why it is empty, rather than a
+                // Connect button that cannot work.
+                <p className="text-sm text-gray-400 mt-1">
+                  Not available on this deployment — {item.name}'s app
+                  credentials are not configured.
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2 mt-3">
+                {Object.entries(item.capabilities).map(([key, supported]) => (
+                  <Badge
+                    key={key}
+                    variant={supported ? "success" : "default"}
+                    size="sm"
+                  >
+                    {supported ? "" : "not yet: "}
+                    {CAPABILITY_LABELS[key] ?? key}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <div className="shrink-0">
+              {item.connected ? (
+                <Button
+                  variant="ghost"
+                  loading={busy === item.provider}
+                  onClick={() => disconnect(item.provider)}
+                >
+                  Disconnect
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  disabled={!item.configured}
+                  loading={busy === item.provider}
+                  onClick={() => connect(item.provider)}
+                >
+                  Connect
+                </Button>
+              )}
+            </div>
+          </div>
+        </GlassCard>
+      ))}
+
+      <p className="text-xs text-gray-500">
+        Sending a conversation to the CRM creates or updates one contact, keyed
+        on the social handle and platform — pressing it twice updates the same
+        person rather than making a second. Reading contacts back, deals and
+        attribution are not part of this integration yet.
+      </p>
+    </div>
+  );
+}
+
 const tabComponents: Record<SettingsTab, JSX.Element> = {
   profile: <ProfileTab />,
   security: <SecurityTab />,
@@ -1366,6 +1534,7 @@ const tabComponents: Record<SettingsTab, JSX.Element> = {
   business: <BusinessProfileTab />,
   appearance: <AppearanceTab />,
   workspace: <WorkspaceTab />,
+  integrations: <IntegrationsTab />,
 };
 
 export default function SettingsPage() {

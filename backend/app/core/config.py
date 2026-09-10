@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     FIREBASE_PROJECT_ID: str = "marketengine-ai"
     # Must EXACTLY match an "Authorized redirect URI" in the Google Cloud OAuth client.
     YOUTUBE_REDIRECT_URI: str = "http://localhost:8000/api/v1/youtube/callback"
+    # HubSpot, the v1 CRM. Free developer portal, public OAuth, and the two
+    # contact scopes need no app review.
+    HUBSPOT_CLIENT_ID: str = ""
+    HUBSPOT_CLIENT_SECRET: str = ""
+    HUBSPOT_REDIRECT_URI: str = "http://localhost:8000/api/v1/integrations/hubspot/callback"
+
     TWITTER_CLIENT_ID: str = ""
     TWITTER_CLIENT_SECRET: str = ""
     # Must EXACTLY match a "Callback URI" in the X app's User authentication settings.
