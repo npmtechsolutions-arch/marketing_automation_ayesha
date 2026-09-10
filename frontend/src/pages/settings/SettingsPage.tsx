@@ -1111,6 +1111,12 @@ function WorkspaceTab() {
   const [timezone, setTimezone] = useState("UTC");
   const [approvalsRequired, setApprovalsRequired] = useState(false);
   const [clientApprovalRequired, setClientApprovalRequired] = useState(false);
+  // The webhook is a credential: the API never returns it, only whether one is
+  // stored. So the field starts empty and an empty submit means "leave it".
+  const [slackConfigured, setSlackConfigured] = useState(false);
+  const [slackWebhook, setSlackWebhook] = useState("");
+  const [slackEvents, setSlackEvents] = useState<Record<string, boolean>>({});
+  const [testingSlack, setTestingSlack] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -1123,6 +1129,8 @@ function WorkspaceTab() {
         setTimezone(blob.timezone ?? "UTC");
         setApprovalsRequired(Boolean(blob.approvals_required));
         setClientApprovalRequired(Boolean(blob.client_approval_required));
+        setSlackEvents((blob.slack_events as Record<string, boolean>) ?? {});
+        setSlackConfigured(Boolean((res.data ?? res)?.slack_webhook_configured));
       } catch {
         showError("Could not load workspace settings.");
       } finally {
@@ -1161,6 +1169,69 @@ function WorkspaceTab() {
     // Put it back if the server refuses, rather than leaving the switch
     // showing a state the workspace is not in.
     try { await save({ [key]: value }); } catch { apply(!value); }
+  };
+
+
+  const SLACK_EVENTS: { key: string; label: string; description: string }[] = [
+    { key: "post_published", label: "Post published",
+      description: "A post went out on every target." },
+    { key: "post_failed", label: "Post failed",
+      description: "A post failed, or went out on only some of its targets." },
+    { key: "approval_requested", label: "Approval requested",
+      description: "Someone sent a post for review." },
+    { key: "approval_completed", label: "Approval completed",
+      description: "A post was approved, or changes were requested." },
+    { key: "account_health_changed", label: "Account health changed",
+      description: "A connection started failing, or its token is expiring." },
+    { key: "report_ready", label: "Report ready",
+      description: "A report finished rendering." },
+  ];
+
+  const saveWebhook = async () => {
+    if (!accountId) return;
+    setSaving(true);
+    try {
+      const res: any = await api.put(`/accounts/${accountId}/settings/`, {
+        slack_webhook_url: slackWebhook.trim(),
+      });
+      setSlackConfigured(Boolean((res.data ?? res)?.slack_webhook_configured));
+      // Never keep the credential in component state once it is stored.
+      setSlackWebhook("");
+      showSuccess(
+        slackWebhook.trim() ? "Slack webhook saved." : "Slack disconnected."
+      );
+    } catch (err: any) {
+      showError(apiError(err, "Could not save the Slack webhook."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sendSlackTest = async () => {
+    if (!accountId) return;
+    setTestingSlack(true);
+    try {
+      const res: any = await api.post(`/accounts/${accountId}/settings/slack/test`);
+      const body = res.data ?? res;
+      // The endpoint always 200s; `ok` is the answer, and `detail` says why
+      // when it is false, so a revoked webhook does not stay quietly broken.
+      if (body.ok) showSuccess(body.detail);
+      else showError(body.detail);
+    } catch (err: any) {
+      showError(apiError(err, "Could not reach the server to send a test."));
+    } finally {
+      setTestingSlack(false);
+    }
+  };
+
+  const toggleSlackEvent = async (key: string, value: boolean) => {
+    const next = { ...slackEvents, [key]: value };
+    setSlackEvents(next);
+    try {
+      await save({ slack_events: next });
+    } catch {
+      setSlackEvents(slackEvents);
+    }
   };
 
   if (loading) return <p className="text-sm text-gray-400">Loading workspace settings…</p>;
@@ -1213,6 +1284,75 @@ function WorkspaceTab() {
             label="Require client sign-off as well"
             description="After internal approval, a client reviewer must also approve. Needs the setting above."
           />
+        </div>
+      </GlassCard>
+
+      <GlassCard>
+        <h3 className="text-base font-semibold text-white mb-1">Slack</h3>
+        <p className="text-sm text-gray-400 mb-4">
+          Send notifications to a Slack channel with an{" "}
+          <a
+            href="https://api.slack.com/messaging/webhooks"
+            target="_blank"
+            rel="noreferrer"
+            className="text-purple-300 underline"
+          >
+            incoming webhook
+          </a>
+          . Nothing is sent until you switch an event on below.
+        </p>
+
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <Input
+              label="Webhook URL"
+              type="password"
+              autoComplete="off"
+              value={slackWebhook}
+              disabled={readOnly || saving}
+              onChange={(e) => setSlackWebhook(e.target.value)}
+              placeholder={
+                slackConfigured
+                  ? "A webhook is saved — paste a new one to replace it"
+                  : "https://hooks.slack.com/services/..."
+              }
+            />
+          </div>
+          <Button variant="secondary" loading={saving}
+                  disabled={readOnly} onClick={saveWebhook}>
+            {slackWebhook.trim() ? "Save" : slackConfigured ? "Disconnect" : "Save"}
+          </Button>
+          <Button variant="ghost" loading={testingSlack}
+                  disabled={readOnly || !slackConfigured} onClick={sendSlackTest}>
+            Send test message
+          </Button>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          {slackConfigured
+            ? "A webhook is stored. It is encrypted and never shown again — paste a new one to replace it, or save an empty field to disconnect."
+            : "No webhook stored yet."}
+        </p>
+
+        <div className="mt-6 space-y-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-gray-400">
+            Send to Slack when…
+          </p>
+          {SLACK_EVENTS.map((event) => (
+            <Toggle
+              key={event.key}
+              checked={Boolean(slackEvents[event.key])}
+              disabled={readOnly || saving || !slackConfigured}
+              onCheckedChange={(value) => toggleSlackEvent(event.key, value)}
+              label={event.label}
+              description={event.description}
+            />
+          ))}
+          {!slackConfigured && (
+            // An empty state that says why it is empty.
+            <p className="text-xs text-gray-500">
+              Save a webhook first — there is nowhere to send these yet.
+            </p>
+          )}
         </div>
       </GlassCard>
     </div>

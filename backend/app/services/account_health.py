@@ -271,6 +271,29 @@ async def notify_degraded(
             logger.exception("Could not email %s about account health", user.email)
 
     await db.flush()
+
+    # Slack too, if routed. Reached only on a transition -- the sweep calls
+    # this behind `if changed`, which is what keeps a broken account from
+    # producing an hourly reminder that it is still broken.
+    from app.models.account import Account as _Account
+    from app.services import notifications as _notifications
+
+    workspace = (
+        await db.execute(
+            select(_Account).where(_Account.id == account.account_id)
+        )
+    ).scalar_one_or_none()
+    if workspace is not None:
+        await _notifications.to_slack(
+            db, workspace, _notifications.Event.ACCOUNT_HEALTH_CHANGED,
+            title=title, message=message,
+            fields={
+                "Account": account.account_name or "(unnamed)",
+                "Platform": platform,
+                "Health": health.value,
+            },
+        )
+
     return len(users)
 
 

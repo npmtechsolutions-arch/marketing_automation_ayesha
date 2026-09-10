@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.db_types import EncryptedText
 
 if TYPE_CHECKING:
     from app.models.business import Business
@@ -60,6 +61,14 @@ class Account(Base):
         UUID(as_uuid=True), ForeignKey("organizations.id"), index=True, nullable=False
     )
     settings: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
+    # A Slack incoming webhook. Encrypted at rest because it is a credential:
+    # anyone holding it can post into the workspace's channel as this app.
+    # A column rather than a key in `settings` for the same reason -- the
+    # settings blob is plain JSON and is returned wholesale by GET /settings/.
+    slack_webhook_url: Mapped[Optional[str]] = mapped_column(
+        EncryptedText, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -875,6 +875,60 @@ Topic hints are user text, so they go in the user message and are labelled as
 theirs. Only the goal enum reaches the system prompt — the rule from the inline
 assists, kept here because a larger prompt is a larger temptation.
 
+## Slack notifications
+
+A workspace pastes a Slack **incoming webhook** and chooses which events reach
+it. Chosen first among the messaging integrations because it is free, needs no
+app review, and can be proven end to end today; WhatsApp needs Meta Business
+review and waits with the other tier-gated work.
+
+### The webhook is a credential
+
+Anyone holding it can post into that channel as this app, so it is a column
+encrypted through `EncryptedText` — like the social account tokens — rather
+than a key in the `settings` JSON blob. `GET /settings/` returns the whole blob,
+so a key there would put the credential in every settings response and in
+whatever logs carry one. The API returns `slack_webhook_configured: true` and
+never the value.
+
+Only `https://hooks.slack.com/...` is accepted. The field is user-entered and
+gets POSTed to on every matching event; without a host check, a typo — or a
+paste of some other service's URL — turns the notification layer into a
+request-forwarder aimed wherever the text happened to point. The check parses
+the host rather than substring-matching, so `hooks.slack.com.evil.test` is
+refused.
+
+### Consent is per event
+
+Six events can be routed: post published, post failed, approval requested,
+approval completed, account health changed, report ready. All default to **off**.
+A workspace that pastes a webhook to try the test button has not thereby agreed
+to a message for every publish, so both halves are required — a valid webhook
+*and* the toggle for that specific event.
+
+An unknown event name in a write is a 422 naming it, and a string where a bool
+belongs is refused: `bool("false")` is `True`, so a workspace sending the string
+would have switched an event on while believing it had switched it off.
+
+### Two inherited rules
+
+**A delivery failure never reaches the triggering flow.** This is the email rule
+from 0.7. A publish that reached the platform must not be reported as failed
+because a webhook 500'd, and a report that rendered must not be marked FAILED
+because Slack was down. Every entry point swallows and logs; verified against
+Slack's real servers, where a publish completed normally while the log recorded
+`Slack rejected the message: 404 no_team`.
+
+**State-change events fire once per change**, not once per poll — 1.9's rule.
+The publish announcement compares the post's status before and after deriving
+it, so a post is announced on the transition into a final state and not again
+each time another target finishes. Account health already had this gate and
+keeps it.
+
+`POST /accounts/{id}/settings/slack/test` sends a test message and reports the
+reason on failure, because a revoked webhook otherwise stays quietly broken
+until someone notices the notifications stopped.
+
 ## Calendar suggestions
 
 `GET /accounts/{id}/calendar/suggestions?from&to` reports where a range is

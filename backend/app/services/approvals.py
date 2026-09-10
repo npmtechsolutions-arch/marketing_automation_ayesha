@@ -397,6 +397,29 @@ async def notify(
             )
         )
     await db.flush()
+
+    # And Slack, if this workspace routes this event there. Failure is logged
+    # inside, never raised -- an approval must not fail because a webhook did.
+    from app.models.account import Account as _Account
+    from app.services import notifications as _notifications
+
+    account = (
+        await db.execute(select(_Account).where(_Account.id == account_id))
+    ).scalar_one_or_none()
+    if account is not None:
+        event = (
+            _notifications.Event.APPROVAL_REQUESTED
+            if notification_type.endswith("submitted")
+            or notification_type.endswith("requested")
+            else _notifications.Event.APPROVAL_COMPLETED
+        )
+        excerpt = (post.content or "").strip()[:180]
+        await _notifications.to_slack(
+            db, account, event,
+            title=title, message=f"{message}\n\n>{excerpt}",
+            fields={"Post": excerpt or "(no text)"},
+        )
+
     return len(users)
 
 

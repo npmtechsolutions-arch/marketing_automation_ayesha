@@ -535,6 +535,11 @@ async def derive_post_status(db: AsyncSession, post_id: uuid.UUID) -> Optional[P
     if post is None:
         return None
 
+    # Captured before anything is recomputed: the Slack announcement below
+    # fires on the *transition* into a final state, not on every pass of the
+    # worker over an already-published post.
+    previous = post.status
+
     jobs = (
         await db.execute(
             select(PublishingJob).where(PublishingJob.post_id == post_id)
@@ -584,7 +589,56 @@ async def derive_post_status(db: AsyncSession, post_id: uuid.UUID) -> Optional[P
 
     await _seed_performance_rows(db, post, succeeded)
     await db.flush()
+
+    # Slack, if this workspace asked for it. Once the post is final and once
+    # per transition into that final state -- `previous` is what makes this a
+    # state-change event rather than one message per worker pass, which is
+    # 1.9's rule. Never raises: a publish that reached the platform must not be
+    # reported as failed because a chat integration was down.
+    if previous is not post.status:
+        await _announce_final_status(db, post)
+
     return post
+
+
+async def _announce_final_status(db: AsyncSession, post: Post) -> None:
+    """Tell Slack the post landed, or did not."""
+    from app.models.account import Account
+    from app.services import notifications
+
+    event = {
+        PostStatus.PUBLISHED: notifications.Event.POST_PUBLISHED,
+        PostStatus.PARTIALLY_PUBLISHED: notifications.Event.POST_FAILED,
+        PostStatus.FAILED: notifications.Event.POST_FAILED,
+    }.get(post.status)
+    if event is None:
+        return
+
+    account = (
+        await db.execute(select(Account).where(Account.id == post.account_id))
+    ).scalar_one_or_none()
+    if account is None:
+        return
+
+    excerpt = (post.content or "").strip().replace("\n", " ")
+    if len(excerpt) > 180:
+        excerpt = excerpt[:177] + "..."
+
+    if post.status is PostStatus.PUBLISHED:
+        title, detail = "Post published", excerpt or "(no text)"
+    elif post.status is PostStatus.PARTIALLY_PUBLISHED:
+        title = "Post partly published"
+        detail = f"{excerpt}\n\n*Some targets failed:* {post.error_message or 'unknown'}"
+    else:
+        title = "Post failed to publish"
+        detail = f"{excerpt}\n\n*Error:* {post.error_message or 'unknown'}"
+
+    await notifications.to_slack(
+        db, account, event,
+        title=title, message=detail,
+        fields={"Status": post.status.value.replace("_", " ")},
+        action_url=None,
+    )
 
 
 async def _derive_and_commit(db: AsyncSession, post_id: uuid.UUID) -> None:

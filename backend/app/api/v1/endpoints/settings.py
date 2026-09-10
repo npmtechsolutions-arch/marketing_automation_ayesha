@@ -16,7 +16,7 @@ from app.core.authz import verify_account_access as _verify_account_access
 from app.core.permissions import (
     SETTINGS_MANAGE,
 )
-from app.services import dashboard
+from app.services import dashboard, notifications, slack
 from app.services import entitlement_service as ent
 from app.services.entitlements import get_organization_for_account
 
@@ -51,6 +51,10 @@ class AccountSettingsResponse(BaseModel):
     max_team_members: int | None = None
     max_platforms: int | None = None
     settings: dict | None = None
+    # Whether a Slack webhook is stored -- never the value. Returning the URL
+    # would put a credential into every settings response and into whatever
+    # logs or error reports carry one.
+    slack_webhook_configured: bool = False
 
 
 # Settings keys the application actually consumes. Anything else is stored
@@ -61,6 +65,10 @@ _KNOWN_SETTINGS: dict[str, type] = {
     "timezone": str,
     "approvals_required": bool,
     "client_approval_required": bool,
+    # Per-event Slack routing. A dict rather than six flat keys so the shape
+    # says what it is; validated key by key, because an unknown event name
+    # would otherwise be a toggle that silently switches nothing on.
+    "slack_events": dict,
 }
 
 
@@ -78,6 +86,9 @@ class AccountSettingsUpdate(BaseModel):
 
     name: str | None = Field(None, min_length=1, max_length=255)
     settings: dict | None = None
+    # A credential, so it lives in its own encrypted column rather than in the
+    # settings blob. Empty string clears it; None leaves it alone.
+    slack_webhook_url: str | None = Field(None, max_length=500)
 
     @field_validator("settings")
     @classmethod
@@ -103,6 +114,11 @@ class AccountSettingsUpdate(BaseModel):
             if not isinstance(given, expected):
                 wanted = "true or false" if expected is bool else expected.__name__
                 raise ValueError(f"settings.{key} must be {wanted}")
+
+        if "slack_events" in checked:
+            checked["slack_events"] = notifications.validate_toggles(
+                checked["slack_events"]
+            )
 
         timezone = checked.get("timezone")
         if isinstance(timezone, str):
@@ -154,6 +170,7 @@ async def _settings_response(
         max_team_members=await ent.get_limit(db, organization, ent.TEAM_MEMBERS),
         max_platforms=await ent.get_limit(db, organization, ent.SOCIAL_ACCOUNTS),
         settings=account.settings,
+        slack_webhook_configured=bool(account.slack_webhook_url),
     )
 
 
@@ -189,6 +206,18 @@ async def update_account_settings(
 
     if body.name is not None:
         account.name = body.name
+    if body.slack_webhook_url is not None:
+        cleaned = body.slack_webhook_url.strip()
+        if cleaned and not slack.is_valid_webhook(cleaned):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "That does not look like a Slack incoming webhook. It "
+                    "should start with https://hooks.slack.com/."
+                ),
+            )
+        # "" clears it, which is how a workspace disconnects Slack.
+        account.slack_webhook_url = cleaned or None
     if body.settings is not None:
         # Merge rather than replace -- and build a NEW dict to do it.
         #
@@ -273,3 +302,27 @@ async def get_dashboard(
     return await dashboard.build(
         db, account, range_key=range, date_from=date_from, date_to=date_to
     )
+
+
+@router.post("/slack/test")
+async def send_slack_test(
+    account_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
+    """Send a test message to the workspace's Slack webhook.
+
+    Reports the reason on failure rather than a bare "didn't work": a webhook
+    that was revoked in Slack, or a URL with a typo, otherwise stays quietly
+    broken until someone notices the notifications stopped.
+
+    Always 200 with an ``ok`` flag. The request succeeded; whether Slack
+    accepted the message is the answer, not an error in this API.
+    """
+    await _verify_account_access(
+        account_id, current_user, db, permission=SETTINGS_MANAGE
+    )
+    account = await _get_account_or_404(account_id, db)
+
+    ok, detail = await slack.send_test(account.slack_webhook_url)
+    return {"ok": ok, "detail": detail}

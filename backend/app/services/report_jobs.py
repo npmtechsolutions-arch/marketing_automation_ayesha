@@ -227,6 +227,20 @@ async def _notify(db: AsyncSession, report: Report, account: Account) -> None:
             metadata_={"report_id": str(report.id), "formats": list(report.file_keys or {})},
         )
     )
+
+    # And Slack, where routed. A render that succeeded must not be marked
+    # FAILED because a webhook was down, so this cannot raise.
+    from app.services import notifications as _notifications
+
+    await _notifications.to_slack(
+        db, account, _notifications.Event.REPORT_READY,
+        title="Report ready",
+        message=f"*{report.title}* is ready to download.",
+        fields={
+            "Period": f"{report.period_start} to {report.period_end}",
+            "Formats": ", ".join(sorted(report.file_keys or {})) or "none",
+        },
+    )
     await db.flush()
 
 

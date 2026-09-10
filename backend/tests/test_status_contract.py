@@ -282,3 +282,14 @@ def test_the_workspace_settings_tab_writes_every_setting_that_is_read():
     tab = (FRONTEND / "pages" / "settings" / "SettingsPage.tsx").read_text()
     for key in ("timezone", "approvals_required", "client_approval_required"):
         assert key in tab, f"{key} is read by the server and set by no screen"
+
+    # The Slack channel, added in 3.4. The webhook is a credential in its own
+    # encrypted column rather than a settings key, so it is checked by name;
+    # every routable event needs a toggle, or it is a channel nobody can use.
+    assert "slack_webhook_url" in tab, "the Slack webhook has no home in the UI"
+    from app.services.notifications import Event as _SlackEvent
+
+    for event in _SlackEvent:
+        assert event.value in tab, (
+            f"{event.value} can be routed to Slack and has no toggle"
+        )
