@@ -1029,3 +1029,54 @@
 :root:not(.dark) [class*="bg-gradient-to-br"][class*="from-purple-600/20"] .text-purple-400 {
   color: #6d5ef6 !important;
 }
+
+/* ============================================
+   DEVICE PREVIEW SCREEN OVERRIDES
+   Preserve dark phone mockup theme & crisp white text in Light & Dark mode
+   ============================================ */
+.device-preview-screen,
+.device-preview-screen * {
+  color-scheme: dark;
+}
+
+:root:not(.dark) .device-preview-screen .text-white,
+.device-preview-screen .text-white,
+.device-preview-screen .text-slate-100,
+.device-preview-screen .text-gray-100 {
+  color: #ffffff !important;
+}
+
+:root:not(.dark) .device-preview-screen .text-slate-200,
+.device-preview-screen .text-slate-200,
+.device-preview-screen .text-gray-200 {
+  color: #e2e8f0 !important;
+}
+
+:root:not(.dark) .device-preview-screen .text-slate-300,
+.device-preview-screen .text-slate-300,
+.device-preview-screen .text-gray-300 {
+  color: #cbd5e1 !important;
+}
+
+:root:not(.dark) .device-preview-screen .text-slate-400,
+.device-preview-screen .text-slate-400,
+.device-preview-screen .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+:root:not(.dark) .device-preview-screen .text-slate-500,
+.device-preview-screen .text-slate-500,
+.device-preview-screen .text-gray-500 {
+  color: #64748b !important;
+}
+
+:root:not(.dark) .device-preview-screen .bg-slate-900,
+.device-preview-screen .bg-slate-900 {
+  background-color: #0f172a !important;
+}
+
+:root:not(.dark) .device-preview-screen .bg-slate-950,
+.device-preview-screen .bg-slate-950 {
+  background-color: #020617 !important;
+}
+
