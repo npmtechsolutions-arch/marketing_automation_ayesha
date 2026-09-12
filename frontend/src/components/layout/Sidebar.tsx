@@ -107,8 +107,8 @@ function UserSection({ collapsed }: { collapsed: boolean }) {
         )}
       >
         <div
-          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white"
-          style={{ backgroundImage: "var(--accent-gradient)" }}
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold"
+          style={{ backgroundImage: "var(--accent-gradient)", color: "#ffffff" }}
         >
           {user?.avatar_url ? (
             <img

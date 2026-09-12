@@ -335,10 +335,14 @@ export default function TopBar() {
         {/* Quick Create Button */}
         <button
           onClick={() => navigate("/create-post")}
-          className="hidden sm:inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-white transition-all duration-200 cursor-pointer hover:-translate-y-px active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] focus-visible:ring-offset-2"
+          className="hidden sm:inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold transition-all duration-200 cursor-pointer hover:-translate-y-px active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] focus-visible:ring-offset-2"
           style={{
             backgroundImage: "var(--accent-gradient)",
             boxShadow: "var(--shadow-accent)",
+            // Not the `text-white` utility: the light-mode compatibility
+            // layer rewrites that class to near-black, which is correct for
+            // the dark-first markup it targets and wrong on an accent fill.
+            color: "#ffffff",
           }}
         >
           <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
@@ -408,8 +412,8 @@ export default function TopBar() {
         <div ref={userMenuRef} className="relative">
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold text-white transition-transform duration-200 cursor-pointer hover:scale-105"
-            style={{ backgroundImage: "var(--accent-gradient)" }}
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold transition-transform duration-200 cursor-pointer hover:scale-105"
+            style={{ backgroundImage: "var(--accent-gradient)", color: "#ffffff" }}
           >
             {user?.avatar_url ? (
               <img
