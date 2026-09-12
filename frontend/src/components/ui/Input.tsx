@@ -35,7 +35,7 @@ export function Input({
       {label && (
         <label
           htmlFor={inputId}
-          className="mb-1.5 block text-sm font-medium"
+          className="mb-2 block text-sm font-medium"
           style={{ color: "var(--page-text)" }}
         >
           {label}
@@ -77,8 +77,11 @@ export function Input({
               : "none",
           }}
           className={cn(
-            "w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all duration-200",
-            "placeholder:text-gray-400",
+            // Controls share one radius (--input-radius), a step tighter than
+            // the card family so a field inside a card does not echo its
+            // corner. Roomier padding: the direction is airy.
+            "w-full rounded-[length:var(--input-radius)] border px-4 py-3 text-sm outline-none transition-all duration-200",
+            "placeholder:text-[color:var(--input-placeholder)]",
             icon && "pl-11",
             rightElement && "pr-11",
             disabled && "cursor-not-allowed opacity-50"

@@ -96,20 +96,29 @@ const STATUS_FILTERS: { key: StatusBucket | "all"; label: string }[] = [
   { key: "failed", label: "Failed" },
 ];
 
+// One hue per status, from the status tokens in index.css. The mapping is
+// unchanged -- published is still green, failed still red, publishing still
+// violet, and partially_published still amber and therefore still distinct
+// from published. Only the shades move, because `text-emerald-300` on a 20%
+// tint was drawn for a near-black background and washes out on a white card.
+const chip = (name: string) =>
+  `bg-[color:var(--status-${name}-bg)] text-[color:var(--status-${name}-fg)] ` +
+  `border-[color:var(--status-${name}-border)]`;
+
 const STATUS_CHIP_STYLES: Record<PostStatus, string> = {
-  published: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-  scheduled: "bg-blue-500/20 text-blue-300 border-blue-500/30",
-  draft: "bg-slate-500/20 text-slate-300 border-slate-500/30",
-  preview: "bg-slate-500/20 text-slate-300 border-slate-500/30",
-  failed: "bg-red-500/20 text-red-300 border-red-500/30",
-  publishing: "bg-purple-500/20 text-purple-300 border-purple-500/30 animate-pulse",
-  partially_published: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  published: chip("published"),
+  scheduled: chip("scheduled"),
+  draft: chip("draft"),
+  preview: chip("draft"),
+  failed: chip("failed"),
+  publishing: `${chip("publishing")} animate-pulse`,
+  partially_published: chip("attention"),
   // Review states.
-  pending_approval: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-  in_review: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-  changes_requested: "bg-red-500/20 text-red-300 border-red-500/30",
-  client_review: "bg-blue-500/20 text-blue-300 border-blue-500/30",
-  approved: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+  pending_approval: chip("attention"),
+  in_review: chip("attention"),
+  changes_requested: chip("failed"),
+  client_review: chip("scheduled"),
+  approved: chip("published"),
 };
 
 const STATUS_DOT_COLORS: Record<PostStatus, string> = {
@@ -663,8 +672,14 @@ export default function CalendarPage() {
           className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
         >
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-purple-500/20 shadow-lg shadow-purple-500/10">
-              <CalendarDays className="w-6 h-6 text-purple-400" />
+            <div
+              className="p-2.5 rounded-xl"
+              style={{
+                backgroundColor: "var(--accent-soft)",
+                border: "1px solid var(--accent-soft-border)",
+              }}
+            >
+              <CalendarDays className="w-6 h-6" style={{ color: "var(--accent)" }} />
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--page-heading)" }}>
@@ -731,7 +746,7 @@ export default function CalendarPage() {
 
             {/* View toggle */}
             <div
-              className="flex items-center p-1 rounded-xl backdrop-blur-sm"
+              className="flex items-center p-1 rounded-xl"
               style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
             >
               {(["week", "month"] as CalendarView[]).map((v) => (
@@ -750,7 +765,11 @@ export default function CalendarPage() {
                   {view === v && (
                     <motion.div
                       layoutId="viewToggle"
-                      className="absolute inset-0 rounded-lg bg-gradient-to-r from-purple-600/30 to-blue-600/30 border border-purple-500/30"
+                      className="absolute inset-0 rounded-lg"
+                      style={{
+                        backgroundColor: "var(--accent-soft)",
+                        border: "1px solid var(--accent-soft-border)",
+                      }}
                       transition={{ type: "spring", duration: 0.4 }}
                     />
                   )}
@@ -884,7 +903,7 @@ export default function CalendarPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.05 + i * 0.05 }}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl backdrop-blur-sm"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl"
               style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
             >
               <div className={cn("w-2 h-2 rounded-full", stat.dotColor)} />
@@ -924,7 +943,7 @@ export default function CalendarPage() {
                 className={cn(
                   "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 whitespace-nowrap flex-shrink-0 cursor-pointer",
                   platformFilter === p.key &&
-                    "bg-purple-500/20 border-purple-500/30 text-purple-300 shadow-sm shadow-purple-500/10"
+                    "bg-[color:var(--accent-soft)] border-[color:var(--accent-soft-border)] text-[color:var(--accent)]"
                 )}
                 style={
                   platformFilter === p.key
@@ -956,7 +975,7 @@ export default function CalendarPage() {
                 className={cn(
                   "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 cursor-pointer",
                   statusFilter === s.key &&
-                    "bg-purple-500/20 border-purple-500/30 text-purple-300 shadow-sm shadow-purple-500/10"
+                    "bg-[color:var(--accent-soft)] border-[color:var(--accent-soft-border)] text-[color:var(--accent)]"
                 )}
                 style={
                   statusFilter === s.key
@@ -1018,7 +1037,7 @@ export default function CalendarPage() {
 
             <button
               onClick={goToToday}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-purple-300 bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 transition-all duration-200 cursor-pointer"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[color:var(--accent-soft)] border border-[color:var(--accent-soft-border)] text-[color:var(--accent)] hover:brightness-95 transition-all duration-200 cursor-pointer"
             >
               Today
             </button>
@@ -1092,7 +1111,7 @@ export default function CalendarPage() {
                           <span
                             className={cn(
                               "text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full tabular-nums",
-                              isToday && "bg-purple-500 text-white"
+                              isToday && "bg-[color:var(--accent)] text-white"
                             )}
                             style={
                               isToday
@@ -1168,7 +1187,7 @@ export default function CalendarPage() {
                         <div
                           className={cn(
                             "text-lg font-bold mt-0.5 tabular-nums",
-                            isToday_ && "text-purple-300"
+                            isToday_ && "text-[color:var(--accent)]"
                           )}
                           style={isToday_ ? undefined : { color: "var(--page-heading)" }}
                         >
@@ -1344,10 +1363,17 @@ export default function CalendarPage() {
 
             {/* Audio/Music Track */}
             {selectedPost.instagramMusicTrack && (
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300">
+              <div
+                className="flex items-center gap-2.5 p-3 rounded-xl"
+                style={{
+                  backgroundColor: "var(--accent-soft)",
+                  border: "1px solid var(--accent-soft-border)",
+                  color: "var(--accent)",
+                }}
+              >
                 <Music2 className="w-4 h-4 animate-pulse flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-purple-400 font-semibold truncate">
+                  <p className="text-xs font-semibold truncate" style={{ color: "var(--accent)" }}>
                     ♫ {selectedPost.instagramMusicTrack.split(" – ")[0]}
                   </p>
                   {selectedPost.instagramMusicTrack.split(" – ")[1] && (
@@ -1371,7 +1397,7 @@ export default function CalendarPage() {
               selectedPost.engagement && (
                 <div>
                   <div className="flex items-center gap-2 mb-3">
-                    <TrendingUp className="w-4 h-4 text-purple-400" />
+                    <TrendingUp className="w-4 h-4" style={{ color: "var(--accent)" }} />
                     <span className="text-sm font-medium" style={{ color: "var(--page-text)" }}>
                       Engagement
                     </span>

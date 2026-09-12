@@ -15,6 +15,61 @@
    THEME TOKENS
    ============================================ */
 @theme {
+  /* ==========================================================================
+     REDESIGN TOKENS (phase 0)
+     A single violet accent, a soft lavender canvas, white cards. These are
+     additive: the older scales below still exist because 49 pages reference
+     them, and they are retired slice by slice rather than all at once.
+     ========================================================================== */
+
+  /* The one accent. Semantic status colours (success/warning/danger/info)
+     are deliberately exempt -- they carry meaning, not brand. */
+  --color-accent-50: #f5f3ff;
+  --color-accent-100: #ede9fe;
+  --color-accent-200: #ddd6fe;
+  --color-accent-300: #c4b5fd;
+  --color-accent-400: #a78bfa;
+  --color-accent-500: #8b5cf6;
+  --color-accent-600: #7c3aed;
+  --color-accent-700: #6d28d9;
+  --color-accent-800: #5b21b6;
+  --color-accent-900: #4c1d95;
+
+  /* Neutrals: near-black headings, gray-600 body, gray-200 hairlines. */
+  --color-ink-900: #0b0b12;
+  --color-ink-700: #1f2937;
+  --color-ink-600: #4b5563;
+  --color-ink-500: #6b7280;
+  --color-ink-400: #9ca3af;
+  --color-ink-200: #e5e7eb;
+  --color-ink-100: #f3f4f6;
+
+  /* Radii. Cards sit in the 16-20px band; controls are pills. */
+  --radius-card: 18px;
+  --radius-card-sm: 14px;
+  --radius-card-lg: 22px;
+  --radius-control: 12px;
+
+  /* Soft, diffuse, violet-tinted shadows -- no hard drop shadows. */
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -8px rgba(76, 29, 149, 0.10);
+  --shadow-card-hover: 0 2px 4px rgba(16, 24, 40, 0.05), 0 16px 40px -12px rgba(76, 29, 149, 0.18);
+  --shadow-control: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-accent: 0 1px 2px rgba(76, 29, 149, 0.20), 0 8px 20px -6px rgba(124, 58, 237, 0.35);
+
+  /* Type scale. Headings are tight-tracked; body stays comfortable. */
+  --text-display: 2.25rem;
+  --text-display--line-height: 2.5rem;
+  --text-display--letter-spacing: -0.03em;
+  --text-h1: 1.75rem;
+  --text-h1--line-height: 2.125rem;
+  --text-h1--letter-spacing: -0.025em;
+  --text-h2: 1.25rem;
+  --text-h2--line-height: 1.75rem;
+  --text-h2--letter-spacing: -0.02em;
+  --text-eyebrow: 0.6875rem;
+  --text-eyebrow--line-height: 1rem;
+  --text-eyebrow--letter-spacing: 0.08em;
+
   --color-brand-50: #fdf4ff;
   --color-brand-100: #fae8ff;
   --color-brand-200: #f5d0fe;
@@ -106,36 +161,44 @@
    LIGHT MODE — Warm, vibrant, multi-color
    ============================================ */
 :root {
-  --page-bg: #f6f7f9;
-  --page-bg-gradient: linear-gradient(180deg, #ffffff 0%, #f6f7f9 100%);
-  --page-text: #1a1a2e;
-  --page-text-secondary: #64748b;
-  --page-text-muted: #94a3b8;
-  --page-heading: #0f0f1a;
-  --page-link: #6d5ef6;
+  /* Soft lavender canvas, white cards. A shade lighter than violet-100 so a
+     full-bleed page does not read as a coloured panel, with the gradient
+     settling into that family at the fold. */
+  --page-bg: #f2eefe;
+  --page-bg-gradient: linear-gradient(180deg, #f7f5ff 0%, #ede9fe 100%);
+  --page-text: #1f2937;
+  --page-text-secondary: #4b5563;
+  --page-text-muted: #9ca3af;
+  --page-heading: #0b0b12;
+  --page-link: #7c3aed;
 
   --surface-bg: #ffffff;
   --surface-bg-hover: #ffffff;
-  --surface-border: rgba(15, 23, 42, 0.08);
-  --surface-border-hover: rgba(109, 94, 246, 0.2);
-  --surface-shadow: 0 1px 2px rgba(16,24,40,0.05), 0 1px 3px rgba(16,24,40,0.04);
-  --surface-shadow-hover: 0 4px 16px rgba(16,24,40,0.08), 0 2px 6px rgba(16,24,40,0.04);
-  --surface-shadow-lg: 0 16px 48px rgba(16,24,40,0.10);
+  /* A real gray-200 hairline rather than a translucent wash: on a tinted
+     canvas a transparent border picks up the lavender and the card edge goes
+     soft exactly where it should be crisp. */
+  --surface-border: #e5e7eb;
+  --surface-border-hover: #ddd6fe;
+  --surface-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -8px rgba(76, 29, 149, 0.10);
+  --surface-shadow-hover: 0 2px 4px rgba(16, 24, 40, 0.05), 0 16px 40px -12px rgba(76, 29, 149, 0.18);
+  --surface-shadow-lg: 0 24px 64px -16px rgba(76, 29, 149, 0.22);
+  --surface-radius: 18px;
 
   --sidebar-bg: #ffffff;
-  --sidebar-border: #f1f5f9;
-  --sidebar-text: #64748b;
-  --sidebar-text-active: #6d5ef6;
-  --sidebar-active-bg: linear-gradient(135deg, rgba(109,94,246,0.08), rgba(139,92,246,0.06));
-  --sidebar-hover-bg: #f8fafc;
-  --topbar-bg: rgba(255, 255, 255, 0.9);
+  --sidebar-border: #e5e7eb;
+  --sidebar-text: #4b5563;
+  --sidebar-text-active: #7c3aed;
+  --sidebar-active-bg: #f5f3ff;
+  --sidebar-hover-bg: #f9fafb;
+  --topbar-bg: rgba(255, 255, 255, 0.92);
 
   --input-bg: #ffffff;
-  --input-border: #e2e8f0;
-  --input-focus-border: #6d5ef6;
-  --input-focus-ring: rgba(109, 94, 246, 0.1);
-  --input-text: #1a1a2e;
-  --input-placeholder: #a0aec0;
+  --input-border: #e5e7eb;
+  --input-focus-border: #7c3aed;
+  --input-focus-ring: rgba(124, 58, 237, 0.14);
+  --input-text: #1f2937;
+  --input-placeholder: #9ca3af;
+  --input-radius: 12px;
 
   --dropdown-bg: #ffffff;
   --dropdown-border: #e2e8f0;
@@ -152,7 +215,16 @@
   --code-bg: #f8fafc;
   --code-text: #334155;
 
-  --accent-purple: #6d5ef6;
+  /* The single accent, in the shades the primary button gradient needs. */
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-soft: #f5f3ff;
+  --accent-soft-border: #ddd6fe;
+  --accent-gradient: linear-gradient(180deg, #8b5cf6 0%, #7c3aed 100%);
+  --accent-gradient-hover: linear-gradient(180deg, #7c3aed 0%, #6d28d9 100%);
+  --accent-ring: rgba(124, 58, 237, 0.35);
+
+  --accent-purple: #7c3aed;
   --accent-pink: #ec4899;
   --accent-orange: #f97316;
   --accent-blue: #3b82f6;
@@ -167,6 +239,76 @@
   --gradient-cool: #3b82f6;
   --gradient-fresh: #10b981;
   --gradient-sunset: #f43f5e;
+}
+
+/* ============================================
+   STATUS COLOURS
+   ============================================
+
+   One hue per status, and they are deliberately *not* the single accent:
+   `src/lib/review.ts` and the calendar's own map both encode which state is
+   which colour, and a failed post that looks like a scheduled one is a
+   workflow that stopped being legible. This is the documented exemption from
+   the one-accent rule.
+
+   They live here rather than as Tailwind classes in each page because the
+   chips were written dark-first -- `text-emerald-300` on a 20% tint reads on
+   near-black and washes out on white. Defining both themes in one place keeps
+   every surface agreeing about what "publishing" looks like.
+   ============================================ */
+
+:root {
+  --status-published-bg: #ecfdf5;
+  --status-published-fg: #047857;
+  --status-published-border: #a7f3d0;
+
+  --status-scheduled-bg: #eff6ff;
+  --status-scheduled-fg: #1d4ed8;
+  --status-scheduled-border: #bfdbfe;
+
+  --status-draft-bg: #f3f4f6;
+  --status-draft-fg: #4b5563;
+  --status-draft-border: #e5e7eb;
+
+  --status-failed-bg: #fff1f2;
+  --status-failed-fg: #be123c;
+  --status-failed-border: #fecdd3;
+
+  /* Publishing is violet, which happens to be the accent family -- it was
+     already purple here and changing it would move a meaning, not a style. */
+  --status-publishing-bg: #f5f3ff;
+  --status-publishing-fg: #6d28d9;
+  --status-publishing-border: #ddd6fe;
+
+  --status-attention-bg: #fffbeb;
+  --status-attention-fg: #b45309;
+  --status-attention-border: #fde68a;
+}
+
+:root.dark {
+  --status-published-bg: rgba(16, 185, 129, 0.18);
+  --status-published-fg: #6ee7b7;
+  --status-published-border: rgba(16, 185, 129, 0.34);
+
+  --status-scheduled-bg: rgba(59, 130, 246, 0.18);
+  --status-scheduled-fg: #93c5fd;
+  --status-scheduled-border: rgba(59, 130, 246, 0.34);
+
+  --status-draft-bg: rgba(148, 163, 184, 0.18);
+  --status-draft-fg: #cbd5e1;
+  --status-draft-border: rgba(148, 163, 184, 0.30);
+
+  --status-failed-bg: rgba(244, 63, 94, 0.18);
+  --status-failed-fg: #fda4af;
+  --status-failed-border: rgba(244, 63, 94, 0.34);
+
+  --status-publishing-bg: rgba(139, 92, 246, 0.20);
+  --status-publishing-fg: #c4b5fd;
+  --status-publishing-border: rgba(139, 92, 246, 0.36);
+
+  --status-attention-bg: rgba(245, 158, 11, 0.18);
+  --status-attention-fg: #fcd34d;
+  --status-attention-border: rgba(245, 158, 11, 0.34);
 }
 
 /* ============================================
@@ -199,7 +341,9 @@
   --sidebar-border: rgba(255, 255, 255, 0.06);
   --sidebar-text: #94a3b8;
   --sidebar-text-active: #c4b5fd;
-  --sidebar-active-bg: linear-gradient(135deg, rgba(109,94,246,0.22), rgba(139,92,246,0.14));
+  /* Flat, not a gradient: the active chip sets this as `background-color`,
+     where a gradient value is invalid and paints nothing. */
+  --sidebar-active-bg: rgba(124, 58, 237, 0.22);
   --sidebar-hover-bg: rgba(255, 255, 255, 0.04);
   --topbar-bg: rgba(13, 13, 22, 0.85);
 
@@ -224,6 +368,19 @@
   --glow-shadow: 0 0 30px rgba(167, 139, 250, 0.25);
   --code-bg: #0d0d16;
   --code-text: #cbd5e1;
+
+  /* Same token names as light, so the primitives written against them work
+     in both themes. Dark is not the designed target of this redesign, but it
+     is existing behaviour and stays functional. */
+  --accent: #a78bfa;
+  --accent-hover: #c4b5fd;
+  --accent-soft: rgba(124, 58, 237, 0.14);
+  --accent-soft-border: rgba(167, 139, 250, 0.32);
+  --accent-gradient: linear-gradient(180deg, #8b5cf6 0%, #7c3aed 100%);
+  --accent-gradient-hover: linear-gradient(180deg, #a78bfa 0%, #8b5cf6 100%);
+  --accent-ring: rgba(167, 139, 250, 0.40);
+  --surface-radius: 18px;
+  --input-radius: 12px;
 
   --accent-purple: #a78bfa;
   --accent-pink: #f472b6;
@@ -275,7 +432,7 @@
   --sidebar-border: #f1f5f9;
   --sidebar-text: #64748b;
   --sidebar-text-active: #6d5ef6;
-  --sidebar-active-bg: linear-gradient(135deg, rgba(109,94,246,0.08), rgba(139,92,246,0.06));
+  --sidebar-active-bg: #f5f3ff;
   --sidebar-hover-bg: #f8fafc;
   --topbar-bg: rgba(255, 255, 255, 0.9);
 
@@ -346,7 +503,9 @@
   --sidebar-border: rgba(255, 255, 255, 0.06);
   --sidebar-text: #94a3b8;
   --sidebar-text-active: #c4b5fd;
-  --sidebar-active-bg: linear-gradient(135deg, rgba(109,94,246,0.22), rgba(139,92,246,0.14));
+  /* Flat, not a gradient: the active chip sets this as `background-color`,
+     where a gradient value is invalid and paints nothing. */
+  --sidebar-active-bg: rgba(124, 58, 237, 0.22);
   --sidebar-hover-bg: rgba(255, 255, 255, 0.04);
   --topbar-bg: rgba(13, 13, 22, 0.85);
 
@@ -828,50 +987,70 @@
 }
 
 /* ============================================
-   LIGHT MODE COMPREHENSIVE OVERRIDES
-   When html has class="light" (not dark), force
-   all hardcoded dark Tailwind classes to use the
-   correct themed CSS variables so text is readable
-   and surfaces look appropriate.
+   LIGHT MODE COMPATIBILITY LAYER  (shrinking)
+   ============================================
+
+   The app was built dark-first: pages hardcode Tailwind classes like
+   `text-white`, `text-slate-400` and `bg-white/5` in their markup, and this
+   block rewrites them so light mode is readable. Roughly 660 such classes
+   remain across ~40 page files.
+
+   It used to do that with `!important`, which outranks even inline styles --
+   so a component restyled with design tokens was silently overruled by a
+   global rule written for markup it does not use. That is why the redesign
+   slices kept "fighting the stylesheet".
+
+   The `!important` is gone from every rule here. These selectors are still
+   specific enough (`:root:not(.dark) .text-white` is 0-3-0) to beat a bare
+   Tailwind utility, so un-migrated pages keep working exactly as before -- but
+   any component using tokens, inline styles or arbitrary values now wins.
+
+   **This block shrinks as page slices land.** When a page stops emitting the
+   hardcoded class a rule targets, delete the rule. It is not a design layer;
+   it is scaffolding with an end date.
+
+   The one place `!important` survives is the exceptions block at the bottom,
+   which protects white text on accent-filled surfaces. Those rules are
+   narrower than the ones here, and they have to outrank them.
    ============================================ */
 
 /* ── Sidebar nav items in light mode ── */
 :root:not(.dark) .text-slate-400,
 :root:not(.dark) .text-gray-400 {
-  color: var(--sidebar-text) !important;
+  color: var(--sidebar-text);
 }
 
 /* Active sidebar nav items */
 :root:not(.dark) .text-white {
-  color: var(--page-heading) !important;
+  color: var(--page-heading);
 }
 
 /* Sidebar tooltips (collapsed mode) */
 :root:not(.dark) [class*="bg-slate-900"]:not([class*="bg-slate-900/0"]) {
-  background-color: var(--dropdown-bg) !important;
-  color: var(--page-text) !important;
+  background-color: var(--dropdown-bg);
+  color: var(--page-text);
 }
 
 /* Input fields in light mode */
 :root:not(.dark) input,
 :root:not(.dark) textarea,
 :root:not(.dark) select {
-  background-color: var(--input-bg) !important;
-  border-color: var(--input-border) !important;
-  color: var(--input-text) !important;
+  background-color: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--input-text);
 }
 
 :root:not(.dark) input::placeholder,
 :root:not(.dark) textarea::placeholder {
-  color: var(--input-placeholder) !important;
+  color: var(--input-placeholder);
 }
 
 /* Dropdown / popover menus in light mode */
 :root:not(.dark) [class*="bg-slate-900/95"],
 :root:not(.dark) [class*="bg-slate-900/90"] {
-  background-color: var(--dropdown-bg) !important;
-  border-color: var(--dropdown-border) !important;
-  box-shadow: var(--dropdown-shadow) !important;
+  background-color: var(--dropdown-bg);
+  border-color: var(--dropdown-border);
+  box-shadow: var(--dropdown-shadow);
 }
 
 /* GlassCard — already uses var(--surface-bg) via inline style, fine */
@@ -879,105 +1058,102 @@
 /* Hardcoded border colors in light mode */
 :root:not(.dark) .border-white\/5,
 :root:not(.dark) .border-white\/10,
-:root:not(.dark) .border-white\/15,
 :root:not(.dark) .border-white\/20 {
-  border-color: var(--surface-border) !important;
+  border-color: var(--surface-border);
 }
 
 /* bg-white/5 and similar in light → proper surface */
-:root:not(.dark) [class*="bg-white\/5"],
-:root:not(.dark) [class*="bg-white\/\[0.03\]"] {
-  background-color: rgba(109, 94, 246, 0.04) !important;
+:root:not(.dark) [class*="bg-white\/5"] {
+  background-color: rgba(109, 94, 246, 0.04);
 }
-:root:not(.dark) [class*="bg-white\/10"],
-:root:not(.dark) [class*="bg-white\/\[0.07\]"] {
-  background-color: rgba(0, 0, 0, 0.03) !important;
+:root:not(.dark) [class*="bg-white\/10"] {
+  background-color: rgba(0, 0, 0, 0.03);
 }
 
 /* Modal overlay in light mode */
 :root:not(.dark) [class*="bg-black\/60"],
 :root:not(.dark) [class*="bg-black\/50"] {
-  background-color: rgba(15, 15, 26, 0.35) !important;
+  background-color: rgba(15, 15, 26, 0.35);
 }
 
 /* Sidebar active nav highlight in light mode */
 :root:not(.dark) .bg-purple-500\/20 {
-  background-color: rgba(109, 94, 246, 0.08) !important;
+  background-color: rgba(109, 94, 246, 0.08);
 }
 
 /* ── Accent colored text stays vibrant in light mode ── */
 :root:not(.dark) .text-purple-400,
 :root:not(.dark) .text-purple-300 {
-  color: #6d5ef6 !important;
+  color: #6d5ef6;
 }
 :root:not(.dark) .text-blue-400,
 :root:not(.dark) .text-blue-300 {
-  color: #3b82f6 !important;
+  color: #3b82f6;
 }
 :root:not(.dark) .text-emerald-400,
 :root:not(.dark) .text-emerald-300,
 :root:not(.dark) .text-green-400 {
-  color: #059669 !important;
+  color: #059669;
 }
 :root:not(.dark) .text-red-400,
 :root:not(.dark) .text-rose-400 {
-  color: #dc2626 !important;
+  color: #dc2626;
 }
 :root:not(.dark) .text-amber-400,
 :root:not(.dark) .text-yellow-400 {
-  color: #d97706 !important;
+  color: #d97706;
 }
 :root:not(.dark) .text-orange-400 {
-  color: #ea580c !important;
+  color: #ea580c;
 }
 :root:not(.dark) .text-pink-400 {
-  color: #8b5cf6 !important;
+  color: #8b5cf6;
 }
 :root:not(.dark) .text-teal-400,
 :root:not(.dark) .text-cyan-400 {
-  color: #0d9488 !important;
+  color: #0d9488;
 }
 
 /* ── Gray/slate muted text in light mode ── */
 :root:not(.dark) .text-gray-500,
 :root:not(.dark) .text-slate-500 {
-  color: #6b7280 !important;
+  color: #6b7280;
 }
 :root:not(.dark) .text-gray-600,
 :root:not(.dark) .text-slate-600 {
-  color: #4b5563 !important;
+  color: #4b5563;
 }
 :root:not(.dark) .text-gray-300,
 :root:not(.dark) .text-slate-300 {
-  color: #374151 !important;
+  color: #374151;
 }
 
 /* ── Dark surface cards in light mode (hardcoded) ── */
 :root:not(.dark) .bg-slate-800,
 :root:not(.dark) [class*="bg-slate-800"] {
-  background-color: var(--surface-bg) !important;
+  background-color: var(--surface-bg);
 }
 :root:not(.dark) .bg-slate-900,
 :root:not(.dark) [class*="bg-slate-900"]:not([class*="bg-slate-900/"]) {
-  background-color: var(--surface-bg) !important;
+  background-color: var(--surface-bg);
 }
 
 /* Hover states in light mode */
 :root:not(.dark) [class*="hover:bg-white\/5"]:hover,
 :root:not(.dark) [class*="hover:bg-white\/10"]:hover {
-  background-color: var(--sidebar-hover-bg) !important;
+  background-color: var(--sidebar-hover-bg);
 }
 :root:not(.dark) [class*="hover:text-white"]:hover {
-  color: var(--page-heading) !important;
+  color: var(--page-heading);
 }
 
 /* ── Notification / badge dots ── */
-:root:not(.dark) .bg-red-500 { background-color: #ef4444 !important; }
-:root:not(.dark) .bg-emerald-500 { background-color: #10b981 !important; }
-:root:not(.dark) .bg-amber-500 { background-color: #f59e0b !important; }
+:root:not(.dark) .bg-red-500 { background-color: #ef4444; }
+:root:not(.dark) .bg-emerald-500 { background-color: #10b981; }
+:root:not(.dark) .bg-amber-500 { background-color: #f59e0b; }
 
 /* GradientMesh in light mode should be very subtle */
-:root:not(.dark) .animate-aurora { opacity: 0.08 !important; }
+:root:not(.dark) .animate-aurora { opacity: 0.08; }
 
 /* ============================================
    ICON & BUTTON WHITE TEXT EXCEPTIONS

@@ -644,7 +644,7 @@ export default function SocialAccountsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search accounts..."
-              className="w-full rounded-xl py-2 pl-10 pr-4 text-sm outline-none backdrop-blur-sm focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)]"
+              className="w-full rounded-xl py-2 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] focus:border-[rgba(124,58,237,0.50)]"
               style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--input-bg)", color: "var(--page-text)" }}
             />
           </div>
@@ -657,8 +657,16 @@ export default function SocialAccountsPage() {
                   onClick={() => setPlatformFilter(p)}
                   className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer"
                   style={active
-                    ? { background: "rgba(124,58,237,0.18)", color: "#a78bfa", boxShadow: "inset 0 0 0 1px rgba(124,58,237,0.30)" }
-                    : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-muted)" }}
+                    ? {
+                        backgroundColor: "var(--accent-soft)",
+                        color: "var(--accent)",
+                        border: "1px solid var(--accent-soft-border)",
+                      }
+                    : {
+                        backgroundColor: "var(--sidebar-hover-bg)",
+                        border: "1px solid var(--surface-border)",
+                        color: "var(--page-text-muted)",
+                      }}
                 >
                   {p}
                 </button>
@@ -674,8 +682,16 @@ export default function SocialAccountsPage() {
                   onClick={() => setStatusFilter(s)}
                   className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer"
                   style={active
-                    ? { background: "rgba(56,189,248,0.18)", color: "#38bdf8", boxShadow: "inset 0 0 0 1px rgba(56,189,248,0.30)" }
-                    : { backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)", color: "var(--page-text-muted)" }}
+                    ? {
+                        backgroundColor: "var(--accent-soft)",
+                        color: "var(--accent)",
+                        border: "1px solid var(--accent-soft-border)",
+                      }
+                    : {
+                        backgroundColor: "var(--sidebar-hover-bg)",
+                        border: "1px solid var(--surface-border)",
+                        color: "var(--page-text-muted)",
+                      }}
                 >
                   {s}
                 </button>
@@ -803,7 +819,7 @@ export default function SocialAccountsPage() {
                       )}
                       <button
                         onClick={() => setSelectedAccount(account)}
-                        className="rounded-lg p-2 transition-colors cursor-pointer hover:bg-[var(--sidebar-hover-bg)] hover:text-white"
+                        className="rounded-lg p-2 transition-colors cursor-pointer hover:bg-[var(--accent-soft)] hover:text-[color:var(--page-heading)]"
                         style={{ color: "var(--page-text-muted)" }}
                         title="View Details"
                       >
@@ -820,7 +836,7 @@ export default function SocialAccountsPage() {
                       <div className="relative">
                         <button
                           onClick={() => setMenuOpen(menuOpen === account.id ? null : account.id)}
-                          className="rounded-lg p-2 transition-colors cursor-pointer hover:bg-[var(--sidebar-hover-bg)] hover:text-white"
+                          className="rounded-lg p-2 transition-colors cursor-pointer hover:bg-[var(--accent-soft)] hover:text-[color:var(--page-heading)]"
                           style={{ color: "var(--page-text-muted)" }}
                         >
                           <MoreHorizontal className="h-4 w-4" />
@@ -839,7 +855,7 @@ export default function SocialAccountsPage() {
                                 initial={{ opacity: 0, y: 5, scale: 0.95 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                                className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl py-1 shadow-2xl backdrop-blur-xl"
+                                className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl py-1 shadow-2xl"
                                 style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--surface-bg)" }}
                               >
                               <button 
@@ -1081,7 +1097,7 @@ export default function SocialAccountsPage() {
             const slug = (selectedPlat?.slug || "").toLowerCase();
             if (slug === "facebook") {
               return (
-                <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 text-xs text-blue-300 space-y-3">
+                <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 text-xs space-y-3 text-[color:var(--page-text-secondary)]">
                   <div>
                     <p className="font-semibold text-sm mb-1" style={{ color: "var(--page-heading)" }}>Easy One-Click Connection (Recommended):</p>
                     <p className="mb-3" style={{ color: "var(--page-text-secondary)" }}>Connect your Facebook Page automatically. No developer access tokens or page IDs needed.</p>
@@ -1106,7 +1122,7 @@ export default function SocialAccountsPage() {
             }
             if (slug === "linkedin") {
               return (
-                <div className="rounded-xl bg-[#0A66C2]/10 border border-[#0A66C2]/20 p-4 text-xs text-blue-200 space-y-3">
+                <div className="rounded-xl bg-[#0A66C2]/10 border border-[#0A66C2]/20 p-4 text-xs space-y-3 text-[color:var(--page-text-secondary)]">
                   <div>
                     <p className="font-semibold text-sm mb-1" style={{ color: "var(--page-heading)" }}>Easy One-Click Connection (Recommended):</p>
                     <p className="mb-3" style={{ color: "var(--page-text-secondary)" }}>Sign in with LinkedIn to connect an account. Choose where posts should be published:</p>
@@ -1165,7 +1181,14 @@ export default function SocialAccountsPage() {
             }
             if (slug === "twitter" || slug === "x") {
               return (
-                <div className="rounded-xl bg-black/30 border border-white/20 p-4 text-xs text-gray-200 space-y-3">
+                <div
+                  className="rounded-xl p-4 text-xs space-y-3"
+                  style={{
+                    backgroundColor: "var(--sidebar-hover-bg)",
+                    border: "1px solid var(--surface-border)",
+                    color: "var(--page-text-secondary)",
+                  }}
+                >
                   <div>
                     <p className="font-semibold text-sm mb-1" style={{ color: "var(--page-heading)" }}>Easy One-Click Connection (Recommended):</p>
                     <p className="mb-3" style={{ color: "var(--page-text-secondary)" }}>Sign in with X to connect an account and post tweets automatically.</p>
@@ -1180,7 +1203,7 @@ export default function SocialAccountsPage() {
                       {isLoading ? "Redirecting..." : "Connect X (Twitter) Account"}
                     </Button>
                   </div>
-                  <div className="border-t border-white/15 pt-2.5">
+                  <div className="pt-2.5" style={{ borderTop: "1px solid var(--surface-border)" }}>
                     <p className="text-amber-300/90">Note: Text tweets are supported. Image/video upload isn't available yet, and X's free API tier heavily rate-limits posting — a paid X API plan may be required for reliable publishing.</p>
                   </div>
                 </div>
@@ -1188,7 +1211,14 @@ export default function SocialAccountsPage() {
             }
             if (slug === "tiktok") {
               return (
-                <div className="rounded-xl bg-black/30 border border-white/20 p-4 text-xs text-gray-200 space-y-3">
+                <div
+                  className="rounded-xl p-4 text-xs space-y-3"
+                  style={{
+                    backgroundColor: "var(--sidebar-hover-bg)",
+                    border: "1px solid var(--surface-border)",
+                    color: "var(--page-text-secondary)",
+                  }}
+                >
                   <div>
                     <p className="font-semibold text-sm mb-1" style={{ color: "var(--page-heading)" }}>Easy One-Click Connection (Recommended):</p>
                     <p className="mb-3" style={{ color: "var(--page-text-secondary)" }}>Sign in with TikTok to connect an account and publish videos.</p>
@@ -1203,7 +1233,7 @@ export default function SocialAccountsPage() {
                       {isLoading ? "Redirecting..." : "Connect TikTok Account"}
                     </Button>
                   </div>
-                  <div className="border-t border-white/15 pt-2.5">
+                  <div className="pt-2.5" style={{ borderTop: "1px solid var(--surface-border)" }}>
                     <p className="text-amber-500 dark:text-amber-300/90">Note: TikTok publishes <strong style={{ color: "var(--page-heading)" }}>video</strong> only — attach one to your post. Until TikTok audits this app, every post is published <strong style={{ color: "var(--page-heading)" }}>privately</strong> (visible only to you), which is TikTok\'s own rule for unaudited apps, not a fault in the connection.</p>
                   </div>
                 </div>
@@ -1254,7 +1284,7 @@ export default function SocialAccountsPage() {
           />
           <div className="rounded-xl p-4" style={{ border: "1px solid var(--surface-border)", backgroundColor: "var(--sidebar-hover-bg)" }}>
             <h4 className="mb-3 text-sm font-medium flex items-center gap-2" style={{ color: "var(--page-heading)" }}>
-              <Key className="h-4 w-4 text-purple-400" /> API Credentials
+              <Key className="h-4 w-4" style={{ color: "var(--accent)" }} /> API Credentials
             </h4>
             <div className="space-y-3">
               <Input 

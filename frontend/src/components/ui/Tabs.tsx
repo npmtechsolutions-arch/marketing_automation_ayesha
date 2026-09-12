@@ -21,21 +21,29 @@ export function Tabs({ tabs, defaultValue, className }: TabsProps) {
       defaultValue={defaultValue ?? tabs[0]?.value}
       className={className}
     >
+      {/* A white segmented control on the lavender canvas -- the active tab
+          is a raised white pill rather than a tinted block, so the accent is
+          spent on the label and the ring, not on a filled background. */}
       <TabsPrimitive.List
-        className="flex items-center gap-1 p-1 rounded-xl mb-4"
-        style={{ backgroundColor: "var(--sidebar-hover-bg)", border: "1px solid var(--surface-border)" }}
+        className="flex items-center gap-1 p-1.5 rounded-full mb-6"
+        style={{
+          backgroundColor: "var(--surface-bg)",
+          border: "1px solid var(--surface-border)",
+          boxShadow: "var(--shadow-control)",
+        }}
       >
         {tabs.map((tab) => (
           <TabsPrimitive.Trigger
             key={tab.value}
             value={tab.value}
             className={cn(
-              "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 outline-none flex-1 justify-center cursor-pointer",
+              "flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-full transition-all duration-200 outline-none flex-1 justify-center cursor-pointer",
               "text-[color:var(--page-text-secondary)] hover:text-[color:var(--page-text)]",
-              "focus-visible:ring-2 focus-visible:ring-purple-400/60",
-              "data-[state=active]:bg-[rgba(109,94,246,0.14)]",
-              "data-[state=active]:text-[color:var(--page-heading)]",
-              "data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-[rgba(109,94,246,0.28)]"
+              "focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]",
+              // Active nav is one of the four places the accent is allowed.
+              "data-[state=active]:bg-[color:var(--accent-soft)]",
+              "data-[state=active]:text-[color:var(--accent)]",
+              "data-[state=active]:shadow-none"
             )}
           >
             {tab.icon && <span className="w-4 h-4">{tab.icon}</span>}

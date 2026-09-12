@@ -106,7 +106,10 @@ function UserSection({ collapsed }: { collapsed: boolean }) {
           collapsed ? "justify-center" : "hover:bg-[var(--sidebar-hover-bg)]"
         )}
       >
-        <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 via-indigo-500 to-blue-500 text-xs font-bold text-white shadow-md shadow-purple-500/20 ring-1 ring-white/20">
+        <div
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white"
+          style={{ backgroundImage: "var(--accent-gradient)" }}
+        >
           {user?.avatar_url ? (
             <img
               src={user.avatar_url}
@@ -148,7 +151,7 @@ function UserSection({ collapsed }: { collapsed: boolean }) {
               boxShadow: "var(--dropdown-shadow)",
             }}
             className={cn(
-              "absolute bottom-full left-0 z-50 mb-2 w-56 overflow-hidden rounded-2xl border p-1.5 backdrop-blur-xl",
+              "absolute bottom-full left-0 z-50 mb-2 w-56 overflow-hidden rounded-2xl border p-1.5",
               collapsed && "left-full ml-3 bottom-0"
             )}
           >
@@ -218,7 +221,9 @@ export default function Sidebar() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+              // The mobile scrim: a dimmed canvas, not a black wash.
+            className="fixed inset-0 z-40 lg:hidden"
+            style={{ backgroundColor: "var(--overlay-bg)" }}
               onClick={() => setSidebarOpen(false)}
             />
             <motion.aside
@@ -226,7 +231,7 @@ export default function Sidebar() {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: "spring", damping: 26, stiffness: 320 }}
-              className="fixed inset-y-0 left-0 z-50 flex w-[264px] flex-col border-r backdrop-blur-2xl lg:hidden"
+              className="fixed inset-y-0 left-0 z-50 flex w-[264px] flex-col border-r lg:hidden"
               style={{ backgroundColor: "var(--sidebar-bg)", borderColor: "var(--sidebar-border)" }}
             >
               <SidebarContent
@@ -244,7 +249,7 @@ export default function Sidebar() {
         variants={sidebarVariants}
         animate={sidebarCollapsed ? "collapsed" : "expanded"}
         transition={{ type: "spring", damping: 26, stiffness: 320 }}
-        className="hidden flex-col border-r backdrop-blur-2xl lg:flex select-none"
+        className="hidden flex-col border-r lg:flex select-none"
         style={{ backgroundColor: "var(--sidebar-bg)", borderColor: "var(--sidebar-border)" }}
       >
         <SidebarContent
@@ -287,16 +292,24 @@ function SidebarContent({
           className={cn(
             "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 cursor-pointer",
             collapsed && "justify-center px-0 h-10 w-10 mx-auto",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)]",
             isActive
-              ? "text-white font-semibold"
+              ? "font-semibold text-[color:var(--sidebar-text-active)]"
               : "text-[var(--sidebar-text)] hover:text-[var(--page-heading)] hover:bg-[var(--sidebar-hover-bg)]"
           )}
         >
-          {/* Active indicator pill */}
+          {/* The active marker. It was a filled purple-to-indigo gradient --
+              two hues, and the loudest thing on any screen. The new language
+              spends the accent on the label and a soft tint, so the eye lands
+              on the page rather than on the nav. */}
           {isActive && (
             <motion.div
               layoutId="sidebarActivePill"
-              className="absolute inset-0 rounded-xl bg-gradient-to-r from-purple-600/90 to-indigo-600/90 shadow-md shadow-purple-500/25"
+              className="absolute inset-0 rounded-xl"
+              style={{
+                backgroundColor: "var(--sidebar-active-bg)",
+                border: "1px solid var(--accent-soft-border)",
+              }}
               transition={{ type: "spring", stiffness: 400, damping: 32 }}
             />
           )}
@@ -304,7 +317,9 @@ function SidebarContent({
           <item.icon
             className={cn(
               "relative z-10 h-4.5 w-4.5 shrink-0 transition-transform duration-200 group-hover:scale-110",
-              isActive ? "text-white" : "text-[var(--sidebar-text)] group-hover:text-[var(--page-heading)]"
+              isActive
+                ? "text-[color:var(--sidebar-text-active)]"
+                : "text-[var(--sidebar-text)] group-hover:text-[var(--page-heading)]"
             )}
           />
 
@@ -313,14 +328,21 @@ function SidebarContent({
           )}
 
           {!collapsed && item.badge && !isActive && (
-            <span className="relative z-10 rounded-md bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-bold text-purple-400 border border-purple-500/20">
+            <span
+              className="relative z-10 rounded-full px-2 py-0.5 text-[10px] font-bold"
+              style={{
+                backgroundColor: "var(--accent-soft)",
+                border: "1px solid var(--accent-soft-border)",
+                color: "var(--accent)",
+              }}
+            >
               {item.badge}
             </span>
           )}
 
           {/* Tooltip for collapsed */}
           {collapsed && (
-            <div className="pointer-events-none absolute left-full ml-3 hidden rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-xl backdrop-blur-xl group-hover:block z-50 whitespace-nowrap"
+            <div className="pointer-events-none absolute left-full ml-3 hidden rounded-xl border px-3 py-1.5 text-xs font-semibold group-hover:block z-50 whitespace-nowrap"
               style={{
                 backgroundColor: "var(--dropdown-bg)",
                 borderColor: "var(--dropdown-border)",
@@ -350,7 +372,13 @@ function SidebarContent({
         style={{ borderColor: "var(--sidebar-border)" }}
       >
         <div className="flex items-center gap-2.5">
-          <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-600 via-indigo-600 to-blue-600 shadow-md shadow-purple-500/20 p-1.5 ring-1 ring-white/20">
+          <div
+            className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl p-1.5"
+            style={{
+              backgroundImage: "var(--accent-gradient)",
+              boxShadow: "var(--shadow-accent)",
+            }}
+          >
             <img
               src="/marketengine_logo.png"
               alt="MarketEngine"
@@ -364,7 +392,10 @@ function SidebarContent({
               exit={{ opacity: 0, width: 0 }}
               className="flex flex-col"
             >
-              <span className="bg-gradient-to-r from-purple-400 via-indigo-400 to-blue-400 bg-clip-text text-base font-extrabold tracking-tight text-transparent">
+              <span
+                className="text-base font-extrabold tracking-tight"
+                style={{ color: "var(--page-heading)" }}
+              >
                 MarketEngine
               </span>
               <span className="text-[10px] font-medium tracking-wide uppercase" style={{ color: "var(--page-text-muted)" }}>
@@ -377,7 +408,7 @@ function SidebarContent({
         {onClose && (
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white lg:hidden cursor-pointer"
+            className="rounded-lg p-1.5 transition-colors hover:bg-[color:var(--sidebar-hover-bg)] lg:hidden cursor-pointer text-[color:var(--sidebar-text)] hover:text-[color:var(--page-heading)]"
           >
             <X className="h-5 w-5" />
           </button>

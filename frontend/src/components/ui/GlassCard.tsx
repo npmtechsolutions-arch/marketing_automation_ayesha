@@ -1,54 +1,8 @@
-import { type ReactNode } from "react";
-import { motion, type HTMLMotionProps } from "framer-motion";
-import { cn } from "@/lib/utils";
-
-interface GlassCardProps
-  extends Omit<HTMLMotionProps<"div">, "children" | "className" | "onClick"> {
-  children: ReactNode;
-  className?: string;
-  hover?: boolean;
-  glow?: boolean;
-  padding?: "sm" | "md" | "lg";
-  onClick?: () => void;
-}
-
-const paddingMap = {
-  sm: "p-3",
-  md: "p-5",
-  lg: "p-7",
-};
-
-export function GlassCard({
-  children,
-  className,
-  hover = false,
-  glow = false,
-  padding = "md",
-  onClick,
-  ...rest
-}: GlassCardProps) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-      whileHover={hover ? { y: -2, transition: { duration: 0.2 } } : undefined}
-      onClick={onClick}
-      style={{
-        backgroundColor: "var(--surface-bg)",
-        border: glow ? "1px solid var(--surface-border-hover)" : "1px solid var(--surface-border)",
-        boxShadow: glow ? "var(--surface-shadow-hover)" : "var(--surface-shadow)",
-        borderRadius: "16px",
-      }}
-      className={cn(
-        paddingMap[padding],
-        hover && "cursor-pointer transition-shadow duration-300 hover:shadow-[var(--surface-shadow-hover)]",
-        onClick && "cursor-pointer",
-        className
-      )}
-      {...rest}
-    >
-      {children}
-    </motion.div>
-  );
-}
+/**
+ * Kept as a re-export so the redesign did not have to touch 420 call sites.
+ *
+ * The component was already glass-free -- tokens and a radius -- so the name
+ * was the only thing tying it to the old aesthetic. Consumers migrate to
+ * `Card` opportunistically, slice by slice, and nothing breaks in between.
+ */
+export { Card as GlassCard, Card, SectionLabel } from "./Card";

@@ -17,11 +17,14 @@ interface ButtonProps
   className?: string;
 }
 
+// Pills, and roomier than before at every size. A pill reads as an action
+// where a 12px-radius rectangle reads as a surface, which matters now that
+// cards are the same family of radii.
 const sizeStyles: Record<Size, string> = {
-  sm: "px-3 py-1.5 text-xs gap-1.5 rounded-lg",
-  md: "px-4 py-2 text-sm gap-2 rounded-xl",
-  lg: "px-6 py-2.5 text-base gap-2.5 rounded-xl",
-  xl: "px-8 py-3.5 text-lg gap-3 rounded-2xl",
+  sm: "px-3.5 py-1.5 text-xs gap-1.5 rounded-full",
+  md: "px-5 py-2.5 text-sm gap-2 rounded-full",
+  lg: "px-6 py-3 text-base gap-2.5 rounded-full",
+  xl: "px-8 py-4 text-lg gap-3 rounded-full",
 };
 
 function Spinner() {
@@ -64,17 +67,25 @@ export function Button({
 }: ButtonProps) {
   const isDisabled = disabled || loading;
 
-  // Inline styles per variant to avoid CSS override conflicts
+  // Inline styles per variant, because the stylesheet still carries a global
+  // light-mode override layer that rewrites Tailwind colour classes with
+  // !important. Inline styles sit outside it; that layer is dismantled in the
+  // app-shell slice, not here.
+  //
+  // The accent appears on `primary` only. `danger` and `success` keep their own
+  // colours: they are semantic, not brand, and a destructive action that looks
+  // like every other button is a worse problem than a second hue.
   const variantInline: Record<Variant, React.CSSProperties> = {
     primary: {
-      backgroundColor: "#6d5ef6",
+      backgroundImage: "var(--accent-gradient)",
       color: "#ffffff",
-      boxShadow: "0 2px 8px rgba(109,94,246,0.24)",
+      boxShadow: "var(--shadow-accent)",
     },
     secondary: {
-      backgroundColor: "transparent",
-      color: "var(--accent-purple)",
-      border: "1.5px solid var(--accent-purple)",
+      backgroundColor: "var(--surface-bg)",
+      color: "var(--page-text)",
+      border: "1px solid var(--surface-border)",
+      boxShadow: "var(--shadow-control)",
     },
     ghost: {
       backgroundColor: "transparent",
@@ -83,12 +94,12 @@ export function Button({
     danger: {
       backgroundColor: "#e11d48",
       color: "#ffffff",
-      boxShadow: "0 2px 8px rgba(225,29,72,0.2)",
+      boxShadow: "0 1px 2px rgba(225,29,72,0.2), 0 8px 20px -6px rgba(225,29,72,0.35)",
     },
     success: {
       backgroundColor: "#059669",
       color: "#ffffff",
-      boxShadow: "0 2px 8px rgba(5,150,105,0.2)",
+      boxShadow: "0 1px 2px rgba(5,150,105,0.2), 0 8px 20px -6px rgba(5,150,105,0.32)",
     },
   };
 
@@ -96,16 +107,18 @@ export function Button({
     <motion.button
       type={type}
       disabled={isDisabled}
-      whileHover={isDisabled ? undefined : { scale: 1.02, y: -1 }}
-      whileTap={isDisabled ? undefined : { scale: 0.98 }}
+      whileHover={isDisabled ? undefined : { y: -1 }}
+      whileTap={isDisabled ? undefined : { scale: 0.985 }}
       transition={{ duration: 0.15 }}
       style={variantInline[variant]}
       className={cn(
         "relative inline-flex items-center justify-center font-semibold transition-all duration-200",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent",
+        // The focus ring is one of the four places the accent is allowed.
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--page-bg)]",
         sizeStyles[size],
-        variant === "secondary" && "hover:bg-violet-50",
-        variant === "ghost" && "hover:bg-gray-100",
+        variant === "primary" && "hover:[background-image:var(--accent-gradient-hover)]",
+        variant === "secondary" && "hover:bg-[color:var(--accent-soft)]",
+        variant === "ghost" && "hover:bg-[color:var(--accent-soft)]",
         fullWidth && "w-full",
         !isDisabled && "cursor-pointer",
         isDisabled && "opacity-50 cursor-not-allowed pointer-events-none",

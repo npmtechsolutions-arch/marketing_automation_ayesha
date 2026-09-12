@@ -68,12 +68,15 @@ export function Modal({
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.2 }}
             style={{
-              backgroundColor: "var(--dropdown-bg)",
-              border: "1px solid var(--dropdown-border)",
-              boxShadow: "var(--dropdown-shadow)",
-              backdropFilter: "blur(12px)",
+              backgroundColor: "var(--surface-bg)",
+              border: "1px solid var(--surface-border)",
+              boxShadow: "var(--surface-shadow-lg)",
+              borderRadius: "var(--radius-card-lg, 22px)",
             }}
-            className={cn("relative w-full rounded-2xl", sizeMap[size])}
+            // The blur is gone with the rest of the glass: a dialog is an
+            // opaque white card, one step larger in radius than the cards
+            // behind it so the stacking order reads.
+            className={cn("relative w-full", sizeMap[size])}
             role="dialog"
             aria-modal="true"
             aria-label={title}
@@ -81,11 +84,14 @@ export function Modal({
             {/* Header */}
             {(title || showClose) && (
               <div
-                className="flex items-center justify-between px-6 py-4"
+                className="flex items-center justify-between px-7 py-5"
                 style={{ borderBottom: "1px solid var(--surface-border)" }}
               >
                 {title && (
-                  <h2 className="text-lg font-semibold" style={{ color: "var(--page-heading)" }}>
+                  <h2
+                    className="text-h2 font-bold"
+                    style={{ color: "var(--page-heading)" }}
+                  >
                     {title}
                   </h2>
                 )}
@@ -105,7 +111,7 @@ export function Modal({
             )}
 
             {/* Body */}
-            <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
+            <div className="max-h-[70vh] overflow-y-auto px-7 py-6">
               {children}
             </div>
           </motion.div>

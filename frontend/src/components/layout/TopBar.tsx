@@ -144,7 +144,7 @@ export default function TopBar() {
 
   return (
     <header
-      className="flex h-16 shrink-0 items-center justify-between gap-4 border-b px-4 backdrop-blur-2xl lg:px-8 z-30 select-none"
+      className="flex h-16 shrink-0 items-center justify-between gap-4 border-b px-4 lg:px-8 z-30 select-none"
       style={{ backgroundColor: "var(--topbar-bg)", borderColor: "var(--surface-border)" }}
     >
       {/* Left side: Hamburger + Breadcrumbs */}
@@ -170,7 +170,7 @@ export default function TopBar() {
               aria-haspopup="menu"
               aria-expanded={workspaceMenuOpen}
             >
-              <Building2 className="h-4 w-4 text-purple-400" />
+              <Building2 className="h-4 w-4" style={{ color: "var(--accent)" }} />
               <span className="max-w-[10rem] truncate">{activeWorkspace.name}</span>
               <ChevronDown
                 className={cn("h-3.5 w-3.5 transition-transform", workspaceMenuOpen && "rotate-180")}
@@ -190,7 +190,7 @@ export default function TopBar() {
                     borderColor: "var(--dropdown-border)",
                     boxShadow: "var(--dropdown-shadow)",
                   }}
-                  className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border p-1.5 backdrop-blur-xl"
+                  className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border p-1.5"
                   role="menu"
                 >
                   {/* Driven by `workspaces`, which is the authoritative list:
@@ -248,7 +248,7 @@ export default function TopBar() {
                           >
                             <span className="truncate">{workspace.name}</span>
                             {workspace.id === activeWorkspaceId && (
-                              <Check className="h-4 w-4 shrink-0 text-purple-400" />
+                              <Check className="h-4 w-4 shrink-0" style={{ color: "var(--accent)" }} />
                             )}
                           </button>
                         ))}
@@ -268,7 +268,7 @@ export default function TopBar() {
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--sidebar-hover-bg)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
                     >
-                      <Settings className="h-4 w-4 text-purple-400" />
+                      <Settings className="h-4 w-4" style={{ color: "var(--accent)" }} />
                       Manage workspaces
                     </button>
                   </div>
@@ -308,7 +308,7 @@ export default function TopBar() {
       <div className="flex flex-1 max-w-md justify-center px-2">
         <button
           onClick={() => setSearchOpen(true)}
-          className="group flex w-full max-w-sm items-center gap-2.5 rounded-xl border px-3.5 py-2 text-xs font-medium backdrop-blur-md transition-all duration-200 cursor-pointer shadow-sm hover:border-[var(--accent-purple)] hover:shadow-md"
+          className="group flex w-full max-w-sm items-center gap-2.5 rounded-full border px-4 py-2 text-xs font-medium transition-all duration-200 cursor-pointer hover:border-[color:var(--accent-soft-border)] hover:bg-[color:var(--accent-soft)]"
           style={{
             backgroundColor: "var(--input-bg)",
             borderColor: "var(--input-border)",
@@ -335,9 +335,10 @@ export default function TopBar() {
         {/* Quick Create Button */}
         <button
           onClick={() => navigate("/create-post")}
-          className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-bold text-white shadow-md shadow-purple-500/20 transition-all duration-200 cursor-pointer hover:shadow-lg hover:shadow-purple-500/30 hover:scale-[1.02] active:scale-[0.98]"
+          className="hidden sm:inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-white transition-all duration-200 cursor-pointer hover:-translate-y-px active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] focus-visible:ring-offset-2"
           style={{
-            background: "linear-gradient(135deg, #7c3aed, #6366f1)",
+            backgroundImage: "var(--accent-gradient)",
+            boxShadow: "var(--shadow-accent)",
           }}
         >
           <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
@@ -374,7 +375,7 @@ export default function TopBar() {
                 exit={{ rotate: -90, opacity: 0 }}
                 transition={{ duration: 0.18 }}
               >
-                <Moon className="h-4.5 w-4.5 text-indigo-500" />
+                <Moon className="h-4.5 w-4.5" style={{ color: "var(--accent)" }} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -407,7 +408,8 @@ export default function TopBar() {
         <div ref={userMenuRef} className="relative">
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 via-indigo-500 to-blue-500 text-xs font-bold text-white shadow-md shadow-purple-500/20 ring-1 ring-white/20 transition-transform duration-200 cursor-pointer hover:scale-105"
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold text-white transition-transform duration-200 cursor-pointer hover:scale-105"
+            style={{ backgroundImage: "var(--accent-gradient)" }}
           >
             {user?.avatar_url ? (
               <img
@@ -432,7 +434,7 @@ export default function TopBar() {
                   borderColor: "var(--dropdown-border)",
                   boxShadow: "var(--dropdown-shadow)",
                 }}
-                className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-2xl border p-1.5 backdrop-blur-xl"
+                className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-2xl border p-1.5"
               >
                 <div className="px-3 py-2 border-b" style={{ borderColor: "var(--surface-border)" }}>
                   <p className="text-xs font-medium" style={{ color: "var(--page-text-muted)" }}>Signed in as</p>
@@ -455,7 +457,7 @@ export default function TopBar() {
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--sidebar-hover-bg)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
                     >
-                      <item.icon className="h-4 w-4 text-purple-400" />
+                      <item.icon className="h-4 w-4" style={{ color: "var(--accent)" }} />
                       {item.label}
                     </button>
                   ))}
@@ -485,7 +487,8 @@ export default function TopBar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-start justify-center bg-black/60 pt-[12vh] px-4 backdrop-blur-md"
+            className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] px-4"
+            style={{ backgroundColor: "var(--overlay-bg)" }}
             onClick={() => {
               setSearchOpen(false);
               setSearchQuery("");
@@ -502,20 +505,20 @@ export default function TopBar() {
                 borderColor: "var(--dropdown-border)",
                 boxShadow: "var(--dropdown-shadow)",
               }}
-              className="w-full max-w-xl overflow-hidden rounded-2xl border backdrop-blur-2xl"
+              className="w-full max-w-xl overflow-hidden rounded-2xl border"
             >
               <div
                 className="flex items-center gap-3 border-b px-4 py-3.5"
                 style={{ borderColor: "var(--surface-border)" }}
               >
-                <Search className="h-5 w-5 text-purple-400" />
+                <Search className="h-5 w-5" style={{ color: "var(--accent)" }} />
                 <input
                   autoFocus
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search pages, tools, strategy, AI..."
-                  className="flex-1 bg-transparent text-sm font-medium outline-none placeholder:text-gray-400"
+                  className="flex-1 bg-transparent text-sm font-medium outline-none placeholder:text-[color:var(--input-placeholder)]"
                   style={{ color: "var(--page-heading)" }}
                 />
                 <kbd

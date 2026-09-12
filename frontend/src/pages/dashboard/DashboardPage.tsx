@@ -250,7 +250,14 @@ export default function DashboardPage() {
                   {firstName}
                 </span>
               </h1>
-              <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/10 px-2.5 py-0.5 text-xs font-semibold text-purple-400 border border-purple-500/20">
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                style={{
+                  backgroundColor: "var(--accent-soft)",
+                  border: "1px solid var(--accent-soft-border)",
+                  color: "var(--accent)",
+                }}
+              >
                 <Sparkles className="h-3 w-3" /> AI Active
               </span>
             </div>
@@ -437,7 +444,10 @@ export default function DashboardPage() {
               }}
             >
               <div className="flex items-center gap-2.5 mb-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/20 text-purple-400">
+                <div
+                  className="flex h-8 w-8 items-center justify-center rounded-lg"
+                  style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}
+                >
                   <Zap className="h-4 w-4" />
                 </div>
                 <h4 className="text-sm font-bold" style={{ color: "var(--page-heading)" }}>AI Strategic Advisor</h4>
@@ -468,7 +478,8 @@ export default function DashboardPage() {
               </p>
               <button
                 onClick={() => navigate("/strategy")}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-xs font-bold transition-colors cursor-pointer hover:underline"
+                style={{ color: "var(--accent)" }}
               >
                 View Recommendations <ArrowRight className="h-3.5 w-3.5" />
               </button>
@@ -595,10 +606,13 @@ export default function DashboardPage() {
                         {post.content}
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-purple-400">
+                        <span
+                          className="text-eyebrow font-bold uppercase"
+                          style={{ color: "var(--accent)" }}
+                        >
                           {post.platform}
                         </span>
-                        <span className="text-gray-400">•</span>
+                        <span style={{ color: "var(--page-text-muted)" }}>•</span>
                         <span className="text-xs" style={{ color: "var(--page-text-muted)" }}>
                           Published recently
                         </span>
