@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuthStore, syncUserPreferences } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { apiBase } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/apiError";
 import { showSuccess, showError } from "@/components/ui/Toast";
 import { signInWithGooglePopup } from "@/lib/firebase";
 
@@ -206,9 +207,12 @@ export default function RegisterPage() {
       showSuccess("Account created successfully!");
       navigate("/onboarding");
     } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Registration failed. Please try again.";
+      // Not "Registration failed. Please try again." any more. That sentence
+      // was shown for an unreachable API, a wrong backend port and a rate
+      // limit alike -- and "try again" is wrong advice for two of the three.
+      const message = apiErrorMessage(err, "Registration failed.", {
+        apiBase,
+      });
       setErrors({ general: message });
       showError(message);
     }

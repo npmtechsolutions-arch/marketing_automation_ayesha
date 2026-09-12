@@ -131,10 +131,30 @@ npm install
 npm run dev                       # http://localhost:5173
 ```
 
-The Vite dev server proxies `/api` to `http://localhost:8000`. To point the frontend at a different backend, set `VITE_API_URL` in `frontend/.env`:
+In development the app calls `/api/v1` on **its own origin**, and the Vite dev
+server proxies that to the backend. The backend's port is therefore named in
+exactly one place — the proxy target — which defaults to `http://localhost:8000`.
+
+**If something else on your machine is already using port 8000**, point the
+proxy at wherever the backend actually is:
+
+```bash
+VITE_PROXY_TARGET=http://localhost:8001 npm run dev
+```
+
+This is worth knowing because of how it fails. If the frontend reaches a
+*different* service on that port, the browser blocks the cross-origin response,
+the request arrives with no body to read, and every screen that reports
+`error.response.data.detail` has nothing to report — which is why signing up
+once failed with a bare "Registration failed. Please try again." The app now
+names the endpoint it could not reach instead, but the fix is still to point it
+at the right backend.
+
+To bypass the proxy entirely — a deployed API, a tunnel — set an absolute base
+instead, which takes precedence:
 
 ```
-VITE_API_URL=http://localhost:8000/api/v1
+VITE_API_URL=https://api.example.com/api/v1
 ```
 
 Windows users can use the bundled `start.bat` / `start.ps1` helpers, which launch both servers.

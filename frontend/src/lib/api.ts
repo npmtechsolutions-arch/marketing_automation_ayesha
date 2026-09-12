@@ -6,6 +6,7 @@ import axios, {
 import { useAuthStore } from "@/stores/authStore";
 
 const getApiBaseUrl = () => {
+  // An explicit override always wins -- CI, a preview build, a second backend.
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
@@ -16,10 +17,24 @@ const getApiBaseUrl = () => {
   ) {
     return `${window.location.origin}/api/v1`;
   }
-  return "http://localhost:8000/api/v1";
+  // In development, go through Vite's proxy on the page's own origin rather
+  // than at an absolute http://localhost:8000.
+  //
+  // Two reasons, both of which cost real debugging time. The port was named
+  // twice -- here and in vite.config.ts -- so the app could point somewhere
+  // the proxy did not. And when another project happened to be listening on
+  // 8000, every call went to *its* API: the browser blocked the cross-origin
+  // response, axios reported "Network Error" with no response body, and the
+  // UI showed "Registration failed. Please try again." for what was really a
+  // wrong-port problem. Same-origin means no CORS in dev and one place --
+  // vite.config.ts, via VITE_PROXY_TARGET -- that knows the backend's port.
+  return "/api/v1";
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+/** Where this app is calling, exported so error messages can name it. */
+export const apiBase = API_BASE_URL;
 
 // Tokens are NOT stored in localStorage.
 //

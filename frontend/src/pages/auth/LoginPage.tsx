@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuthStore, syncUserPreferences } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { apiBase } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/apiError";
 import { showSuccess, showError } from "@/components/ui/Toast";
 import { signInWithGooglePopup } from "@/lib/firebase";
 
@@ -65,8 +66,10 @@ export default function LoginPage() {
         setGoogleLoading(false);
         return;
       }
-      const msg = err?.response?.data?.detail || err?.message || "Google Sign-In failed. Please try again.";
-      showError(msg);
+      // "Network Error" was the message here, which is what axios says when a
+      // request never reached an API -- including when the app is pointed at
+      // the wrong backend. Name the endpoint instead.
+      showError(apiErrorMessage(err, "Google Sign-In failed.", { apiBase }));
     } finally {
       setGoogleLoading(false);
     }
@@ -134,9 +137,15 @@ export default function LoginPage() {
       showSuccess("Welcome back!");
       navigate("/dashboard");
     } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "User ID or password was incorrect. Please check your credentials.";
+      // The old fallback here claimed the credentials were wrong for *any*
+      // failure -- including an API that never answered. Telling someone their
+      // password is wrong when the backend is unreachable sends them to reset
+      // a password that was fine.
+      const message = apiErrorMessage(
+        err,
+        "User ID or password was incorrect. Please check your credentials.",
+        { apiBase }
+      );
       setErrors({ general: message });
       showError(message);
     }
@@ -156,9 +165,9 @@ export default function LoginPage() {
       showSuccess("Verification successful!");
       navigate("/dashboard");
     } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Invalid verification code. Please try again.";
+      const message = apiErrorMessage(err, "Invalid verification code.", {
+        apiBase,
+      });
       setErrors({ general: message });
       showError(message);
     }
