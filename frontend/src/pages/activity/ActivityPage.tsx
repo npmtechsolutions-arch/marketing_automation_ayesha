@@ -19,7 +19,8 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { cn, formatDate, formatRelativeTime } from "@/lib/utils";
-import api, { getAccountId } from "@/lib/api";
+import api, { apiBase, getAccountId } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/apiError";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -279,9 +280,12 @@ export default function ActivityPage() {
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Why the list is empty, when it is empty because something failed. */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
+      setLoadError(null);
       const activeAccountId = await getAccountId();
       if (!activeAccountId) {
         setLoading(false);
@@ -301,7 +305,12 @@ export default function ActivityPage() {
           created_at: a.created_at,
         }));
         setActivities(mapped);
-      } catch {
+      } catch (err) {
+        // This used to be `catch { setActivities([]) }`, which rendered a
+        // failed request as "No activities found" -- the reader cannot tell a
+        // quiet week from a broken page, which is the same confusion between
+        // silence and breakage this codebase keeps removing.
+        setLoadError(apiErrorMessage(err, "Activity could not be loaded.", { apiBase }));
         setActivities([]);
       } finally {
         setLoading(false);
@@ -359,10 +368,15 @@ export default function ActivityPage() {
 
         {/* Stat Cards */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {/* These were four different hues -- near-black, violet, pink and
+              green -- for four counts that mean the same kind of thing. The
+              colour was decorative, and pink and green are not in the
+              palette; a reader could reasonably think green meant "good" and
+              pink meant "warning". Counts are counts. */}
           <ActivityStatCard label="Total Actions (Today)" value={stats.totalToday} color="var(--page-heading)" />
-          <ActivityStatCard label="Posts Created" value={stats.postsCreated} color="#7c3aed" />
-          <ActivityStatCard label="AI Generations" value={stats.aiGenerations} color="#ec4899" />
-          <ActivityStatCard label="Accounts Connected" value={stats.accountsConnected} color="#10b981" />
+          <ActivityStatCard label="Posts Created" value={stats.postsCreated} color="var(--page-heading)" />
+          <ActivityStatCard label="AI Generations" value={stats.aiGenerations} color="var(--page-heading)" />
+          <ActivityStatCard label="Accounts Connected" value={stats.accountsConnected} color="var(--page-heading)" />
         </div>
 
         {/* Filter Bar */}
@@ -503,12 +517,30 @@ export default function ActivityPage() {
         ) : (
           /* Empty state */
           <GlassCard className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: "var(--sidebar-hover-bg)" }}>
-              <FileText className="h-8 w-8" style={{ color: "var(--page-text-muted)" }} />
+            <div
+              className="mb-4 flex h-16 w-16 items-center justify-center rounded-full"
+              style={{
+                backgroundColor: loadError
+                  ? "var(--status-failed-bg)"
+                  : "var(--sidebar-hover-bg)",
+              }}
+            >
+              <FileText
+                className="h-8 w-8"
+                style={{
+                  color: loadError
+                    ? "var(--status-failed-fg)"
+                    : "var(--page-text-muted)",
+                }}
+              />
             </div>
-            <h3 className="text-lg font-semibold" style={{ color: "var(--page-heading)" }}>No activities found</h3>
-            <p className="mt-1 text-sm" style={{ color: "var(--page-text-secondary)" }}>
-              Try adjusting your filters or check back later.
+            {/* An empty list and a failed request are different facts, and the
+                page used to render them identically. */}
+            <h3 className="text-lg font-semibold" style={{ color: "var(--page-heading)" }}>
+              {loadError ? "Activity could not be loaded" : "No activities found"}
+            </h3>
+            <p className="mt-1 max-w-md text-sm" style={{ color: "var(--page-text-secondary)" }}>
+              {loadError ?? "Try adjusting your filters or check back later."}
             </p>
           </GlassCard>
         )}

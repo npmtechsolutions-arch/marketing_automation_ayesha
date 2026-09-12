@@ -749,7 +749,7 @@ export default function TeamPage() {
                       "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
                       copied
                         ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-400"
-                        : "bg-purple-600/20 border border-purple-500/30 text-purple-300 hover:bg-purple-600/30"
+                        : "bg-[color:var(--accent-soft)] border border-[color:var(--accent-soft-border)] text-[color:var(--accent)] hover:brightness-95"
                     )}
                   >
                     {copied ? (

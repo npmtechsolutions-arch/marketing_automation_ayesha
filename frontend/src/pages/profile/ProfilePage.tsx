@@ -191,7 +191,8 @@ export default function ProfilePage() {
                   type="button"
                   onClick={handleAvatarClick}
                   disabled={uploadingAvatar}
-                  className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-xl bg-purple-600 text-white shadow-lg shadow-purple-600/40 ring-2 ring-[var(--surface-bg)] transition-transform duration-200 hover:scale-110 hover:bg-purple-500 cursor-pointer disabled:opacity-50"
+                  className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-xl text-white ring-2 ring-[var(--surface-bg)] transition-transform duration-200 hover:scale-110 cursor-pointer disabled:opacity-50"
+                  style={{ backgroundImage: "var(--accent-gradient)", boxShadow: "var(--shadow-accent)" }}
                   title="Upload profile photo"
                 >
                   {uploadingAvatar ? (

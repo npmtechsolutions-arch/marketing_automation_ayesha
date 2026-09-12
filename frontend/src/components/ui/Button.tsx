@@ -103,6 +103,19 @@ export function Button({
     },
   };
 
+  // A disabled button used to be the live style at 50% opacity. On an accent
+  // gradient that leaves white text at roughly 2:1 against a lavender page --
+  // legible as a shape, not as words -- which is what made "Next: Create
+  // Content" look broken rather than unavailable. A disabled control is a flat
+  // neutral surface instead: readable, and unmistakably not pressable.
+  const disabledStyle: React.CSSProperties = {
+    backgroundImage: "none",
+    backgroundColor: "var(--sidebar-hover-bg)",
+    color: "var(--page-text-muted)",
+    border: "1px solid var(--surface-border)",
+    boxShadow: "none",
+  };
+
   return (
     <motion.button
       type={type}
@@ -110,7 +123,7 @@ export function Button({
       whileHover={isDisabled ? undefined : { y: -1 }}
       whileTap={isDisabled ? undefined : { scale: 0.985 }}
       transition={{ duration: 0.15 }}
-      style={variantInline[variant]}
+      style={isDisabled ? { ...variantInline[variant], ...disabledStyle } : variantInline[variant]}
       className={cn(
         "relative inline-flex items-center justify-center font-semibold transition-all duration-200",
         // The focus ring is one of the four places the accent is allowed.
@@ -121,7 +134,7 @@ export function Button({
         variant === "ghost" && "hover:bg-[color:var(--accent-soft)]",
         fullWidth && "w-full",
         !isDisabled && "cursor-pointer",
-        isDisabled && "opacity-50 cursor-not-allowed pointer-events-none",
+        isDisabled && "cursor-not-allowed pointer-events-none",
         className
       )}
       {...(rest as any)}

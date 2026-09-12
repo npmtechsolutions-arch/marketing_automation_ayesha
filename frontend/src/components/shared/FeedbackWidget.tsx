@@ -56,8 +56,13 @@ export default function FeedbackWidget() {
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-500/30 transition-shadow hover:shadow-xl hover:shadow-purple-500/40"
-        aria-label="Share feedback"
+        aria-label="Share your feedback"
+        title="Share your feedback"
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full text-white transition-all hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-ring)] focus-visible:ring-offset-2"
+        style={{
+          backgroundImage: "var(--accent-gradient)",
+          boxShadow: "var(--shadow-accent)",
+        }}
       >
         <MessageSquare className="h-6 w-6" />
       </motion.button>
@@ -73,7 +78,7 @@ export default function FeedbackWidget() {
             onClick={handleClose}
           >
             {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            <div className="absolute inset-0" style={{ backgroundColor: "var(--overlay-bg)" }} />
 
             {/* Modal content */}
             <motion.div
@@ -88,7 +93,7 @@ export default function FeedbackWidget() {
                 {/* Close button */}
                 <button
                   onClick={handleClose}
-                  className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
+                  className="absolute right-4 top-4 rounded-lg p-1.5 transition-colors hover:bg-[color:var(--accent-soft)] text-[color:var(--page-text-muted)] hover:text-[color:var(--page-heading)]"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -103,8 +108,8 @@ export default function FeedbackWidget() {
                     <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10">
                       <Send className="h-8 w-8 text-emerald-400" />
                     </div>
-                    <h3 className="text-lg font-bold text-white">Thank you!</h3>
-                    <p className="mt-1 text-sm text-slate-400">
+                    <h3 className="text-lg font-bold" style={{ color: "var(--page-heading)" }}>Thank you!</h3>
+                    <p className="mt-1 text-sm text-[color:var(--page-text-secondary)]">
                       Your feedback helps us improve.
                     </p>
                   </motion.div>
@@ -112,17 +117,17 @@ export default function FeedbackWidget() {
                   /* Feedback form */
                   <div className="space-y-5">
                     <div>
-                      <h2 className="text-lg font-bold text-white">
+                      <h2 className="text-lg font-bold" style={{ color: "var(--page-heading)" }}>
                         Share Your Feedback
                       </h2>
-                      <p className="mt-0.5 text-sm text-slate-400">
+                      <p className="mt-0.5 text-sm text-[color:var(--page-text-secondary)]">
                         We'd love to hear what you think
                       </p>
                     </div>
 
                     {/* Star rating */}
                     <div>
-                      <label className="mb-2 block text-xs font-medium text-slate-400">
+                      <label className="mb-2 block text-xs font-medium text-[color:var(--page-text-secondary)]">
                         Rating
                       </label>
                       <div className="flex gap-1">
@@ -161,7 +166,7 @@ export default function FeedbackWidget() {
 
                     {/* Feedback textarea */}
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-400 pl-1">
+                      <label className="mb-1.5 block text-xs font-medium text-[color:var(--page-text-secondary)] pl-1">
                         Feedback
                       </label>
                       <textarea
@@ -169,7 +174,12 @@ export default function FeedbackWidget() {
                         onChange={(e) => setFeedback(e.target.value)}
                         placeholder="Tell us what's on your mind..."
                         rows={4}
-                        className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none backdrop-blur-sm transition-all duration-200 placeholder:text-slate-500 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 resize-none"
+                        className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200 focus:ring-2 focus:ring-[rgba(124,58,237,0.20)] resize-none"
+                        style={{
+                          border: "1px solid var(--surface-border)",
+                          backgroundColor: "var(--input-bg)",
+                          color: "var(--input-text)",
+                        }}
                       />
                     </div>
 

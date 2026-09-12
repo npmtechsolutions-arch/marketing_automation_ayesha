@@ -25,7 +25,7 @@ import {
 } from "@/lib/variants";
 import { cn } from "@/lib/utils";
 
-const ICON_PLATFORMS = ["facebook", "instagram", "linkedin", "twitter", "youtube"] as const;
+const ICON_PLATFORMS = ["facebook", "instagram", "linkedin", "tiktok", "twitter", "youtube"] as const;
 type IconPlatform = (typeof ICON_PLATFORMS)[number];
 const isKnownPlatform = (slug: string): slug is IconPlatform =>
   (ICON_PLATFORMS as readonly string[]).includes(slug);

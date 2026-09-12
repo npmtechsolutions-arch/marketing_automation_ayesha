@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, type ChangeEvent } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
@@ -2372,7 +2372,21 @@ export default function CreatePostPage() {
                 <div className="text-center py-12">
                   <Users className="w-12 h-12 text-slate-600 mx-auto mb-3" />
                   <p className="text-sm mb-1" style={{ color: "var(--page-text-secondary)" }}>No social accounts connected yet</p>
-                  <p className="text-xs" style={{ color: "var(--page-text-muted)" }}>Go to <strong className="text-purple-400">Social Accounts</strong> to connect your profiles first.</p>
+                  {/* This was a <strong> styled like a link: accent-coloured,
+                      named after a module, and completely inert. Someone with
+                      no accounts connected is sent here and given something
+                      that looks clickable and is not. */}
+                  <p className="text-xs" style={{ color: "var(--page-text-secondary)" }}>
+                    Go to{" "}
+                    <Link
+                      to="/social-accounts"
+                      className="font-semibold underline underline-offset-2"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      Social Accounts
+                    </Link>{" "}
+                    to connect your profiles first.
+                  </p>
                 </div>
               ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

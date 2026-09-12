@@ -168,7 +168,10 @@
   --page-bg-gradient: linear-gradient(180deg, #f7f5ff 0%, #ede9fe 100%);
   --page-text: #1f2937;
   --page-text-secondary: #4b5563;
-  --page-text-muted: #9ca3af;
+  /* Was #9ca3af (gray-400): 2.6:1 on white, under the 4.5:1 AA floor, and it
+     carries every stat-card label, filter chip and caption in the product.
+     gray-500 clears AA and stays clearly quieter than the body text. */
+  --page-text-muted: #6b7280;
   --page-heading: #0b0b12;
   --page-link: #7c3aed;
 
@@ -415,8 +418,8 @@
   --page-bg: #f6f7f9;
   --page-bg-gradient: linear-gradient(180deg, #ffffff 0%, #f6f7f9 100%);
   --page-text: #1a1a2e;
-  --page-text-secondary: #64748b;
-  --page-text-muted: #94a3b8;
+  --page-text-secondary: #4b5563;
+  --page-text-muted: #6b7280;
   --page-heading: #0f0f1a;
   --page-link: #6d5ef6;
 

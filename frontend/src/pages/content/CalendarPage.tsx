@@ -47,7 +47,10 @@ import { showSuccess, showError } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
 
 // ---------- Types ----------
-type Platform = "facebook" | "instagram" | "linkedin" | "twitter" | "youtube";
+// TikTok has been a first-class connector since 3.6 -- publishing,
+// analytics and its own OAuth flow -- but it was missing from every
+// frontend platform list, so a TikTok post could not be filtered for.
+type Platform = "facebook" | "instagram" | "linkedin" | "tiktok" | "twitter" | "youtube";
 type PostStatus = ReviewStatus;
 type CalendarView = "week" | "month";
 
@@ -79,6 +82,7 @@ const PLATFORMS: { key: Platform | "all"; label: string }[] = [
   { key: "facebook", label: "Facebook" },
   { key: "instagram", label: "Instagram" },
   { key: "linkedin", label: "LinkedIn" },
+  { key: "tiktok", label: "TikTok" },
   { key: "twitter", label: "Twitter" },
   { key: "youtube", label: "YouTube" },
 ];
@@ -146,6 +150,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   facebook: "Facebook",
   instagram: "Instagram",
   linkedin: "LinkedIn",
+  tiktok: "TikTok",
   twitter: "Twitter",
   youtube: "YouTube",
 };

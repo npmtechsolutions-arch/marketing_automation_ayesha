@@ -70,7 +70,7 @@ const STATUS_META: Record<
 const IN_FLIGHT = new Set(["queued", "claimed", "running"]);
 
 const ICON_PLATFORMS = [
-  "facebook", "instagram", "linkedin", "twitter", "youtube",
+  "facebook", "instagram", "linkedin", "tiktok", "twitter", "youtube",
 ] as const;
 type IconPlatform = (typeof ICON_PLATFORMS)[number];
 
